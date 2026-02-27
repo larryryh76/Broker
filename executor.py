@@ -1,10 +1,11 @@
+import asyncio
 import time
 import random
 from config import logger, DAILY_DRAWDOWN_LIMIT
 
 class Executor:
-    def __init__(self, oanda_client, db_client, strategy):
-        self.oanda = oanda_client
+    def __init__(self, exness_client, db_client, strategy):
+        self.exness = exness_client
         self.db = db_client
         self.strategy = strategy
 
@@ -26,7 +27,7 @@ class Executor:
                 return True
         return False
 
-    def run_cycle(self, instruments):
+    async def run_cycle(self, instruments):
         logger.info("Starting 5-minute execution cycle...")
 
         # 0. Recursive Learning Adjustment
@@ -35,7 +36,7 @@ class Executor:
             self.strategy.adjust_parameters(latest_state)
 
         # 1. Initialization
-        account = self.oanda.get_account_summary()
+        account = await self.exness.get_account_summary()
         if not account:
             return
 
@@ -46,10 +47,18 @@ class Executor:
             logger.info("Trading halted due to circuit breaker.")
             return
 
+        # 1.5 Check for open positions to avoid duplicates
+        open_positions = await self.exness.get_open_trades()
+        open_instruments = [p["symbol"] for p in open_positions]
+
         # 2. Market Data and Signal Generation
         signals = []
         for instrument in instruments:
-            candles = self.oanda.get_candles(instrument)
+            if instrument in open_instruments:
+                logger.info(f"Already have an open position for {instrument}. Skipping.")
+                continue
+
+            candles = await self.exness.get_candles(instrument)
             if not candles:
                 continue
 
@@ -66,9 +75,9 @@ class Executor:
 
         # 3. Execution (to be expanded with stealth delay and risk assessment)
         for signal in signals:
-            self.execute_signal(signal, balance)
+            await self.execute_signal(signal, balance)
 
-    def execute_signal(self, signal, balance):
+    async def execute_signal(self, signal, balance):
         instrument = signal["instrument"]
         side = signal["side"]
         price = signal["price"]
@@ -95,10 +104,10 @@ class Executor:
         # 6. Stealth Execution: Randomized delay
         delay = random.randint(30, 290)
         logger.info(f"Stealth execution for {instrument}: Waiting {delay} seconds before entry...")
-        time.sleep(delay)
+        await asyncio.sleep(delay)
 
         # Re-fetch current price just before execution for better accuracy
-        current_price = self.oanda.get_current_price(instrument)
+        current_price = await self.exness.get_current_price(instrument)
         if current_price:
             # Recalculate levels based on current price if it moved significantly?
             # Prompt says "Submit market orders at the randomized execution time"
@@ -106,8 +115,8 @@ class Executor:
             price = current_price
             stop_loss, take_profit = self.strategy.calculate_levels(side, price)
 
-        logger.info(f"Executing {side} order for {instrument} with {units} units...")
-        order_result = self.oanda.place_market_order(instrument, oanda_units, stop_loss, take_profit)
+        logger.info(f"Executing {side} order for {instrument} with {units} lots...")
+        order_result = await self.exness.place_market_order(instrument, oanda_units, stop_loss, take_profit)
 
         if order_result:
             logger.info(f"Order executed successfully: {order_result.get('orderFillTransaction', {}).get('id')}")

@@ -24,7 +24,7 @@ jobs:
 
       - name: Run Trading Bot
         env:
-          OANDA_TOKEN: ${{ secrets.OANDA_TOKEN }}
-          OANDA_ACCOUNT_ID: ${{ secrets.OANDA_ACCOUNT_ID }}
+          META_API_TOKEN: ${{ secrets.META_API_TOKEN }}
+          META_API_ACCOUNT_ID: ${{ secrets.META_API_ACCOUNT_ID }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: python main.py

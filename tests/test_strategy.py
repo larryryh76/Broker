@@ -50,16 +50,13 @@ def test_calculate_position_size_small_balance(strategy):
     entry = 100
     sl = 98
     confidence = 0.95
-    # Risk 2% of 50 = 1.0
-    # Price diff = 2
-    # Units = 1.0 / 2 = 0.5
-    # Confidence adj = 0.5 * (0.95/0.95) = 0.5
-    # Max units = (50 * 0.01) / 100 = 0.5 / 100 = 0.005
-    # Hmm, 1% cap on position size is very small for $50 balance.
-    # (50 * 0.01) / 100 = 0.005 units.
-    # Minimum 1 unit is returned.
-    units = strategy.calculate_position_size(balance, entry, sl, confidence)
-    assert units == 1
+    # MetaTrader lots calculation
+    # contract_size = 100000
+    # lots = 1.0 / (2 * 100000) = 0.000005
+    # lots = min(lots, max_lots)
+    # Minimum lots = 0.01
+    lots = strategy.calculate_position_size(balance, entry, sl, confidence)
+    assert lots == 0.01
 
 def test_generate_signal_buy(strategy):
     # Create a trend: price above MA20, MA20 above MA50, RSI oversold (artificially)

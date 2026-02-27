@@ -1,11 +1,12 @@
 import sys
+import asyncio
 from config import validate_config, INSTRUMENTS, logger
-from oanda_client import OandaClient
+from exness_client import ExnessClient
 from db_client import DBClient
 from strategy import Strategy
 from executor import Executor
 
-def main():
+async def main():
     if not validate_config():
         logger.error("Configuration validation failed. Exiting.")
         sys.exit(1)
@@ -13,16 +14,16 @@ def main():
     logger.info("Initializing The Money Machine...")
 
     try:
-        oanda = OandaClient()
+        exness = ExnessClient()
         db = DBClient()
         strategy = Strategy()
-        executor = Executor(oanda, db, strategy)
+        executor = Executor(exness, db, strategy)
 
         # Run one cycle
-        executor.run_cycle(INSTRUMENTS)
+        await executor.run_cycle(INSTRUMENTS)
 
         # After cycle, update learning state
-        update_learning_state(oanda, db)
+        await update_learning_state(exness, db)
 
         logger.info("Execution cycle complete.")
 
@@ -30,13 +31,13 @@ def main():
         logger.error(f"An unexpected error occurred: {e}")
         sys.exit(1)
 
-def reconcile_trades(oanda, db):
+async def reconcile_trades(exness, db):
     logger.info("Reconciling trades...")
     open_logged_trades = db.get_open_logged_trades()
     if not open_logged_trades:
         return
 
-    closed_oanda_trades = oanda.get_closed_trades()
+    closed_oanda_trades = await exness.get_closed_trades()
     closed_dict = {str(t["id"]): t for t in closed_oanda_trades}
 
     for trade in open_logged_trades:
@@ -54,11 +55,11 @@ def reconcile_trades(oanda, db):
             })
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
-def update_learning_state(oanda, db):
+async def update_learning_state(exness, db):
     logger.info("Updating learning state...")
-    reconcile_trades(oanda, db)
+    await reconcile_trades(exness, db)
 
-    account = oanda.get_account_summary()
+    account = await exness.get_account_summary()
     if not account:
         return
 
@@ -112,4 +113,4 @@ def update_learning_state(oanda, db):
     logger.info(f"Learning state updated. Daily P&L: ${daily_pnl:.2f}, Win Rate: {win_rate:.2f}%")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

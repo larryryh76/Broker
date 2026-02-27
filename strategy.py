@@ -113,14 +113,15 @@ class Strategy:
 
     def calculate_position_size(self, balance, entry_price, stop_loss, confidence):
         """
-        Dynamic Position Sizing:
+        Dynamic Position Sizing (Exness MetaTrader Lots):
         - < $100: Risk 2%
         - $100 - $1000: Risk 3%
         - $1000 - $10000: Risk 5%
         - > $10000: Risk 8%
 
         Confidence Adjustment: (confidence / 0.95)
-        Position Cap: 1% of total balance (total value of trade)
+        Performance Adjustment (Learning)
+        Position Cap: 1% of total balance (notional value)
         """
         if balance < 100:
             risk_pct = 0.02
@@ -137,25 +138,32 @@ class Strategy:
         if price_diff == 0:
             return 0
 
-        units = risk_amount / price_diff
+        # For MetaTrader, units is in lots. 1 lot = 100,000 base currency for forex.
+        # For XAUUSD, 1 lot = 100 oz.
+        # price_diff is in price points.
+
+        # Standard calculation: lots = risk_amount / (price_diff * contract_size)
+        # Assuming contract_size is 100,000 for Forex and 100 for Gold.
+        contract_size = 100 if entry_price > 1000 else 100000
+
+        lots = risk_amount / (price_diff * contract_size)
 
         # Confidence Adjustment
-        units *= (confidence / 0.95)
+        lots *= (confidence / 0.95)
 
         # Performance Adjustment (Learning)
-        units *= self.performance_multiplier
+        lots *= self.performance_multiplier
 
-        # Position Cap: Never exceed 1% of total balance in a single trade
-        # In OANDA, 1 unit of XAU/USD is 1 ounce of gold.
-        # 1% cap on "notional value" would be (balance * 0.01) / entry_price
-        max_units = (balance * 0.01) / entry_price
+        # Position Cap: Never exceed 1% of total balance in NOTIONAL value
+        # notional = lots * contract_size * entry_price
+        # lots = (balance * 0.01) / (contract_size * entry_price)
+        max_lots = (balance * 0.01) / (contract_size * entry_price)
 
-        # NOTE: OANDA units for currencies are usually 1 unit of base currency.
-        # For gold (XAU_USD), 1 unit is 1 troy ounce.
-        # The prompt says: "Cap maximum position size at 1% of account balance."
-        # This usually means the RISK should be capped, but the prompt says "position size".
-        # I'll stick to the strict 1% of balance as notional cap if units are larger.
+        lots = min(lots, max_lots)
 
-        units = min(units, max_units)
+        # Exness allows micro-lots (0.01)
+        # If lots is very small, we use 0.01
+        if lots < 0.01:
+            lots = 0.01
 
-        return int(units) if units >= 1 else 1 # Minimum 1 unit
+        return round(lots, 2)

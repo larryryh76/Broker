@@ -29,6 +29,11 @@ class Executor:
     def run_cycle(self, instruments):
         logger.info("Starting 5-minute execution cycle...")
 
+        # 0. Recursive Learning Adjustment
+        latest_state = self.db.get_latest_learning_state()
+        if latest_state:
+            self.strategy.adjust_parameters(latest_state)
+
         # 1. Initialization
         account = self.oanda.get_account_summary()
         if not account:

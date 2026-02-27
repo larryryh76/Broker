@@ -74,3 +74,18 @@ def test_generate_signal_buy(strategy):
     signal = strategy.generate_signal(df)
     assert signal["side"] == "BUY"
     assert signal["confidence"] == 0.85 # 3 indicators aligned
+
+def test_adjust_parameters_high_win_rate(strategy):
+    learning_state = {"win_rate": 70, "total_trades": 10}
+    strategy.adjust_parameters(learning_state)
+    assert strategy.performance_multiplier == 1.2
+
+def test_adjust_parameters_low_win_rate(strategy):
+    learning_state = {"win_rate": 30, "total_trades": 10}
+    strategy.adjust_parameters(learning_state)
+    assert strategy.performance_multiplier == 0.8
+
+def test_adjust_parameters_insufficient_data(strategy):
+    learning_state = {"win_rate": 70, "total_trades": 5}
+    strategy.adjust_parameters(learning_state)
+    assert strategy.performance_multiplier == 1.0

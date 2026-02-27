@@ -4,7 +4,31 @@ from config import logger, RISK_REWARD_RATIO
 
 class Strategy:
     def __init__(self):
-        pass
+        self.win_rate_threshold = 0.50
+        self.performance_multiplier = 1.0
+
+    def adjust_parameters(self, learning_state):
+        """
+        Recursive Learning: Adjust parameters based on historical performance.
+        If win rate is high, we can slightly increase risk.
+        If win rate is low, we decrease risk.
+        """
+        if not learning_state:
+            return
+
+        win_rate = learning_state.get("win_rate", 0) / 100
+        total_trades = learning_state.get("total_trades", 0)
+
+        # Only adjust after enough data (e.g., 10 trades)
+        if total_trades >= 10:
+            if win_rate > 0.60:
+                self.performance_multiplier = 1.2
+            elif win_rate < 0.40:
+                self.performance_multiplier = 0.8
+            else:
+                self.performance_multiplier = 1.0
+
+        logger.info(f"Strategy parameters adjusted: Multiplier={self.performance_multiplier}")
 
     def prepare_data(self, candles):
         if not candles:
@@ -117,6 +141,9 @@ class Strategy:
 
         # Confidence Adjustment
         units *= (confidence / 0.95)
+
+        # Performance Adjustment (Learning)
+        units *= self.performance_multiplier
 
         # Position Cap: Never exceed 1% of total balance in a single trade
         # In OANDA, 1 unit of XAU/USD is 1 ounce of gold.

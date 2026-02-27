@@ -35,6 +35,15 @@ THE MONEY MACHINE is a production-ready, serverless trading bot designed to exec
 - Entry point for the GitHub Action.
 - Manages initialization, execution cycle, trade reconciliation, and learning state updates.
 
+## Recursive Learning System
+The bot implements a self-improving feedback loop:
+1. **Performance Tracking**: After each cycle, the bot reconciles closed trades from OANDA and updates its MongoDB learning state with the actual P&L and Win Rate.
+2. **Parameter Adjustment**: At the start of each cycle, the `Executor` fetches the latest learning state.
+3. **Dynamic Scaling**: The `Strategy` adjusts a `performance_multiplier` based on the historical win rate:
+   - Win Rate > 60% (with 10+ trades): Multiplier increases to 1.2x (Aggressive).
+   - Win Rate < 40% (with 10+ trades): Multiplier decreases to 0.8x (Conservative).
+   - This multiplier directly scales the calculated position size.
+
 ## Setup Instructions
 
 ### Prerequisites

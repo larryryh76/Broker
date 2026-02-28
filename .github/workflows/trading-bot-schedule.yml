@@ -26,17 +26,19 @@ jobs:
       - name: Download and Deploy Portable MT5
         shell: powershell
         run: |
+          $mt5Dir = Join-Path $env:GITHUB_WORKSPACE "mt5_terminal"
           # Download the installer
           curl.exe -L -o setup.exe "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           # Extract it to the terminal folder
-          Start-Process -FilePath ".\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:D:\a\Broker\Broker\mt5_terminal" -Wait
+          Start-Process -FilePath ".\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$mt5Dir" -Wait
           # Check if it worked
-          if (Test-Path "D:\a\Broker\Broker\mt5_terminal\terminal64.exe") { echo "SUCCESS: Terminal found!" } else { echo "ERROR: Terminal still missing" }
+          if (Test-Path (Join-Path $mt5Dir "terminal64.exe")) { echo "SUCCESS: Terminal found!" } else { echo "ERROR: Terminal still missing" }
 
       - name: Force Account Configuration
         shell: powershell
         run: |
-          $configDir = "D:\a\Broker\Broker\mt5_terminal\config"
+          $configDir = Join-Path $env:GITHUB_WORKSPACE "mt5_terminal\config"
+          if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Force -Path $configDir }
           $iniContent = @"
 [Common]
 Login=${{ secrets.MT5_LOGIN }}
@@ -46,7 +48,8 @@ ProxyEnable=0
 CertConfirm=1
 NewsEnable=0
 "@
-          Set-Content -Path "$configDir\common.ini" -Value $iniContent
+          Set-Content -Path (Join-Path $configDir "common.ini") -Value $iniContent
+          Write-Host "Forced account configuration created in $configDir"
 
       - name: Force-Kill Stuck Processes
         shell: cmd

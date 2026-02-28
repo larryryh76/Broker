@@ -22,6 +22,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install MetaTrader 5
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "mt5setup.exe"
+          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/silent" -Wait
+
       - name: Run Trading Bot
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}

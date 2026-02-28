@@ -12,9 +12,12 @@ class MT5Client:
         self.server = MT5_SERVER
 
     def connect(self):
-        if not mt5.initialize(login=self.login, password=self.password, server=self.server):
+        terminal_path = "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe"
+        if not mt5.initialize(path=terminal_path, login=self.login, password=self.password, server=self.server):
             logger.error(f"MT5 initialize failed, error code: {mt5.last_error()}")
-            return False
+            # Fallback to default path if explicit path fails
+            if not mt5.initialize(login=self.login, password=self.password, server=self.server):
+                return False
         return True
 
     def close(self):

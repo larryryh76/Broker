@@ -9,6 +9,11 @@ jobs:
   trade:
     runs-on: windows-latest
     steps:
+      - name: Force-Kill Ghost Processes
+        shell: cmd
+        continue-on-error: true
+        run: taskkill /F /IM terminal64.exe /T /FI "STATUS eq RUNNING" 2>nul & taskkill /F /IM setup.exe /T /FI "STATUS eq RUNNING" 2>nul & exit 0
+
       - name: Checkout Code
         uses: actions/checkout@v3
 
@@ -51,16 +56,11 @@ jobs:
           $content | Out-File -FilePath (Join-Path $configDir "common.ini") -Encoding ascii
           Write-Host "Exness server and account data injected."
 
-      - name: Force-Kill Stuck Processes
-        shell: cmd
-        continue-on-error: true
-        run: taskkill /F /IM terminal64.exe /T /FI "STATUS eq RUNNING" 2>nul & taskkill /F /IM setup.exe /T /FI "STATUS eq RUNNING" 2>nul & exit 0
-
       - name: Setup Virtual Monitor
-        shell: cmd
+        shell: powershell
         run: |
           pip install PyVirtualDisplay
-          powershell -Command "Set-DisplayResolution -Width 1920 -Height 1080 -Force" || echo Virtual Monitor skip.
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
 
       - name: Run Trading Bot
         shell: cmd

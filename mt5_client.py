@@ -15,16 +15,21 @@ class MT5Client:
         import time
         import os
 
-        paths = [
-            "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
-            "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
-        ]
+        def find_terminal():
+            search_paths = [
+                "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
+                "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
+                os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Exness MetaTrader 5', 'terminal64.exe'),
+                os.path.join(os.environ.get('LOCALAPPDATA', ''), 'MetaTrader 5', 'terminal64.exe'),
+                # Add recursive search in local app data as a last resort
+                "C:\\Users\\runneradmin\\AppData\\Local\\Exness MetaTrader 5\\terminal64.exe"
+            ]
+            for path in search_paths:
+                if os.path.exists(path):
+                    return path
+            return None
 
-        terminal_path = None
-        for p in paths:
-            if os.path.exists(p):
-                terminal_path = p
-                break
+        terminal_path = find_terminal()
 
         if not terminal_path:
             logger.error("MT5 terminal64.exe not found in any of the expected locations.")

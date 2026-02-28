@@ -1,11 +1,10 @@
-import asyncio
 import time
 import random
 from config import logger, DAILY_DRAWDOWN_LIMIT
 
 class Executor:
-    def __init__(self, exness_client, db_client, strategy):
-        self.exness = exness_client
+    def __init__(self, mt5_client, db_client, strategy):
+        self.mt5 = mt5_client
         self.db = db_client
         self.strategy = strategy
 
@@ -29,7 +28,7 @@ class Executor:
                 return True
         return False
 
-    async def run_cycle(self, instruments):
+    def run_cycle(self, instruments):
         logger.info("Starting 5-minute execution cycle...")
 
         # 0. Recursive Learning Adjustment
@@ -38,7 +37,7 @@ class Executor:
             self.strategy.adjust_parameters(latest_state)
 
         # 1. Initialization
-        account = await self.exness.get_account_summary()
+        account = self.mt5.get_account_summary()
         if not account:
             return
 
@@ -50,7 +49,7 @@ class Executor:
             return
 
         # 1.5 Check for open positions to avoid duplicates
-        open_positions = await self.exness.get_open_trades()
+        open_positions = self.mt5.get_open_trades()
         open_instruments = [p["symbol"] for p in open_positions]
 
         # 2. Market Data and Signal Generation
@@ -60,7 +59,7 @@ class Executor:
                 logger.info(f"Already have an open position for {instrument}. Skipping.")
                 continue
 
-            candles = await self.exness.get_candles(instrument)
+            candles = self.mt5.get_candles(instrument)
             if not candles:
                 continue
 
@@ -77,19 +76,15 @@ class Executor:
 
         # 3. Execution (to be expanded with stealth delay and risk assessment)
         for signal in signals:
-            await self.execute_signal(signal, balance)
+            self.execute_signal(signal, balance)
 
-    async def execute_signal(self, signal, balance):
+    def execute_signal(self, signal, balance):
         instrument = signal["instrument"]
         side = signal["side"]
         price = signal["price"]
         confidence = signal["confidence"]
 
         # Check if balance is extremely low for the instrument
-        # BTC_USD usually requires much more margin than $5 even for 1 unit
-        # OANDA allows fractional units for some instruments but not all.
-        # For XAU_USD, 1 unit is 1 ounce. Current price ~$2000+.
-        # Even with 1:100 leverage, $5 isn't enough for 1 unit of gold ($20 margin).
         if balance < 10 and ("BTC" in instrument or "XAU" in instrument):
             logger.warning(f"Balance too low to trade {instrument}. Skipping.")
             return
@@ -100,25 +95,22 @@ class Executor:
         # 5. Position Sizing
         units = self.strategy.calculate_position_size(balance, price, stop_loss, confidence)
 
-        # OANDA units: positive for BUY, negative for SELL
-        oanda_units = units if side == "BUY" else -units
+        # Side: positive for BUY, negative for SELL
+        order_volume = units if side == "BUY" else -units
 
         # 6. Stealth Execution: Randomized delay
         delay = random.randint(30, 290)
         logger.info(f"Stealth execution for {instrument}: Waiting {delay} seconds before entry...")
-        await asyncio.sleep(delay)
+        time.sleep(delay)
 
         # Re-fetch current price just before execution for better accuracy
-        current_price = await self.exness.get_current_price(instrument)
+        current_price = self.mt5.get_current_price(instrument)
         if current_price:
-            # Recalculate levels based on current price if it moved significantly?
-            # Prompt says "Submit market orders at the randomized execution time"
-            # We'll use the original SL/TP distances but apply to current price
             price = current_price
             stop_loss, take_profit = self.strategy.calculate_levels(side, price)
 
         logger.info(f"Executing {side} order for {instrument} with {units} lots...")
-        order_result = await self.exness.place_market_order(instrument, oanda_units, stop_loss, take_profit)
+        order_result = self.mt5.place_market_order(instrument, order_volume, stop_loss, take_profit)
 
         if order_result:
             logger.info(f"Order executed successfully: {order_result.get('orderFillTransaction', {}).get('id')}")

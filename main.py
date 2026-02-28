@@ -1,29 +1,28 @@
 import sys
-import asyncio
 from config import validate_config, INSTRUMENTS, logger
-from exness_client import ExnessClient
+from mt5_client import MT5Client
 from db_client import DBClient
 from strategy import Strategy
 from executor import Executor
 
-async def main():
+def main():
     if not validate_config():
         logger.error("Configuration validation failed. Exiting.")
         sys.exit(1)
 
     logger.info("Initializing The Money Machine...")
 
-    exness = ExnessClient()
+    mt5 = MT5Client()
     try:
         db = DBClient()
         strategy = Strategy()
-        executor = Executor(exness, db, strategy)
+        executor = Executor(mt5, db, strategy)
 
         # Run one cycle
-        await executor.run_cycle(INSTRUMENTS)
+        executor.run_cycle(INSTRUMENTS)
 
         # After cycle, update learning state
-        await update_learning_state(exness, db)
+        update_learning_state(mt5, db)
 
         logger.info("Execution cycle complete.")
 
@@ -31,15 +30,15 @@ async def main():
         logger.error(f"An unexpected error occurred: {e}", exc_info=True)
         sys.exit(1)
     finally:
-        await exness.close()
+        mt5.close()
 
-async def reconcile_trades(exness, db):
+def reconcile_trades(mt5, db):
     logger.info("Reconciling trades...")
     open_logged_trades = db.get_open_logged_trades()
     if not open_logged_trades:
         return
 
-    closed_oanda_trades = await exness.get_closed_trades()
+    closed_oanda_trades = mt5.get_closed_trades()
     closed_dict = {str(t["id"]): t for t in closed_oanda_trades}
 
     for trade in open_logged_trades:
@@ -57,11 +56,11 @@ async def reconcile_trades(exness, db):
             })
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
-async def update_learning_state(exness, db):
+def update_learning_state(mt5, db):
     logger.info("Updating learning state...")
-    await reconcile_trades(exness, db)
+    reconcile_trades(mt5, db)
 
-    account = await exness.get_account_summary()
+    account = mt5.get_account_summary()
     if not account:
         logger.warning("Could not fetch account summary for learning state update.")
         return
@@ -119,4 +118,4 @@ async def update_learning_state(exness, db):
     logger.info(f"Learning state updated. Daily P&L: ${daily_pnl:.2f}, Win Rate: {win_rate:.2f}%")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

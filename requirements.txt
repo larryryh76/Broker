@@ -4,4 +4,4 @@ pymongo
 requests
 python-dotenv
 pytest
-metaapi-cloud-sdk
+MetaTrader5

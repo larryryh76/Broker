@@ -23,9 +23,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup Virtual Display & Config
+      - name: Download and Deploy Portable MT5
         shell: powershell
         run: |
+          # Download the installer
+          curl.exe -L -o setup.exe "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+          # Extract it to the terminal folder
+          Start-Process -FilePath ".\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:D:\a\Broker\Broker\mt5_terminal" -Wait
+          # Check if it worked
+          if (Test-Path "D:\a\Broker\Broker\mt5_terminal\terminal64.exe") { echo "SUCCESS: Terminal found!" } else { echo "ERROR: Terminal still missing" }
+
           # Ensure config dir exists in local repo folder
           New-Item -ItemType Directory -Force -Path "mt5_terminal\config"
           New-Item -ItemType File -Force -Path "mt5_terminal\config\common.ini" -Value "[Common]`nLogin=$($env:MT5_LOGIN)`nServer=$($env:MT5_SERVER)"

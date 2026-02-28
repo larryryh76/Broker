@@ -39,16 +39,16 @@ jobs:
         run: |
           $configDir = Join-Path $env:GITHUB_WORKSPACE "mt5_terminal\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Force -Path $configDir }
-          $iniContent = @"
-[Common]
-Login=${{ secrets.MT5_LOGIN }}
-Password=${{ secrets.MT5_PASSWORD }}
-Server=${{ secrets.MT5_SERVER }}
-ProxyEnable=0
-CertConfirm=1
-NewsEnable=0
-"@
-          Set-Content -Path (Join-Path $configDir "common.ini") -Value $iniContent
+          $content = @(
+            "[Common]",
+            "Login=${{ secrets.MT5_LOGIN }}",
+            "Password=${{ secrets.MT5_PASSWORD }}",
+            "Server=${{ secrets.MT5_SERVER }}",
+            "ProxyEnable=0",
+            "CertConfirm=1",
+            "NewsEnable=0"
+          )
+          $content | Out-File -FilePath (Join-Path $configDir "common.ini") -Encoding ascii
           Write-Host "Forced account configuration created in $configDir"
 
       - name: Force-Kill Stuck Processes

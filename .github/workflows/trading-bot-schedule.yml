@@ -63,4 +63,4 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: python main.py
+        run: start /B "" "D:\a\Broker\Broker\mt5_terminal\terminal64.exe" /portable & timeout /t 30 & python main.py

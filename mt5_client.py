@@ -14,58 +14,43 @@ class MT5Client:
     def connect(self):
         import time
         import os
+        import subprocess
 
         def find_terminal():
-            # 1. Check GITHUB_WORKSPACE if running in CI
             workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
-            local_repo_path = os.path.join(workspace, "mt5_terminal", "terminal64.exe")
-
             search_paths = [
-                local_repo_path,
-                os.path.join(os.getcwd(), "mt5_terminal", "terminal64.exe"),
+                os.path.join(workspace, "mt5_terminal", "terminal64.exe"),
+                "D:\\a\\Broker\\Broker\\mt5_terminal\\terminal64.exe",
                 "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
-                "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
-                "D:\\a\\Broker\\Broker\\mt5_terminal\\terminal64.exe"
+                "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
             ]
             for path in search_paths:
                 if os.path.exists(path):
-                    logger.info(f"Found MT5 terminal at: {path}")
                     return path
-
-            # Diagnostic: List contents of mt5_terminal if it exists
-            mt5_dir = os.path.join(workspace, "mt5_terminal")
-            if os.path.exists(mt5_dir):
-                logger.error(f"mt5_terminal directory exists but terminal64.exe not found. Contents: {os.listdir(mt5_dir)}")
-            else:
-                logger.error(f"mt5_terminal directory does not exist at {mt5_dir}")
-
             return None
 
         terminal_path = find_terminal()
 
-        if not terminal_path:
-            logger.error("MT5 terminal64.exe not found in any of the expected locations.")
-            return False
+        # 1. Manual Start via subprocess
+        try:
+            if terminal_path:
+                logger.info(f"Launching terminal manually: {terminal_path}")
+                subprocess.Popen([terminal_path, "/portable"])
+                time.sleep(20)
 
-        # 1. Initialize terminal with retries
-        max_retries = 3
-        for i in range(max_retries):
-            logger.info(f"MT5 initialization attempt {i+1}/{max_retries}...")
-            if mt5.initialize(path=terminal_path, portable=True, timeout=120000):
-                # 2. Wait for terminal to stabilize
-                time.sleep(10)
-
+            # 2. Initialize (attaches to running process)
+            if mt5.initialize():
+                time.sleep(5)
                 # 3. Perform login
                 if mt5.login(login=self.login, password=self.password, server=self.server):
                     logger.info("MT5 logged in successfully.")
                     return True
                 else:
-                    logger.error(f"MT5 login failed, error code: {mt5.last_error()}")
+                    logger.error(f"MT5 login failed: {mt5.last_error()}")
             else:
-                logger.error(f"MT5 terminal initialization failed, error code: {mt5.last_error()}")
-
-            if i < max_retries - 1:
-                time.sleep(10)
+                logger.error(f"MT5 initialize failed: {mt5.last_error()}")
+        except Exception as e:
+            logger.error(f"Manual start failed: {e}")
 
         return False
 

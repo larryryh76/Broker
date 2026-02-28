@@ -34,10 +34,17 @@ THE MONEY MACHINE is a production-ready, serverless trading bot designed to exec
 ## Setup Instructions
 
 ### Prerequisites
-1. **Exness Account**: A verified MT4 or MT5 account.
+1. **Exness Account**: A verified MT4 or MT5 account (e.g., Login: `298682494`, Server: `Exness-MT5Trial9`).
 2. **MetaApi Account**: Sign up at [MetaApi.cloud](https://metaapi.cloud/).
-3. **Connect Account**: Add your Exness MT4/MT5 account to MetaApi.
+3. **Connect Account**:
+   - Go to MetaApi Dashboard > "Add Account".
+   - Select **MetaTrader 5**.
+   - Use your Exness Login, Password, and Server.
+   - Once connected, MetaApi will provide a **unique Account ID**.
 4. **MongoDB Atlas**: A cluster with a connection string.
+
+### ⚠️ SECURITY WARNING
+**Never hardcode your Exness password or MetaApi tokens in the source code.** Always use GitHub Secrets.
 
 ### GitHub Secrets Configuration
 Store the following in your GitHub repository secrets:

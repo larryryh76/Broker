@@ -26,8 +26,8 @@ jobs:
         timeout-minutes: 5
         shell: powershell
         run: |
-          curl.exe -L -o mt5setup.exe "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe"
-          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto", "/quit" -Wait
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "mt5setup.exe"
+          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/silent" -Wait
 
       - name: Run Trading Bot
         shell: cmd

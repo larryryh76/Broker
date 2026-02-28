@@ -33,15 +33,20 @@ jobs:
           # Check if it worked
           if (Test-Path "D:\a\Broker\Broker\mt5_terminal\terminal64.exe") { echo "SUCCESS: Terminal found!" } else { echo "ERROR: Terminal still missing" }
 
-      - name: Pre-Configure Exness Servers
+      - name: Force Account Configuration
         shell: powershell
         run: |
           $configDir = "D:\a\Broker\Broker\mt5_terminal\config"
-          if (!(Test-Path $configDir)) { mkdir $configDir }
-          # Create a basic common.ini that allows auto-trading and bypasses popups
-          $iniContent = "[Common]`r`nLogin=$($env:MT5_LOGIN)`r`nServer=$($env:MT5_SERVER)`r`nProxyEnable=0`r`nCertConfirm=1`r`nNewsEnable=0`r`nSoundEnable=0`r`n"
+          $iniContent = @"
+[Common]
+Login=${{ secrets.MT5_LOGIN }}
+Password=${{ secrets.MT5_PASSWORD }}
+Server=${{ secrets.MT5_SERVER }}
+ProxyEnable=0
+CertConfirm=1
+NewsEnable=0
+"@
           Set-Content -Path "$configDir\common.ini" -Value $iniContent
-          Write-Host "Common.ini created to bypass setup screens."
 
       - name: Force-Kill Stuck Processes
         shell: cmd

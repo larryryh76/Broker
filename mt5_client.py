@@ -16,13 +16,13 @@ class MT5Client:
         import os
 
         def find_terminal():
+            # Direct path to local repository folder
+            local_repo_path = os.path.join(os.getcwd(), "mt5_terminal", "terminal64.exe")
+
             search_paths = [
+                local_repo_path,
                 "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
-                "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
-                os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Exness MetaTrader 5', 'terminal64.exe'),
-                os.path.join(os.environ.get('LOCALAPPDATA', ''), 'MetaTrader 5', 'terminal64.exe'),
-                # Add recursive search in local app data as a last resort
-                "C:\\Users\\runneradmin\\AppData\\Local\\Exness MetaTrader 5\\terminal64.exe"
+                "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
             ]
             for path in search_paths:
                 if os.path.exists(path):

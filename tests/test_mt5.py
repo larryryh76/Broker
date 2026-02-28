@@ -7,6 +7,7 @@ def mt5_client():
     with patch('mt5_client.MT5_LOGIN', 298682494), \
          patch('mt5_client.MT5_PASSWORD', 'Iamolanrewaju1$'), \
          patch('mt5_client.MT5_SERVER', 'Exness-MT5Trial9'), \
+         patch('os.path.exists', return_value=True), \
          patch('mt5_client.mt5') as mock_mt5:
         client = MT5Client()
         yield client, mock_mt5

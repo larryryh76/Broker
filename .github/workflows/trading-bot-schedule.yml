@@ -23,24 +23,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install MetaTrader 5
-        timeout-minutes: 10
+      - name: Setup Virtual Display & Config
         shell: powershell
         run: |
-          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "mt5setup.exe"
-          $process = Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto", "/quit" -PassThru -Wait
-          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-
-          # Search for terminal64.exe and print path
-          $mt5path = Get-ChildItem -Path "C:\","C:\Users\runneradmin\AppData\Local" -Filter "terminal64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
-          Write-Host "Found MT5 at: $mt5path"
-
-          # Ensure config dir exists where terminal is
-          if ($mt5path) {
-              $configDir = Join-Path (Split-Path $mt5path) "config"
-              New-Item -ItemType Directory -Force -Path $configDir
-              New-Item -ItemType File -Force -Path (Join-Path $configDir "common.ini") -Value "[Common]`nLogin=$($env:MT5_LOGIN)`nServer=$($env:MT5_SERVER)"
-          }
+          # Ensure config dir exists in local repo folder
+          New-Item -ItemType Directory -Force -Path "mt5_terminal\config"
+          New-Item -ItemType File -Force -Path "mt5_terminal\config\common.ini" -Value "[Common]`nLogin=$($env:MT5_LOGIN)`nServer=$($env:MT5_SERVER)"
 
       - name: Run Trading Bot
         shell: cmd

@@ -43,6 +43,12 @@ Store the following in your GitHub repository secrets:
 - `MT5_SERVER`: `Exness-MT5Trial9`
 - `MONGODB_URI`: Your MongoDB Atlas connection string.
 
+### Direct File Setup (GitHub Actions)
+To avoid installation issues on GitHub runners:
+1. Copy the contents of `C:\Program Files\Exness MetaTrader 5` from your computer.
+2. Upload them to a folder named `mt5_terminal` in the root of this repository.
+3. Ensure `terminal64.exe` is inside that folder.
+
 ### Local Development (Windows Only)
 1. Install dependencies: `pip install -r requirements.txt`.
 2. Run MT5 Terminal and log in to your account.
@@ -50,7 +56,7 @@ Store the following in your GitHub repository secrets:
 
 ## Workflow
 1. GitHub Actions (Windows) triggers every 5 minutes.
-2. Bot initializes MT5 connection using your credentials.
+2. Bot initializes MT5 using the executable in `./mt5_terminal/terminal64.exe`.
 3. Bot checks for >5% Daily Drawdown (Circuit Breaker).
 4. Bot analyzes markets for RSI/SMA alignment.
 5. If signal found and no duplicate position exists:

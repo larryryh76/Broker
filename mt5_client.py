@@ -31,17 +31,32 @@ class MT5Client:
 
         terminal_path = find_terminal()
 
-        # 1. Manual Start via subprocess
+        # 1. Manual Start via subprocess with login parameters
         try:
             if terminal_path:
-                logger.info(f"Launching terminal manually: {terminal_path}")
-                subprocess.Popen([terminal_path, "/portable"])
-                time.sleep(20)
+                logger.info(f"Launching terminal manually with credentials: {terminal_path}")
+                cmd = [
+                    terminal_path,
+                    "/portable",
+                    f"/login:{self.login}",
+                    f"/password:{self.password}",
+                    f"/server:{self.server}"
+                ]
+                subprocess.Popen(cmd)
+                time.sleep(30)
 
             # 2. Initialize (attaches to running process)
             if mt5.initialize():
                 time.sleep(5)
-                # 3. Perform login
+                logger.info(f"Terminal Info: {mt5.terminal_info()}")
+
+                # Check if already logged in from command line
+                account_info = mt5.account_info()
+                if account_info and account_info.login == self.login:
+                    logger.info("MT5 already logged in via command line.")
+                    return True
+
+                # 3. Fallback manual login
                 if mt5.login(login=self.login, password=self.password, server=self.server):
                     logger.info("MT5 logged in successfully.")
                     return True

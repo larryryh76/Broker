@@ -8,6 +8,7 @@ def mt5_client():
          patch('mt5_client.MT5_PASSWORD', 'Iamolanrewaju1$'), \
          patch('mt5_client.MT5_SERVER', 'Exness-MT5Trial9'), \
          patch('os.path.exists', return_value=True), \
+         patch('subprocess.Popen'), \
          patch('mt5_client.mt5') as mock_mt5:
         client = MT5Client()
         yield client, mock_mt5

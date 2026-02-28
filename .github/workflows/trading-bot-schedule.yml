@@ -34,7 +34,7 @@ jobs:
           # Check if it worked
           if (Test-Path (Join-Path $mt5Dir "terminal64.exe")) { echo "SUCCESS: Terminal found!" } else { echo "ERROR: Terminal still missing" }
 
-      - name: Force Account Configuration
+      - name: Inject Exness Server Data
         shell: powershell
         run: |
           $configDir = Join-Path $env:GITHUB_WORKSPACE "mt5_terminal\config"
@@ -49,7 +49,7 @@ jobs:
             "NewsEnable=0"
           )
           $content | Out-File -FilePath (Join-Path $configDir "common.ini") -Encoding ascii
-          Write-Host "Forced account configuration created in $configDir"
+          Write-Host "Exness server and account data injected."
 
       - name: Force-Kill Stuck Processes
         shell: cmd

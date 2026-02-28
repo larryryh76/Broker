@@ -33,9 +33,19 @@ jobs:
           # Check if it worked
           if (Test-Path "D:\a\Broker\Broker\mt5_terminal\terminal64.exe") { echo "SUCCESS: Terminal found!" } else { echo "ERROR: Terminal still missing" }
 
-          # Ensure config dir exists in local repo folder
-          New-Item -ItemType Directory -Force -Path "mt5_terminal\config"
-          New-Item -ItemType File -Force -Path "mt5_terminal\config\common.ini" -Value "[Common]`nLogin=$($env:MT5_LOGIN)`nServer=$($env:MT5_SERVER)"
+      - name: Pre-Configure Exness Servers
+        shell: powershell
+        run: |
+          $configDir = "D:\a\Broker\Broker\mt5_terminal\config"
+          if (!(Test-Path $configDir)) { mkdir $configDir }
+          # Create a basic common.ini that allows auto-trading and bypasses popups
+          $iniContent = "[Common]`r`nLogin=$($env:MT5_LOGIN)`r`nServer=$($env:MT5_SERVER)`r`nProxyEnable=0`r`nCertConfirm=1`r`nNewsEnable=0`r`nSoundEnable=0`r`n"
+          Set-Content -Path "$configDir\common.ini" -Value $iniContent
+          Write-Host "Common.ini created to bypass setup screens."
+
+      - name: Force-Kill Stuck Processes
+        shell: cmd
+        run: taskkill /F /IM terminal64.exe /T 2>nul || echo No old processes found.
 
       - name: Run Trading Bot
         shell: cmd

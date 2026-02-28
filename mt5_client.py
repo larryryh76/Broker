@@ -51,7 +51,7 @@ class MT5Client:
         max_retries = 3
         for i in range(max_retries):
             logger.info(f"MT5 initialization attempt {i+1}/{max_retries}...")
-            if mt5.initialize(path=terminal_path, portable=True, timeout=90000):
+            if mt5.initialize(path=terminal_path, portable=True, timeout=120000):
                 # 2. Wait for terminal to stabilize
                 time.sleep(10)
 

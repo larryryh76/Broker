@@ -16,17 +16,29 @@ class MT5Client:
         import os
 
         def find_terminal():
-            # Direct path to local repository folder
-            local_repo_path = os.path.join(os.getcwd(), "mt5_terminal", "terminal64.exe")
+            # 1. Check GITHUB_WORKSPACE if running in CI
+            workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
+            local_repo_path = os.path.join(workspace, "mt5_terminal", "terminal64.exe")
 
             search_paths = [
                 local_repo_path,
+                os.path.join(os.getcwd(), "mt5_terminal", "terminal64.exe"),
                 "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
-                "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+                "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
+                "D:\\a\\Broker\\Broker\\mt5_terminal\\terminal64.exe"
             ]
             for path in search_paths:
                 if os.path.exists(path):
+                    logger.info(f"Found MT5 terminal at: {path}")
                     return path
+
+            # Diagnostic: List contents of mt5_terminal if it exists
+            mt5_dir = os.path.join(workspace, "mt5_terminal")
+            if os.path.exists(mt5_dir):
+                logger.error(f"mt5_terminal directory exists but terminal64.exe not found. Contents: {os.listdir(mt5_dir)}")
+            else:
+                logger.error(f"mt5_terminal directory does not exist at {mt5_dir}")
+
             return None
 
         terminal_path = find_terminal()

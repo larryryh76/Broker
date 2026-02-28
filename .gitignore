@@ -1,7 +1,5 @@
 __pycache__/
 *.pyc
 .env
-# Allow MT5 terminal executable but ignore user data
-mt5_terminal/*
-!mt5_terminal/terminal64.exe
-!mt5_terminal/config/
+# Allow MT5 terminal files
+!mt5_terminal/

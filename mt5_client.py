@@ -43,10 +43,11 @@ class MT5Client:
                     f"/server:{self.server}"
                 ]
                 subprocess.Popen(cmd)
-                time.sleep(30)
+                # Wait longer for GUI process to initialize background pipe
+                time.sleep(90)
 
             # 2. Initialize (attaches to running process)
-            if mt5.initialize():
+            if mt5.initialize(timeout=120000):
                 time.sleep(5)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
 

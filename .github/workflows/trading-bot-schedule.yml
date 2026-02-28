@@ -54,7 +54,13 @@ jobs:
       - name: Force-Kill Stuck Processes
         shell: cmd
         continue-on-error: true
-        run: taskkill /F /IM terminal64.exe /T /FI "STATUS eq RUNNING" 2>nul || exit 0
+        run: taskkill /F /IM terminal64.exe /T /FI "STATUS eq RUNNING" 2>nul & taskkill /F /IM setup.exe /T /FI "STATUS eq RUNNING" 2>nul & exit 0
+
+      - name: Setup Virtual Monitor
+        shell: cmd
+        run: |
+          pip install PyVirtualDisplay
+          powershell -Command "Set-DisplayResolution -Width 1920 -Height 1080 -Force" || echo Virtual Monitor skip.
 
       - name: Run Trading Bot
         shell: cmd
@@ -63,4 +69,4 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: start /B "" "D:\a\Broker\Broker\mt5_terminal\terminal64.exe" /portable & timeout /t 30 & python main.py
+        run: python main.py

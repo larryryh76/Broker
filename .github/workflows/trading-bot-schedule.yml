@@ -28,21 +28,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Deploy Portable MT5 Files
+      - name: Download Portable MT5 Files
         shell: powershell
         run: |
           $mt5Dir = Join-Path $env:GITHUB_WORKSPACE "mt5_terminal"
-          # Download the portable ZIP if possible, or use a workaround
-          # For now, we will assume the mt5_terminal folder is managed in the repo
-          # or downloaded from a reliable source.
-          # Since the user specifically said "Stop using the installer",
-          # we will rely on the pre-configured folder in the repo.
-          if (!(Test-Path (Join-Path $mt5Dir "terminal64.exe"))) {
-            Write-Host "ERROR: terminal64.exe not found in mt5_terminal folder."
-            # Fallback download for resilience
-            curl.exe -L -o mt5.zip "https://github.com/hpdeandrade/pymt5linux/releases/download/v1.0.0/mt5_terminal.zip"
-            Expand-Archive -Path mt5.zip -DestinationPath $env:GITHUB_WORKSPACE -Force
-          }
+          if (!(Test-Path $mt5Dir)) { New-Item -ItemType Directory -Force -Path $mt5Dir }
+          # Download pre-extracted terminal files directly
+          curl.exe -L -o "$mt5Dir\terminal64.exe" "https://raw.githubusercontent.com/hpdeandrade/mt5docker/master/mt5/terminal64.exe"
+          curl.exe -L -o "$mt5Dir\metaeditor64.exe" "https://raw.githubusercontent.com/hpdeandrade/mt5docker/master/mt5/metaeditor64.exe"
+          if (Test-Path (Join-Path $mt5Dir "terminal64.exe")) { echo "SUCCESS: Portable terminal downloaded!" }
 
       - name: Inject Exness Server Data
         shell: powershell
@@ -60,6 +54,9 @@ jobs:
           )
           $content | Out-File -FilePath (Join-Path $configDir "common.ini") -Encoding ascii
           Write-Host "Exness server and account data injected."
+
+      - name: Setup Headless Display
+        uses: pyvista/setup-headless-display-action@v3
 
       - name: Setup Virtual Monitor
         shell: powershell

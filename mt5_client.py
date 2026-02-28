@@ -13,22 +13,44 @@ class MT5Client:
 
     def connect(self):
         import time
-        terminal_path = "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe"
+        import os
 
-        # 1. Initialize terminal first in portable mode with timeout
-        if not mt5.initialize(path=terminal_path, portable=True, timeout=60000):
-            logger.error(f"MT5 terminal initialization failed, error code: {mt5.last_error()}")
+        paths = [
+            "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+        ]
+
+        terminal_path = None
+        for p in paths:
+            if os.path.exists(p):
+                terminal_path = p
+                break
+
+        if not terminal_path:
+            logger.error("MT5 terminal64.exe not found in any of the expected locations.")
             return False
 
-        # 2. Wait for terminal to stabilize
-        time.sleep(10)
+        # 1. Initialize terminal with retries
+        max_retries = 3
+        for i in range(max_retries):
+            logger.info(f"MT5 initialization attempt {i+1}/{max_retries}...")
+            if mt5.initialize(path=terminal_path, portable=True, timeout=90000):
+                # 2. Wait for terminal to stabilize
+                time.sleep(10)
 
-        # 3. Perform login separately
-        if not mt5.login(login=self.login, password=self.password, server=self.server):
-            logger.error(f"MT5 login failed, error code: {mt5.last_error()}")
-            return False
+                # 3. Perform login
+                if mt5.login(login=self.login, password=self.password, server=self.server):
+                    logger.info("MT5 logged in successfully.")
+                    return True
+                else:
+                    logger.error(f"MT5 login failed, error code: {mt5.last_error()}")
+            else:
+                logger.error(f"MT5 terminal initialization failed, error code: {mt5.last_error()}")
 
-        return True
+            if i < max_retries - 1:
+                time.sleep(10)
+
+        return False
 
     def close(self):
         mt5.shutdown()

@@ -12,12 +12,22 @@ class MT5Client:
         self.server = MT5_SERVER
 
     def connect(self):
+        import time
         terminal_path = "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe"
-        if not mt5.initialize(path=terminal_path, login=self.login, password=self.password, server=self.server):
-            logger.error(f"MT5 initialize failed, error code: {mt5.last_error()}")
-            # Fallback to default path if explicit path fails
-            if not mt5.initialize(login=self.login, password=self.password, server=self.server):
-                return False
+
+        # 1. Initialize terminal first in portable mode with timeout
+        if not mt5.initialize(path=terminal_path, portable=True, timeout=60000):
+            logger.error(f"MT5 terminal initialization failed, error code: {mt5.last_error()}")
+            return False
+
+        # 2. Wait for terminal to stabilize
+        time.sleep(5)
+
+        # 3. Perform login separately
+        if not mt5.login(login=self.login, password=self.password, server=self.server):
+            logger.error(f"MT5 login failed, error code: {mt5.last_error()}")
+            return False
+
         return True
 
     def close(self):

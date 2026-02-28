@@ -21,7 +21,7 @@ class MT5Client:
             return False
 
         # 2. Wait for terminal to stabilize
-        time.sleep(5)
+        time.sleep(10)
 
         # 3. Perform login separately
         if not mt5.login(login=self.login, password=self.password, server=self.server):

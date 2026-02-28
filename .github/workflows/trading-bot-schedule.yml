@@ -28,6 +28,7 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "mt5setup.exe"
           Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/silent" -Wait
+          mkdir "C:\Program Files\Exness MetaTrader 5\config"
 
       - name: Run Trading Bot
         shell: cmd
@@ -36,4 +37,4 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: python main.py
+        run: python main.py --platform-headless

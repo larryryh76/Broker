@@ -40,6 +40,9 @@ def validate_config():
         missing.append("MONGODB_URI")
 
     if missing:
-        logger.error(f"Missing environment variables: {', '.join(missing)}")
+        logger.error(f"CONFIGURATION ERROR: The following required environment variables are missing: {', '.join(missing)}")
+        logger.error("Please ensure these are set in your GitHub Secrets or .env file.")
         return False
+
+    logger.info("Configuration validated successfully.")
     return True

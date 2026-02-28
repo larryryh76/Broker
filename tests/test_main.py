@@ -12,6 +12,8 @@ from main import main, update_learning_state
 async def test_main_flow(mock_update, mock_executor_class, mock_strategy_class,
                          mock_db_class, mock_exness_class, mock_validate):
 
+    mock_exness = mock_exness_class.return_value
+    mock_exness.close = AsyncMock()
     mock_executor = mock_executor_class.return_value
     mock_executor.run_cycle = AsyncMock()
     await main()

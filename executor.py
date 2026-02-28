@@ -14,11 +14,13 @@ class Executor:
         if not latest_state:
             return False
 
-        from datetime import datetime, UTC
+        from datetime import datetime, timezone
         state_time = latest_state["timestamp"]
+        if state_time.tzinfo is None:
+            state_time = state_time.replace(tzinfo=timezone.utc)
 
         # Only apply circuit breaker if the state is from today
-        if state_time.date() == datetime.now(UTC).date():
+        if state_time.date() == datetime.now(timezone.utc).date():
             initial_daily_balance = latest_state.get("initial_daily_balance", balance)
             drawdown = (initial_daily_balance - balance) / initial_daily_balance
 

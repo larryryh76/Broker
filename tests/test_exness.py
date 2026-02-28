@@ -23,6 +23,12 @@ async def test_get_account_summary(exness_client):
     exness_client.connection.get_account_information.assert_called_once()
 
 @pytest.mark.asyncio
+async def test_close_connection(exness_client):
+    exness_client.connection = MagicMock()
+    await exness_client.close()
+    assert exness_client.connection is None
+
+@pytest.mark.asyncio
 async def test_get_candles(exness_client):
     exness_client.connection = AsyncMock()
     exness_client.connection.get_historical_candles.return_value = [

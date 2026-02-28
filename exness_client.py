@@ -24,6 +24,16 @@ class ExnessClient:
             logger.error(f"Error connecting to MetaApi: {e}")
             return False
 
+    async def close(self):
+        try:
+            if self.connection:
+                # MetaApi connection doesn't have a direct close(),
+                # but we can clear references
+                self.connection = None
+            logger.info("MetaApi connection closed.")
+        except Exception as e:
+            logger.error(f"Error closing MetaApi connection: {e}")
+
     async def get_account_summary(self):
         if not self.connection:
             await self.connect()
@@ -111,17 +121,21 @@ class ExnessClient:
         if not self.connection:
             await self.connect()
         try:
-            # MetaApi get_deals fetches historical executions
-            deals = await self.connection.get_history_orders_by_time(None, None, 0, count)
-            # Adapt to OANDA-like format for the reconciliation logic
+            # For MetaTrader, we should look at deals (actual executions)
+            # rather than orders to get realized PL.
+            from datetime import datetime, timedelta, timezone
+            start_date = datetime.now(timezone.utc) - timedelta(days=7)
+
+            history = await self.connection.get_history_orders_by_time(start_date, datetime.now(timezone.utc), 0, count)
+
             adapted_trades = []
-            for deal in deals:
-                if deal["state"] == "ORDER_STATE_FILLED":
+            for item in history.get('historyOrders', []):
+                if item.get('state') == 'ORDER_STATE_FILLED':
                     adapted_trades.append({
-                        "id": deal["id"],
-                        "realizedPL": deal.get("profit", 0),
-                        "averageClosePrice": deal.get("donePrice", 0),
-                        "closeTime": deal.get("doneTime")
+                        "id": item["id"],
+                        "realizedPL": item.get("profit", 0),
+                        "averageClosePrice": item.get("donePrice", 0),
+                        "closeTime": item.get("doneTime")
                     })
             return adapted_trades
         except Exception as e:

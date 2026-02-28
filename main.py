@@ -13,8 +13,8 @@ async def main():
 
     logger.info("Initializing The Money Machine...")
 
+    exness = ExnessClient()
     try:
-        exness = ExnessClient()
         db = DBClient()
         strategy = Strategy()
         executor = Executor(exness, db, strategy)
@@ -28,8 +28,10 @@ async def main():
         logger.info("Execution cycle complete.")
 
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
+        logger.error(f"An unexpected error occurred: {e}", exc_info=True)
         sys.exit(1)
+    finally:
+        await exness.close()
 
 async def reconcile_trades(exness, db):
     logger.info("Reconciling trades...")
@@ -61,12 +63,13 @@ async def update_learning_state(exness, db):
 
     account = await exness.get_account_summary()
     if not account:
+        logger.warning("Could not fetch account summary for learning state update.")
         return
 
     balance = float(account["balance"])
     # Fetch trades from today that are CLOSED
-    from datetime import datetime, UTC
-    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
     all_daily_trades = db.get_daily_trades()
     closed_daily_trades = [t for t in all_daily_trades if t.get("status") == "CLOSED"]
@@ -93,8 +96,11 @@ async def update_learning_state(exness, db):
     initial_daily_balance = balance
     if latest_state:
         state_time = latest_state["timestamp"]
+        if state_time.tzinfo is None:
+            state_time = state_time.replace(tzinfo=timezone.utc)
+
         # If latest state was today, keep its baseline
-        if state_time.date() == datetime.now(UTC).date():
+        if state_time.date() == datetime.now(timezone.utc).date():
             initial_daily_balance = latest_state.get("initial_daily_balance", balance)
         else:
             # New day, current balance is the new baseline

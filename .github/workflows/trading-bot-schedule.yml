@@ -23,11 +23,12 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install MetaTrader 5
-        timeout-minutes: 5
+        timeout-minutes: 10
         shell: powershell
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" -OutFile "mt5setup.exe"
-          Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/silent" -Wait
+          $process = Start-Process -FilePath ".\mt5setup.exe" -ArgumentList "/auto", "/quit" -PassThru -Wait
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           mkdir "C:\Program Files\Exness MetaTrader 5\config"
 
       - name: Run Trading Bot

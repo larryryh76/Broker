@@ -50,8 +50,20 @@ class MT5Client:
 
             # 2. Initialize (attaches to the running process started with config)
             if mt5.initialize(timeout=60000):
-                time.sleep(5)
+                # Allow terminal to sync history and market watch
+                time.sleep(15)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
+
+                # Force symbol selection into Market Watch
+                from config import INSTRUMENTS
+                for sym in INSTRUMENTS:
+                    if not mt5.symbol_select(sym, True):
+                        logger.warning(f"Failed to select {sym} in Market Watch.")
+                    else:
+                        logger.info(f"Symbol {sym} selected successfully.")
+
+                # Log symbol info for debugging suffixes
+                logger.info(f"XAUUSD Info: {mt5.symbol_info('XAUUSD')}")
 
                 # Check if already logged in from command line
                 account_info = mt5.account_info()

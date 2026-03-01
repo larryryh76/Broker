@@ -58,6 +58,7 @@ jobs:
             "Password=${{ secrets.MT5_PASSWORD }}",
             "Server=${{ secrets.MT5_SERVER }}",
             "AutoConfiguration=true",
+            "ExpertAdvisors=1",
             "ProxyEnable=0",
             "CertConfirm=1",
             "NewsEnable=0"

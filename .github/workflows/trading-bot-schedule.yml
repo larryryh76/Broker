@@ -47,22 +47,23 @@ jobs:
             throw "terminal64.exe not found after extraction!"
           }
 
-      - name: Inject Exness Server Data
+      - name: Create Startup Config
         shell: powershell
         run: |
-          $configDir = Join-Path $env:GITHUB_WORKSPACE "mt5_terminal\config"
+          $configDir = "D:\a\Broker\Broker\mt5_terminal\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Force -Path $configDir }
-          $content = @(
+          $config = @(
             "[Common]",
             "Login=${{ secrets.MT5_LOGIN }}",
             "Password=${{ secrets.MT5_PASSWORD }}",
             "Server=${{ secrets.MT5_SERVER }}",
+            "AutoConfiguration=true",
             "ProxyEnable=0",
             "CertConfirm=1",
             "NewsEnable=0"
           )
-          $content | Out-File -FilePath (Join-Path $configDir "common.ini") -Encoding ascii
-          Write-Host "Exness server and account data injected."
+          $config | Out-File -FilePath "$configDir\startup.ini" -Encoding ascii
+          Write-Host "Startup config created at $configDir\startup.ini"
 
       - name: Setup Headless Display
         uses: pyvista/setup-headless-display-action@v3

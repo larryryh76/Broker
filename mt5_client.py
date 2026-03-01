@@ -36,23 +36,20 @@ class MT5Client:
 
         terminal_path = find_terminal()
 
-        # 1. Manual Start via subprocess with login parameters
+        # 1. Manual Start via subprocess with config file
         try:
             if terminal_path:
-                logger.info(f"Launching terminal manually with credentials: {terminal_path}")
-                cmd = [
-                    terminal_path,
-                    "/portable",
-                    f"/login:{self.login}",
-                    f"/password:{self.password}",
-                    f"/server:{self.server}"
-                ]
-                subprocess.Popen(cmd)
-                # Wait longer for GUI process to initialize background pipe
-                time.sleep(90)
+                config_path = "D:\\a\\Broker\\Broker\\mt5_terminal\\config\\startup.ini"
+                logger.info(f"Launching terminal with config: {config_path}")
 
-            # 2. Initialize (attaches to running process)
-            if mt5.initialize(timeout=120000):
+                # Launch with the config file to bypass all GUI prompts
+                subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}"])
+
+                # Wait for background process to bridge the IPC pipe
+                time.sleep(60)
+
+            # 2. Initialize (attaches to the running process started with config)
+            if mt5.initialize(timeout=60000):
                 time.sleep(5)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
 

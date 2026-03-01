@@ -8,7 +8,9 @@ from main import main, update_learning_state
 @patch('main.Strategy')
 @patch('main.Executor')
 @patch('main.update_learning_state')
-def test_main_flow(mock_update, mock_executor_class, mock_strategy_class,
+@patch('main.update_day_and_get_target', return_value=50.0)
+@patch('time.time', side_effect=[0, 0, 300]) # Force loop to run once
+def test_main_flow(mock_time, mock_target, mock_update, mock_executor_class, mock_strategy_class,
                    mock_db_class, mock_mt5_class, mock_validate):
 
     mock_mt5 = mock_mt5_class.return_value

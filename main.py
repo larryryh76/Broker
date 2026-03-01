@@ -18,8 +18,25 @@ def main():
         strategy = Strategy()
         executor = Executor(mt5, db, strategy)
 
-        # Run one cycle
-        executor.run_cycle(INSTRUMENTS)
+        # Calculate Daily Target and Increment Day
+        target = update_day_and_get_target(db)
+        logger.info(f"Today's Profit Target: ${target:.2f}")
+
+        # Execution Loop (Fantasy Execution)
+        # Note: In GitHub Actions, we run for a limited time
+        import time
+        start_time = time.time()
+        while time.time() - start_time < 240: # Run for 4 minutes
+            # 1. Manage Open Positions (Zero-Risk & Trailing)
+            executor.manage_open_positions()
+
+            # 2. Run Strategy Cycle
+            executor.run_cycle(INSTRUMENTS, target=target)
+
+            # 3. Check for Rotation
+            # (Logic handled inside run_cycle based on spread)
+
+            time.sleep(5)
 
         # After cycle, update learning state
         update_learning_state(mt5, db)
@@ -55,6 +72,37 @@ def reconcile_trades(mt5, db):
                 "exit_time": oanda_trade.get("closeTime")
             })
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
+
+def update_day_and_get_target(db):
+    import os
+    day_file = "day_count.txt"
+    day = 1
+    if os.path.exists(day_file):
+        with open(day_file, "r") as f:
+            try:
+                day = int(f.read().strip())
+            except:
+                day = 1
+
+    # Get Previous Day Profit
+    latest_state = db.get_latest_learning_state()
+    prev_profit = 50.0 # Default Day 1
+    if latest_state:
+        prev_profit = latest_state.get("daily_pnl", 50.0)
+        if prev_profit <= 0: prev_profit = 50.0 # Don't scale down target to 0
+
+        # Increment Day if target was met
+        if prev_profit >= get_target_for_day(day):
+            day += 1
+            with open(day_file, "w") as f:
+                f.write(str(day))
+
+    return get_target_for_day(day, prev_profit)
+
+def get_target_for_day(day, prev_profit=50.0):
+    if day == 1:
+        return 50.0
+    return prev_profit * (day + 2)
 
 def update_learning_state(mt5, db):
     logger.info("Updating learning state...")

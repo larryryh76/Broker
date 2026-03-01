@@ -47,18 +47,18 @@ def test_calculate_levels_sell(strategy):
 
 def test_calculate_position_size_small_balance(strategy):
     balance = 50
-    entry = 100
-    sl = 98
-    confidence = 0.95
-    # Hyper-compounding logic: (50/5)*0.01 = 0.1
-    lots = strategy.calculate_position_size(balance, entry, sl, confidence)
+    # Hyper-compounding logic: (50/50)*0.1 = 0.1
+    lots = strategy.calculate_position_size(balance, target=50.0)
     assert lots == 0.1
 
 def test_generate_signal_buy(strategy):
-    data = [
-        {"high": 100, "low": 90, "close": 95},
-        {"high": 105, "low": 95, "close": 110} # close > prev high
-    ]
+    data = []
+    for i in range(60):
+        data.append({
+            "high": 100, "low": 90, "close": 20, # RSI low
+            "rsi": 20, "ma_fast": 100, "ma_slow": 90
+        })
+    data[-1]["close"] = 110 # Close > prev high
 
     df = pd.DataFrame(data)
     signal = strategy.generate_signal(df)

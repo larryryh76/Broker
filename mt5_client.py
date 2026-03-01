@@ -236,3 +236,31 @@ class MT5Client:
                 "ticket": p.ticket
             })
         return adapted_positions
+
+    def positions_get(self, ticket=None):
+        if not self.connect():
+            return None
+        if ticket:
+            return mt5.positions_get(ticket=ticket)
+        return mt5.positions_get()
+
+    def modify_position_sl(self, ticket, sl, tp):
+        if not self.connect():
+            return False
+
+        pos = mt5.positions_get(ticket=ticket)
+        if not pos:
+            return False
+
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "sl": float(sl),
+            "tp": float(tp)
+        }
+
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"Modify SL failed for {ticket}: {result.comment}")
+            return False
+        return True

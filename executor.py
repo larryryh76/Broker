@@ -28,7 +28,7 @@ class Executor:
                 return True
         return False
 
-    def run_cycle(self, instruments):
+    def run_cycle(self, instruments, target=50.0):
         logger.info("Starting 5-minute execution cycle...")
 
         # 0. Recursive Learning Adjustment
@@ -76,20 +76,67 @@ class Executor:
 
         # 3. Execution (to be expanded with stealth delay and risk assessment)
         for signal in signals:
-            self.execute_signal(signal, balance)
+            self.execute_signal(signal, balance, target=target)
 
-    def execute_signal(self, signal, balance):
+    def manage_open_positions(self):
+        """
+        Zero-Risk Trigger & Aggressive Trailing Stop
+        """
+        positions = self.mt5.get_open_trades()
+        for p in positions:
+            symbol = p["symbol"]
+            ticket = p["ticket"]
+
+            # Fetch current position details from MT5 directly for precise info
+            pos_info = self.mt5.positions_get(ticket=ticket)
+            if not pos_info:
+                continue
+
+            pos = pos_info[0]
+            symbol_info = self.mt5.symbol_info(symbol)
+            tick = self.mt5.symbol_info_tick(symbol)
+            if not symbol_info or not tick:
+                continue
+
+            price_open = pos.price_open
+            price_current = tick.bid if pos.type == 0 else tick.ask # BUY: Bid, SELL: Ask
+            sl_current = pos.sl
+            tp_current = pos.tp
+
+            # Points of profit
+            profit_points = abs(price_current - price_open) / symbol_info.point
+
+            # 1. Zero-Risk Trigger: Move SL to break-even after 50 points profit
+            if profit_points >= 50 and sl_current == 0:
+                logger.info(f"Zero-Risk Trigger: Moving SL to break-even for {symbol} ({ticket})")
+                self.mt5.modify_position_sl(ticket, price_open, tp_current)
+
+            # 2. Aggressive Trailing: 10-point trail once safe (sl != 0)
+            elif sl_current != 0:
+                new_sl = 0
+                if pos.type == 0: # BUY
+                    if price_current - sl_current > 10 * symbol_info.point:
+                        new_sl = price_current - 10 * symbol_info.point
+                else: # SELL
+                    if sl_current - price_current > 10 * symbol_info.point:
+                        new_sl = price_current + 10 * symbol_info.point
+
+                if new_sl != 0:
+                    logger.info(f"Aggressive Trailing: Moving SL to {new_sl} for {symbol} ({ticket})")
+                    self.mt5.modify_position_sl(ticket, new_sl, tp_current)
+
+    def execute_signal(self, signal, balance, target=50.0):
         instrument = signal["instrument"]
         side = signal["side"]
         price = signal["price"]
         confidence = signal["confidence"]
 
-        # Max Spread Check: 100 points
+        # Max Spread Check: 20 points
         symbol_info = self.mt5.symbol_info(instrument)
         tick = self.mt5.symbol_info_tick(instrument)
         if symbol_info and tick:
             spread_points = (tick.ask - tick.bid) / symbol_info.point
-            if spread_points > 100:
+            if spread_points > 20:
                 logger.warning(f"Spread too high for {instrument}: {spread_points} points. Skipping.")
                 return
 
@@ -102,7 +149,7 @@ class Executor:
         stop_loss, take_profit = self.strategy.calculate_levels(side, price)
 
         # 5. Position Sizing
-        units = self.strategy.calculate_position_size(balance, price, stop_loss, confidence)
+        units = self.strategy.calculate_position_size(balance, target=target)
 
         # Side: positive for BUY, negative for SELL
         order_volume = units if side == "BUY" else -units

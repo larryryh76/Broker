@@ -62,19 +62,21 @@ class Strategy:
         return df
 
     def generate_signal(self, df):
-        if df is None or len(df) < 2:
+        if df is None or len(df) < 50: # Need 50 for RSI and MAs
             return None
 
         latest = df.iloc[-1]
         prev = df.iloc[-2]
 
+        # RSI Filter: BUY if RSI < 30, SELL if RSI > 70
+        rsi_oversold = latest["rsi"] < 30
+        rsi_overbought = latest["rsi"] > 70
+
         # Aggressive Signal: Current price vs Previous candle high/low
-        # If current close > previous high => BUY
-        # If current close < previous low => SELL
-        if latest["close"] > prev["high"]:
-            return {"side": "BUY", "confidence": 0.90, "price": latest["close"]}
-        elif latest["close"] < prev["low"]:
-            return {"side": "SELL", "confidence": 0.90, "price": latest["close"]}
+        if latest["close"] > prev["high"] and rsi_oversold:
+            return {"side": "BUY", "confidence": 0.95, "price": latest["close"]}
+        elif latest["close"] < prev["low"] and rsi_overbought:
+            return {"side": "SELL", "confidence": 0.95, "price": latest["close"]}
 
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 
@@ -95,12 +97,16 @@ class Strategy:
 
         return stop_loss, take_profit
 
-    def calculate_position_size(self, balance, entry_price, stop_loss, confidence):
+    def calculate_position_size(self, balance, target=50.0):
         """
-        Hyper-Compounding 'F Spin' Logic:
-        lot_size = max(0.01, round((current_balance / 5) * 0.01, 2))
+        Aggressive Lot Scaling:
+        Lot_Size = (Current_Target / 50) * 0.1
+        MAX_LOTS = 100
         """
-        lots = (balance / 5) * 0.01
+        lots = (target / 50.0) * 0.1
         lots = max(0.01, round(lots, 2))
+
+        # Safety Cap
+        lots = min(lots, 100.0)
 
         return lots

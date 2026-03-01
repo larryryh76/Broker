@@ -28,15 +28,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download Portable MT5 Files
+      - name: Download Verified 64-bit MT5
         shell: powershell
         run: |
-          $mt5Dir = Join-Path $env:GITHUB_WORKSPACE "mt5_terminal"
-          if (!(Test-Path $mt5Dir)) { New-Item -ItemType Directory -Force -Path $mt5Dir }
-          # Download pre-extracted terminal files directly
-          curl.exe -L -o "$mt5Dir\terminal64.exe" "https://raw.githubusercontent.com/hpdeandrade/mt5docker/master/mt5/terminal64.exe"
-          curl.exe -L -o "$mt5Dir\metaeditor64.exe" "https://raw.githubusercontent.com/hpdeandrade/mt5docker/master/mt5/metaeditor64.exe"
-          if (Test-Path (Join-Path $mt5Dir "terminal64.exe")) { echo "SUCCESS: Portable terminal downloaded!" }
+          $dir = "D:\a\Broker\Broker\mt5_terminal"
+          if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
+          # Use the direct Exness 64-bit link
+          $url = "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$dir\setup.exe"
+          # Extract the terminal64.exe specifically from the setup
+          Start-Process -FilePath "$dir\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$dir" -Wait
+          # Verify file size (should be > 10MB)
+          if (Test-Path "$dir\terminal64.exe") {
+            $file = Get-Item "$dir\terminal64.exe"
+            if ($file.Length -lt 1000000) { throw "File is too small/corrupted!" }
+            Write-Host "Verified 64-bit Terminal Found: $($file.Length) bytes"
+          } else {
+            throw "terminal64.exe not found after extraction!"
+          }
 
       - name: Inject Exness Server Data
         shell: powershell

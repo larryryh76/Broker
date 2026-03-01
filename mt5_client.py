@@ -17,11 +17,12 @@ class MT5Client:
         import subprocess
 
         def find_terminal():
-            # Force absolute path for GitHub Actions
+            # 1. Force absolute path for GitHub Actions
             actions_path = "D:\\a\\Broker\\Broker\\mt5_terminal\\terminal64.exe"
             if os.path.exists(actions_path):
                 return actions_path
 
+            # 2. Fallback to workspace path
             workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
             search_paths = [
                 os.path.join(workspace, "mt5_terminal", "terminal64.exe"),

@@ -76,26 +76,32 @@ def reconcile_trades(mt5, db):
 def update_day_and_get_target(db):
     import os
     day_file = "day_count.txt"
-    day = 1
-    if os.path.exists(day_file):
-        with open(day_file, "r") as f:
-            try:
-                day = int(f.read().strip())
-            except:
-                day = 1
 
-    # Get Previous Day Profit
+    # 1. Primary: Load from MongoDB learning state
     latest_state = db.get_latest_learning_state()
-    prev_profit = 50.0 # Default Day 1
+    day = 1
+    prev_profit = 50.0
+
     if latest_state:
+        day = latest_state.get("day_count", 1)
         prev_profit = latest_state.get("daily_pnl", 50.0)
-        if prev_profit <= 0: prev_profit = 50.0 # Don't scale down target to 0
+        if prev_profit <= 0:
+            prev_profit = 50.0
+
+        current_target = get_target_for_day(day, prev_profit)
 
         # Increment Day if target was met
-        if prev_profit >= get_target_for_day(day):
+        if prev_profit >= current_target:
             day += 1
-            with open(day_file, "w") as f:
-                f.write(str(day))
+            logger.info(f"Target of ${current_target:.2f} met! Moving to Day {day}.")
+            # Note: We return the NEW target for the NEW day
+            prev_profit = prev_profit # Use met profit as base for next multiplier
+        else:
+            logger.info(f"Continuing Day {day}. Current Daily PnL: ${prev_profit:.2f} / Target: ${current_target:.2f}")
+
+    # 2. Secondary: Sync to local file for reference
+    with open(day_file, "w") as f:
+        f.write(str(day))
 
     return get_target_for_day(day, prev_profit)
 
@@ -141,6 +147,8 @@ def update_learning_state(mt5, db):
 
     # Correct daily baseline tracking
     initial_daily_balance = balance
+    day = 1 # Default
+
     if latest_state:
         state_time = latest_state["timestamp"]
         if state_time.tzinfo is None:
@@ -159,7 +167,8 @@ def update_learning_state(mt5, db):
         "total_trades": total_trades,
         "win_rate": win_rate,
         "instrument_performance": instrument_perf,
-        "initial_daily_balance": initial_daily_balance
+        "initial_daily_balance": initial_daily_balance,
+        "day_count": day
     }
 
     db.save_learning_state(state_data)

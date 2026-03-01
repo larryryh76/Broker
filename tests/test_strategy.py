@@ -50,27 +50,19 @@ def test_calculate_position_size_small_balance(strategy):
     entry = 100
     sl = 98
     confidence = 0.95
-    # MetaTrader lots calculation
-    # contract_size = 100000
-    # lots = 1.0 / (2 * 100000) = 0.000005
-    # lots = min(lots, max_lots)
-    # Minimum lots = 0.01
+    # Hyper-compounding logic: (50/5)*0.01 = 0.1
     lots = strategy.calculate_position_size(balance, entry, sl, confidence)
-    assert lots == 0.01
+    assert lots == 0.1
 
 def test_generate_signal_buy(strategy):
-    # Create a trend: price above MA20, MA20 above MA50, RSI oversold (artificially)
-    data = []
-    for i in range(60):
-        # MA50 will be around 100
-        # MA20 will be higher if price is increasing
-        price = 100 + i
-        data.append({"rsi": 20, "ma_fast": 110, "ma_slow": 100, "close": 115})
+    data = [
+        {"high": 100, "low": 90, "close": 95},
+        {"high": 105, "low": 95, "close": 110} # close > prev high
+    ]
 
     df = pd.DataFrame(data)
     signal = strategy.generate_signal(df)
     assert signal["side"] == "BUY"
-    assert signal["confidence"] == 0.85 # 3 indicators aligned
 
 def test_adjust_parameters_high_win_rate(strategy):
     learning_state = {"win_rate": 70, "total_trades": 10}

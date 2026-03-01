@@ -62,35 +62,19 @@ class Strategy:
         return df
 
     def generate_signal(self, df):
-        if df is None or len(df) < 1:
+        if df is None or len(df) < 2:
             return None
 
         latest = df.iloc[-1]
+        prev = df.iloc[-2]
 
-        # 1. RSI: > 70 SHORT, < 30 LONG
-        long_rsi = latest["rsi"] < 30
-        short_rsi = latest["rsi"] > 70
-
-        # 2. Price vs MA: Price > MA20 LONG, Price < MA20 SHORT
-        long_price_ma = latest["close"] > latest["ma_fast"]
-        short_price_ma = latest["close"] < latest["ma_fast"]
-
-        # 3. MA Crossover: MA20 > MA50 LONG, MA20 < MA50 SHORT
-        long_ma_cross = latest["ma_fast"] > latest["ma_slow"]
-        short_ma_cross = latest["ma_fast"] < latest["ma_slow"]
-
-        # Alignment count
-        long_count = sum([long_rsi, long_price_ma, long_ma_cross])
-        short_count = sum([short_rsi, short_price_ma, short_ma_cross])
-
-        # Minimum 2 of 3 alignment
-        if long_count >= 2:
-            confidence = 0.70 if long_count == 2 else 0.85
-            # Potential for 95% if strong divergence or other price action (simplified for now)
-            return {"side": "BUY", "confidence": confidence, "price": latest["close"]}
-        elif short_count >= 2:
-            confidence = 0.70 if short_count == 2 else 0.85
-            return {"side": "SELL", "confidence": confidence, "price": latest["close"]}
+        # Aggressive Signal: Current price vs Previous candle high/low
+        # If current close > previous high => BUY
+        # If current close < previous low => SELL
+        if latest["close"] > prev["high"]:
+            return {"side": "BUY", "confidence": 0.90, "price": latest["close"]}
+        elif latest["close"] < prev["low"]:
+            return {"side": "SELL", "confidence": 0.90, "price": latest["close"]}
 
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 
@@ -113,57 +97,10 @@ class Strategy:
 
     def calculate_position_size(self, balance, entry_price, stop_loss, confidence):
         """
-        Dynamic Position Sizing (Exness MetaTrader Lots):
-        - < $100: Risk 2%
-        - $100 - $1000: Risk 3%
-        - $1000 - $10000: Risk 5%
-        - > $10000: Risk 8%
-
-        Confidence Adjustment: (confidence / 0.95)
-        Performance Adjustment (Learning)
-        Position Cap: 1% of total balance (notional value)
+        Hyper-Compounding 'F Spin' Logic:
+        lot_size = max(0.01, round((current_balance / 5) * 0.01, 2))
         """
-        if balance < 100:
-            risk_pct = 0.02
-        elif balance < 1000:
-            risk_pct = 0.03
-        elif balance < 10000:
-            risk_pct = 0.05
-        else:
-            risk_pct = 0.08
+        lots = (balance / 5) * 0.01
+        lots = max(0.01, round(lots, 2))
 
-        risk_amount = balance * risk_pct
-        price_diff = abs(entry_price - stop_loss)
-
-        if price_diff == 0:
-            return 0
-
-        # For MetaTrader, units is in lots. 1 lot = 100,000 base currency for forex.
-        # For XAUUSD, 1 lot = 100 oz.
-        # price_diff is in price points.
-
-        # Standard calculation: lots = risk_amount / (price_diff * contract_size)
-        # Assuming contract_size is 100,000 for Forex and 100 for Gold.
-        contract_size = 100 if entry_price > 1000 else 100000
-
-        lots = risk_amount / (price_diff * contract_size)
-
-        # Confidence Adjustment
-        lots *= (confidence / 0.95)
-
-        # Performance Adjustment (Learning)
-        lots *= self.performance_multiplier
-
-        # Position Cap: Never exceed 1% of total balance in NOTIONAL value
-        # notional = lots * contract_size * entry_price
-        # lots = (balance * 0.01) / (contract_size * entry_price)
-        max_lots = (balance * 0.01) / (contract_size * entry_price)
-
-        lots = min(lots, max_lots)
-
-        # Exness allows micro-lots (0.01)
-        # If lots is very small, we use 0.01
-        if lots < 0.01:
-            lots = 0.01
-
-        return round(lots, 2)
+        return lots

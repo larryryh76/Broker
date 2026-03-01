@@ -22,6 +22,8 @@ def test_check_circuit_breaker_active(executor):
 def test_execute_signal(mock_rand, mock_sleep, executor):
     executor.strategy.calculate_levels.return_value = (98, 106)
     executor.strategy.calculate_position_size.return_value = 0.01
+    executor.mt5.symbol_info.return_value = MagicMock(point=0.01)
+    executor.mt5.symbol_info_tick.return_value = MagicMock(ask=100.1, bid=100.0)
     executor.mt5.get_current_price.return_value = 100
     executor.mt5.place_market_order.return_value = {"orderFillTransaction": {"id": "123"}}
 

@@ -84,6 +84,15 @@ class Executor:
         price = signal["price"]
         confidence = signal["confidence"]
 
+        # Max Spread Check: 100 points
+        symbol_info = self.mt5.symbol_info(instrument)
+        tick = self.mt5.symbol_info_tick(instrument)
+        if symbol_info and tick:
+            spread_points = (tick.ask - tick.bid) / symbol_info.point
+            if spread_points > 100:
+                logger.warning(f"Spread too high for {instrument}: {spread_points} points. Skipping.")
+                return
+
         # Check if balance is extremely low for the instrument
         if balance < 10 and ("BTC" in instrument or "XAU" in instrument):
             logger.warning(f"Balance too low to trade {instrument}. Skipping.")
@@ -98,16 +107,7 @@ class Executor:
         # Side: positive for BUY, negative for SELL
         order_volume = units if side == "BUY" else -units
 
-        # 6. Stealth Execution: Randomized delay
-        delay = random.randint(30, 290)
-        logger.info(f"Stealth execution for {instrument}: Waiting {delay} seconds before entry...")
-        time.sleep(delay)
-
-        # Re-fetch current price just before execution for better accuracy
-        current_price = self.mt5.get_current_price(instrument)
-        if current_price:
-            price = current_price
-            stop_loss, take_profit = self.strategy.calculate_levels(side, price)
+        # 6. Aggressive Signal: No delays
 
         logger.info(f"Executing {side} order for {instrument} with {units} lots...")
         order_result = self.mt5.place_market_order(instrument, order_volume, stop_loss, take_profit)

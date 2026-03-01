@@ -51,19 +51,33 @@ class MT5Client:
             # 2. Initialize (attaches to the running process started with config)
             if mt5.initialize(timeout=60000):
                 # Allow terminal to sync history and market watch
-                time.sleep(15)
+                time.sleep(25)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
 
-                # Force symbol selection into Market Watch
+                # Force symbol selection into Market Watch with suffix detection
                 from config import INSTRUMENTS
+                actual_instruments = []
                 for sym in INSTRUMENTS:
-                    if not mt5.symbol_select(sym, True):
-                        logger.warning(f"Failed to select {sym} in Market Watch.")
-                    else:
-                        logger.info(f"Symbol {sym} selected successfully.")
+                    # Try normal, then 'm' suffix
+                    found_sym = None
+                    for candidate in [sym, sym + "m"]:
+                        if mt5.symbol_select(candidate, True):
+                            # Sync history for the symbol
+                            mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
+                            found_sym = candidate
+                            break
 
-                # Log symbol info for debugging suffixes
-                logger.info(f"XAUUSD Info: {mt5.symbol_info('XAUUSD')}")
+                    if found_sym:
+                        actual_instruments.append(found_sym)
+                        logger.info(f"Symbol {found_sym} selected and synced successfully.")
+                        # Log symbol info for debugging
+                        logger.info(f"{found_sym} Info: {mt5.symbol_info(found_sym)}")
+                    else:
+                        logger.warning(f"Failed to select {sym} or {sym}m in Market Watch.")
+
+                # Update the global INSTRUMENTS list with the found symbols
+                import config
+                config.INSTRUMENTS = actual_instruments
 
                 # Check if already logged in from command line
                 account_info = mt5.account_info()
@@ -128,13 +142,28 @@ class MT5Client:
             })
         return adapted_candles
 
+    def symbol_info(self, instrument):
+        if not self.connect():
+            return None
+        return mt5.symbol_info(instrument)
+
+    def symbol_info_tick(self, instrument):
+        if not self.connect():
+            return None
+        return mt5.symbol_info_tick(instrument)
+
     def place_market_order(self, instrument, volume, stop_loss=None, take_profit=None):
         if not self.connect():
             return None
 
         # Determine side
+        tick = mt5.symbol_info_tick(instrument)
+        if not tick:
+            logger.error(f"Could not get tick info for {instrument}")
+            return None
+
         order_type = mt5.ORDER_TYPE_BUY if volume > 0 else mt5.ORDER_TYPE_SELL
-        price = mt5.symbol_info_tick(instrument).ask if volume > 0 else mt5.symbol_info_tick(instrument).bid
+        price = tick.ask if volume > 0 else tick.bid
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,

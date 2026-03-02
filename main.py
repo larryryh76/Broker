@@ -19,14 +19,7 @@ def main():
             logger.error("Could not connect to MT5. Exiting.")
             sys.exit(1)
 
-        import MetaTrader5 as mt5_lib
-        acc_info = mt5_lib.account_info()
-        term_info = mt5_lib.terminal_info()
-
-        # Bypassing safety check as requested
-        if not term_info or not term_info.trade_allowed or not acc_info or not acc_info.trade_allowed:
-            logger.warning("Algo Trading reported as Disabled, but proceeding with trade logic.")
-
+        # Proceeding directly without checks as requested
         db = DBClient()
         strategy = Strategy()
         executor = Executor(mt5, db, strategy)
@@ -96,7 +89,6 @@ def reconcile_trades(mt5, db):
 
 def update_day_and_get_target(mt5, db):
     import random
-    DEMO_BASE = 10000000.00
 
     # Virtualization Logic
     account = mt5.get_account_summary()
@@ -104,10 +96,22 @@ def update_day_and_get_target(mt5, db):
         return 50.0, 5.0, 1, 0
 
     real_balance = float(account["balance"])
-    profit = real_balance - DEMO_BASE
+
+    # Ordered Reality: Baseline and Capture
+    DEMO_START = 10000000.00
+    latest_state = db.get_latest_learning_state()
+
+    if latest_state and latest_state.get("initial_demo_balance"):
+        INITIAL_DEMO_BALANCE = latest_state.get("initial_demo_balance")
+    else:
+        # Save the current balance on first run as INITIAL_DEMO_BALANCE
+        INITIAL_DEMO_BALANCE = real_balance
+        logger.info(f"Script Initialization: Capturing INITIAL_DEMO_BALANCE = {INITIAL_DEMO_BALANCE}")
+
+    # Use the ordered DEMO_START for profit calculation
+    profit = real_balance - DEMO_START
     virtual_equity = profit + 5.00
 
-    latest_state = db.get_latest_learning_state()
     multiplier = 0
 
     if profit < 50.00:
@@ -183,6 +187,17 @@ def update_learning_state(mt5, db):
     # Retrieve current day and multiplier
     target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
 
+    # Capture Baseline for Persistence
+    target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
+
+    # Determine the persistent baseline
+    latest_state = db.get_latest_learning_state()
+    if latest_state and latest_state.get("initial_demo_balance"):
+        initial_demo_balance = latest_state.get("initial_demo_balance")
+    else:
+        account = mt5.get_account_summary()
+        initial_demo_balance = account["balance"] if account else 10000000.00
+
     state_data = {
         "balance": balance,
         "virtual_equity": virtual_equity,
@@ -191,6 +206,7 @@ def update_learning_state(mt5, db):
         "win_rate": win_rate,
         "instrument_performance": instrument_perf,
         "initial_daily_balance": initial_daily_balance,
+        "initial_demo_balance": initial_demo_balance,
         "day_count": day,
         "multiplier": multiplier
     }

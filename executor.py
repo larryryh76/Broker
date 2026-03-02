@@ -37,13 +37,7 @@ class Executor:
              logger.error("MT5 connection failed.")
              return
 
-        # Direct MT5 library call for verification
-        import MetaTrader5 as mt5_lib
-        term_info = mt5_lib.terminal_info()
-        acc_info = mt5_lib.account_info()
-
-        if not term_info or not term_info.trade_allowed or not acc_info or not acc_info.trade_allowed:
-            logger.warning("Algo Trading reported as Disabled, but proceeding with trade logic.")
+        # Ordered Bypass: Proceeding directly with trade logic as ordered
 
         # 0. Recursive Learning Adjustment
         latest_state = self.db.get_latest_learning_state()

@@ -58,36 +58,13 @@ class MT5Client:
                 # Wait for background process to bridge the IPC pipe
                 time.sleep(60)
 
-            # 2. Initialize and wait for Algo handshake
+            # 2. Direct Initialization (Bypassing Handshake)
             if mt5.initialize(path=terminal_path, timeout=60000):
-                # Wait & Wake Loop: 30 seconds check
-                logger.info("Initializing connection. Waiting for Algo Trading handshake...")
-                handshake_start = time.time()
-                while time.time() - handshake_start < 30:
-                    term_info = mt5.terminal_info()
-                    if term_info and term_info.trade_allowed:
-                        logger.info("Algo Trading UNLOCKED!")
-                        break
+                # Ordered Bypass: Proceed directly to trading logic
+                logger.info("MT5 initialized. Bypassing all handshake checks and proceeding to trade analysis...")
 
-                    elapsed = int(time.time() - handshake_start)
-                    logger.info(f"[Attempt {elapsed // 2}] Waiting for Algo Trading to unlock...")
-                    time.sleep(2)
-
-                # Final State Verification
-                acc_info = mt5.account_info()
-                term_info = mt5.terminal_info()
-
-                if not term_info or not term_info.trade_allowed:
-                    connected = mt5.terminal_info().connected if term_info else False
-                    tradeapi_disabled = mt5.terminal_info().tradeapi_disabled if term_info else "Unknown"
-                    logger.warning(f"Algo Trading handshake failed, but proceeding as requested.")
-                    logger.info(f"Diagnostic Data: Connected: {connected} | Trade API Disabled: {tradeapi_disabled}")
-
-                    if acc_info and not acc_info.trade_allowed:
-                        logger.warning("Exness-Specific: This account is reported in INVESTOR mode.")
-
-                # Allow terminal to sync history and market watch
-                time.sleep(15)
+                # Allow terminal a brief moment to sync internal state (minimal)
+                time.sleep(2)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
 
                 # Force symbol selection into Market Watch with strict 'm' suffix
@@ -219,10 +196,11 @@ class MT5Client:
 
         result = mt5.order_send(request)
         if result is None:
-            logger.error(f"Order send failed completely: {mt5.last_error()}")
+            error_code = mt5.last_error()
+            logger.error(f"Order send failed completely. MT5 Error Code: {error_code}")
             return None
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Order send failed, retcode: {result.retcode} (Error {result.retcode}), comment: {result.comment}")
+            logger.error(f"Order send failed. MT5 Retcode: {result.retcode} (Error {result.retcode}), comment: {result.comment}")
             return None
 
         return {"orderFillTransaction": {"id": str(result.order)}}

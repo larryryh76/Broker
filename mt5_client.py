@@ -38,8 +38,9 @@ class MT5Client:
         # 1. Manual Start via subprocess with config file
         try:
             if terminal_path:
-                workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
-                config_dir = os.path.join(workspace, "mt5_terminal", "config")
+                # Absolute Path Config Fix: Ensure the startup.ini is created relative to terminal64.exe
+                terminal_dir = os.path.dirname(os.path.abspath(terminal_path))
+                config_dir = os.path.join(terminal_dir, "config")
                 if not os.path.exists(config_dir):
                     os.makedirs(config_dir)
                 config_path = os.path.join(config_dir, "startup.ini")
@@ -57,19 +58,34 @@ class MT5Client:
                 # Wait for background process to bridge the IPC pipe
                 time.sleep(60)
 
-            # 2. Initialize with explicit terminal path
+            # 2. Initialize and wait for Algo handshake
             if mt5.initialize(path=terminal_path, timeout=60000):
-                # Wait 10 seconds for permission sync
-                time.sleep(10)
+                # Wait & Wake Loop: 30 seconds check
+                logger.info("Initializing connection. Waiting for Algo Trading handshake...")
+                handshake_start = time.time()
+                while time.time() - handshake_start < 30:
+                    term_info = mt5.terminal_info()
+                    if term_info and term_info.trade_allowed:
+                        logger.info("Algo Trading UNLOCKED!")
+                        break
 
-                # Strict Permission Check
+                    elapsed = int(time.time() - handshake_start)
+                    logger.info(f"[Attempt {elapsed // 2}] Waiting for Algo Trading to unlock...")
+                    time.sleep(2)
+
+                # Final State Verification
                 acc_info = mt5.account_info()
                 term_info = mt5.terminal_info()
-                if not acc_info or not acc_info.trade_allowed:
-                    logger.error("CRITICAL ERROR: Account Algo Trading Disabled")
-                    return False
+
                 if not term_info or not term_info.trade_allowed:
-                    logger.error("CRITICAL ERROR: Terminal Algo Trading Disabled")
+                    connected = mt5.terminal_info().connected if term_info else False
+                    tradeapi_disabled = mt5.terminal_info().tradeapi_disabled if term_info else "Unknown"
+                    logger.error(f"CRITICAL ERROR: Terminal Algo Trading Disabled")
+                    logger.error(f"Diagnostic Data: Connected: {connected} | Trade API Disabled: {tradeapi_disabled}")
+
+                    if acc_info and not acc_info.trade_allowed:
+                        logger.error("Exness-Specific: This account is currently in INVESTOR (read-only) mode.")
+
                     return False
 
                 # Allow terminal to sync history and market watch

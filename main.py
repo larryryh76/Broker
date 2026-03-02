@@ -1,4 +1,5 @@
 import sys
+import os
 import config
 from config import validate_config, logger
 from mt5_client import MT5Client
@@ -32,14 +33,16 @@ def main():
             # Recalculate Virtual Equity and Target for real-time logging
             target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
 
-            # Risk Management: If virtual_equity < $0.50
+            # Risk Management: Reset if profit < -$4.50 (Equity < $0.50)
             if virtual_equity < 0.50:
-                logger.error("ACCOUNT MARGIN CALL - LIQUIDATED")
+                logger.error("VIRTUAL ACCOUNT BLOWN - HARD RESET")
                 db.clear_learning_state()
+                # Remove baseline to force restart
+                if os.path.exists("baseline.txt"): os.remove("baseline.txt")
                 sys.exit(1)
 
             # Active Monitoring
-            logger.info(f"[ACTIVE] Day: {day} | Virtual Equity: ${virtual_equity:.2f} | Target: ${target:.2f} | Multiplier: {multiplier}x")
+            logger.info(f"[TRAINING] Virtual Equity: ${virtual_equity:.2f} | Day {day} Goal: ${target:.2f}")
 
             # 1. Manage Open Positions (Zero-Risk & Trailing)
             executor.manage_open_positions()
@@ -69,26 +72,27 @@ def reconcile_trades(mt5, db):
     if not open_logged_trades:
         return
 
-    closed_oanda_trades = mt5.get_closed_trades()
-    closed_dict = {str(t["id"]): t for t in closed_oanda_trades}
+    closed_mt5_trades = mt5.get_closed_trades()
+    closed_dict = {str(t["id"]): t for t in closed_mt5_trades}
 
     for trade in open_logged_trades:
         order_id = str(trade.get("order_id"))
         if order_id in closed_dict:
-            oanda_trade = closed_dict[order_id]
-            realized_pl = float(oanda_trade.get("realizedPL", 0))
-            exit_price = float(oanda_trade.get("averageClosePrice", 0))
+            mt5_trade = closed_dict[order_id]
+            realized_pl = float(mt5_trade.get("realizedPL", 0))
+            exit_price = float(mt5_trade.get("averageClosePrice", 0))
 
             db.update_trade(order_id, {
                 "status": "CLOSED",
                 "profit_loss": realized_pl,
                 "exit_price": exit_price,
-                "exit_time": oanda_trade.get("closeTime")
+                "exit_time": mt5_trade.get("closeTime")
             })
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
 def update_day_and_get_target(mt5, db):
     import random
+    import os
 
     # Virtualization Logic
     account = mt5.get_account_summary()
@@ -97,21 +101,22 @@ def update_day_and_get_target(mt5, db):
 
     real_balance = float(account["balance"])
 
-    # Ordered Reality: Baseline and Capture
-    DEMO_START = 10000000.00
-    latest_state = db.get_latest_learning_state()
-
-    if latest_state and latest_state.get("initial_demo_balance"):
-        INITIAL_DEMO_BALANCE = latest_state.get("initial_demo_balance")
+    # Persistent Baseline Fix
+    baseline_file = "baseline.txt"
+    if os.path.exists(baseline_file):
+        with open(baseline_file, "r") as f:
+            INITIAL_DEMO_BALANCE = float(f.read().strip())
     else:
-        # Save the current balance on first run as INITIAL_DEMO_BALANCE
         INITIAL_DEMO_BALANCE = real_balance
-        logger.info(f"Script Initialization: Capturing INITIAL_DEMO_BALANCE = {INITIAL_DEMO_BALANCE}")
+        with open(baseline_file, "w") as f:
+            f.write(str(INITIAL_DEMO_BALANCE))
+        logger.info(f"Persistent Baseline Created: {INITIAL_DEMO_BALANCE}")
 
-    # Use the ordered DEMO_START for profit calculation
-    profit = real_balance - DEMO_START
+    # Calculate Profit and Virtual Equity
+    profit = real_balance - INITIAL_DEMO_BALANCE
     virtual_equity = profit + 5.00
 
+    latest_state = db.get_latest_learning_state()
     multiplier = 0
 
     if profit < 50.00:
@@ -183,9 +188,6 @@ def update_learning_state(mt5, db):
         else:
             # New day, current balance is the new baseline
             initial_daily_balance = balance
-
-    # Retrieve current day and multiplier
-    target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
 
     # Capture Baseline for Persistence
     target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)

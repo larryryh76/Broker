@@ -10,8 +10,12 @@ class MT5Client:
         self.login = MT5_LOGIN
         self.password = MT5_PASSWORD
         self.server = MT5_SERVER
+        self._connected = False
 
     def connect(self):
+        if self._connected:
+            return True
+
         import time
         import os
         import subprocess
@@ -35,8 +39,17 @@ class MT5Client:
         try:
             if terminal_path:
                 workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
-                config_path = os.path.join(workspace, "mt5_terminal", "config", "startup.ini")
-                logger.info(f"Launching terminal with config: {config_path}")
+                config_dir = os.path.join(workspace, "mt5_terminal", "config")
+                if not os.path.exists(config_dir):
+                    os.makedirs(config_dir)
+                config_path = os.path.join(config_dir, "startup.ini")
+
+                # Dynamic .ini generation for Algo Trading
+                ini_content = f"[Common]\nLogin={self.login}\nPassword={self.password}\nServer={self.server}\nExpertsEnable=1\nAllowLiveTrading=1\nAllowDllImport=1\n[Charts]\nExperts=1\n"
+                with open(config_path, "w") as f:
+                    f.write(ini_content)
+
+                logger.info(f"Generated forced config and launching terminal: {config_path}")
 
                 # Launch with the config file to bypass all GUI prompts
                 subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}"])
@@ -44,24 +57,36 @@ class MT5Client:
                 # Wait for background process to bridge the IPC pipe
                 time.sleep(60)
 
-            # 2. Initialize with explicit trade allowance
-            if mt5.initialize(path=terminal_path, timeout=60000, trade_allowed=True):
+            # 2. Initialize with explicit terminal path
+            if mt5.initialize(path=terminal_path, timeout=60000):
+                # Wait 10 seconds for permission sync
+                time.sleep(10)
+
+                # Strict Permission Check
+                acc_info = mt5.account_info()
+                term_info = mt5.terminal_info()
+                if not acc_info or not acc_info.trade_allowed:
+                    logger.error("CRITICAL ERROR: Account Algo Trading Disabled")
+                    return False
+                if not term_info or not term_info.trade_allowed:
+                    logger.error("CRITICAL ERROR: Terminal Algo Trading Disabled")
+                    return False
+
                 # Allow terminal to sync history and market watch
-                time.sleep(25)
+                time.sleep(15)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
 
-                # Force symbol selection into Market Watch with suffix detection
+                # Force symbol selection into Market Watch with strict 'm' suffix
                 from config import INSTRUMENTS
                 actual_instruments = []
                 for sym in INSTRUMENTS:
-                    # Try normal, then 'm' suffix
+                    # Exness Standard requires 'm' suffix
                     found_sym = None
-                    for candidate in [sym, sym + "m"]:
-                        if mt5.symbol_select(candidate, True):
-                            # Sync history for the symbol
-                            mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
-                            found_sym = candidate
-                            break
+                    candidate = sym + "m" if not sym.endswith("m") else sym
+                    if mt5.symbol_select(candidate, True):
+                        # Sync history for the symbol
+                        mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
+                        found_sym = candidate
 
                     if found_sym:
                         actual_instruments.append(found_sym)
@@ -79,11 +104,13 @@ class MT5Client:
                 account_info = mt5.account_info()
                 if account_info and account_info.login == self.login:
                     logger.info("MT5 already logged in via command line.")
+                    self._connected = True
                     return True
 
                 # 3. Fallback manual login
                 if mt5.login(login=self.login, password=self.password, server=self.server):
                     logger.info("MT5 logged in successfully.")
+                    self._connected = True
                     return True
                 else:
                     logger.error(f"MT5 login failed: {mt5.last_error()}")

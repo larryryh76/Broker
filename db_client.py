@@ -72,3 +72,10 @@ class DBClient:
         except Exception as e:
             logger.error(f"Error fetching daily trades: {e}")
             return []
+
+    def clear_learning_state(self):
+        try:
+            self.learning_state_collection.delete_many({})
+            logger.info("Cleared learning state (Hard Reset).")
+        except Exception as e:
+            logger.error(f"Error clearing learning state: {e}")

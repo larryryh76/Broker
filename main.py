@@ -31,20 +31,28 @@ def main():
         strategy = Strategy()
         executor = Executor(mt5, db, strategy)
 
-        # Calculate Daily Target and Increment Day
-        target, virtual_balance = update_day_and_get_target(mt5, db)
-        logger.info(f"Virtual Balance: ${virtual_balance:.2f} | Today's Target: ${target:.2f}")
-
         # Execution Loop (Fantasy Execution)
         # Note: In GitHub Actions, we run for a limited time
         import time
         start_time = time.time()
         while time.time() - start_time < 240: # Run for 4 minutes
+            # Recalculate Virtual Equity and Target for real-time logging
+            target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
+
+            # Hard Reset: If virtual_equity < $0.50
+            if virtual_equity < 0.50:
+                logger.error("VIRTUAL ACCOUNT BLOWN")
+                db.clear_learning_state()
+                sys.exit(1)
+
+            # Visual Logging Format
+            logger.info(f"[TRAINING] Day: {day} | Virtual Equity: ${virtual_equity:.2f} | Target: ${target:.2f} | Multiplier: {multiplier}x")
+
             # 1. Manage Open Positions (Zero-Risk & Trailing)
             executor.manage_open_positions()
 
             # 2. Run Strategy Cycle
-            executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_balance)
+            executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_equity)
 
             # 3. Check for Rotation
             # (Logic handled inside run_cycle based on spread)
@@ -87,36 +95,33 @@ def reconcile_trades(mt5, db):
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
 def update_day_and_get_target(mt5, db):
-    import os
     import random
-    day_file = "day_count.txt"
-    base_training_balance = 5.00
+    DEMO_BASE = 10000000.00
 
-    # Virtualization: $10,000,000 offset for Demo Accounts
+    # Virtualization Logic
     account = mt5.get_account_summary()
     if not account:
-        return 50.0, base_training_balance
+        return 50.0, 5.0, 1, 0
 
     real_balance = float(account["balance"])
-    # Fantasy virtualization logic
-    current_profit = real_balance - 10000000.00
+    virtual_equity = (real_balance - DEMO_BASE) + 5.00
 
-    current_virtual_balance = base_training_balance + current_profit
+    latest_state = db.get_latest_learning_state()
+    multiplier = 0
 
-    # Determine Day and Target
-    if current_profit < 50.00:
+    if virtual_equity < 50.00:
         day = 1
         target = 50.00
     else:
-        day = 2 # Fantasy "Day 2+"
-        target = 50.0 * random.randint(4, 10)
-        logger.info(f"Quest Progress: Day 2+ Activated. Target Multiplier: {target/50:.0f}x")
+        day = 2
+        # Use one-time random multiplier from persistent state or generate new
+        if latest_state and latest_state.get("day_count") == 2 and latest_state.get("multiplier"):
+            multiplier = latest_state.get("multiplier")
+        else:
+            multiplier = random.randint(4, 10)
+        target = 50.00 * multiplier
 
-    # Sync to local file for reference
-    with open(day_file, "w") as f:
-        f.write(str(day))
-
-    return target, current_virtual_balance
+    return target, virtual_equity, day, multiplier
 
 def get_target_for_day(day, prev_profit=50.0):
     if day == 1:
@@ -174,14 +179,19 @@ def update_learning_state(mt5, db):
             # New day, current balance is the new baseline
             initial_daily_balance = balance
 
+    # Retrieve current day and multiplier
+    target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
+
     state_data = {
         "balance": balance,
+        "virtual_equity": virtual_equity,
         "daily_pnl": daily_pnl,
         "total_trades": total_trades,
         "win_rate": win_rate,
         "instrument_performance": instrument_perf,
         "initial_daily_balance": initial_daily_balance,
-        "day_count": day
+        "day_count": day,
+        "multiplier": multiplier
     }
 
     db.save_learning_state(state_data)

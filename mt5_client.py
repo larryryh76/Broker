@@ -34,6 +34,8 @@ class MT5Client:
             return None
 
         terminal_path = find_terminal()
+        if terminal_path:
+            terminal_path = os.path.abspath(terminal_path)
 
         # 1. Manual Start via subprocess with config file
         try:
@@ -59,7 +61,7 @@ class MT5Client:
                 time.sleep(60)
 
             # 2. Direct Initialization (Bypassing Handshake)
-            if mt5.initialize(path=terminal_path, timeout=60000):
+            if mt5.initialize(path=terminal_path, timeout=60000, portable=True):
                 # Ordered Bypass: Proceed directly to trading logic
                 logger.info("MT5 initialized. Bypassing all handshake checks and proceeding to trade analysis...")
 
@@ -195,9 +197,17 @@ class MT5Client:
         }
 
         result = mt5.order_send(request)
+
+        # Fallback to FOK if IOC fails with AutoTrading error (10017) or filling error
+        if result and result.retcode in [mt5.TRADE_RETCODE_REJECT, 10017, 10030]:
+            logger.warning(f"IOC filling failed (Retcode {result.retcode}). Retrying with FOK filling...")
+            request["type_filling"] = mt5.ORDER_FILLING_FOK
+            result = mt5.order_send(request)
+
         if result is None:
             error_code = mt5.last_error()
-            logger.error(f"Order send failed completely. MT5 Error Code: {error_code}")
+            numeric_code = error_code[0] if isinstance(error_code, (list, tuple)) else error_code
+            logger.error(f"Order send failed completely. MT5 Error Code: {numeric_code}")
             return None
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             logger.error(f"Order send failed. MT5 Retcode: {result.retcode} (Error {result.retcode}), comment: {result.comment}")
@@ -278,7 +288,12 @@ class MT5Client:
         }
 
         result = mt5.order_send(request)
+        if result is None:
+            error_code = mt5.last_error()
+            numeric_code = error_code[0] if isinstance(error_code, (list, tuple)) else error_code
+            logger.error(f"Modify SL failed completely for {ticket}. MT5 Error Code: {numeric_code}")
+            return False
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Modify SL failed for {ticket}: {result.comment}")
+            logger.error(f"Modify SL failed for {ticket}: Retcode {result.retcode}, comment: {result.comment}")
             return False
         return True

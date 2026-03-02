@@ -98,6 +98,11 @@ class Executor:
         """
         Zero-Risk Trigger & Aggressive Trailing Stop
         """
+        # Rate-limiting for AutoTrading errors
+        if hasattr(self, '_last_sl_error_time'):
+            if time.time() - self._last_sl_error_time < 60:
+                return
+
         positions = self.mt5.get_open_trades()
         for p in positions:
             symbol = p["symbol"]
@@ -141,7 +146,14 @@ class Executor:
 
                 if new_sl != 0:
                     logger.info(f"TRAIL: Moving SL for {symbol} to lock in profit.")
-                    self.mt5.modify_position_sl(ticket, new_sl, tp_current)
+                    success = self.mt5.modify_position_sl(ticket, new_sl, tp_current)
+                    if not success:
+                         # Check if failure was due to AutoTrading (10017)
+                         import MetaTrader5 as mt5_lib
+                         if mt5_lib.last_error()[0] == 10017:
+                             logger.warning("Modify SL failed (AutoTrading Disabled). Waiting 60s before retry.")
+                             self._last_sl_error_time = time.time()
+                             break
 
     def execute_signal(self, signal, balance, target=50.0):
         instrument = signal["instrument"]

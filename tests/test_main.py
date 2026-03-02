@@ -8,7 +8,7 @@ from main import main, update_learning_state
 @patch('main.Strategy')
 @patch('main.Executor')
 @patch('main.update_learning_state')
-@patch('main.update_day_and_get_target', return_value=50.0)
+@patch('main.update_day_and_get_target', return_value=(50.0, 5.0, 1, 1))
 @patch('time.time', side_effect=[0, 0, 300]) # Force loop to run once
 def test_main_flow(mock_time, mock_target, mock_update, mock_executor_class, mock_strategy_class,
                    mock_db_class, mock_mt5_class, mock_validate):
@@ -39,7 +39,7 @@ def test_update_learning_state(mock_logger):
     }
     # Mock reconcile_trades to do nothing
     with patch('main.reconcile_trades'):
-        update_learning_state(mt5, db)
+        update_learning_state(mt5, db, 105.00, 1, 1)
 
     db.save_learning_state.assert_called_once()
     state_data = db.save_learning_state.call_args[0][0]

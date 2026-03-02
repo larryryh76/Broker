@@ -91,8 +91,11 @@ class Executor:
                 logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread_points})")
 
         # 3. Execution (to be expanded with stealth delay and risk assessment)
+        error_detected = False
         for signal in signals:
-            self.execute_signal(signal, virtual_balance, target=target)
+            if self.execute_signal(signal, virtual_balance, target=target):
+                error_detected = True
+        return error_detected
 
     def manage_open_positions(self):
         """
@@ -156,6 +159,12 @@ class Executor:
                              break
 
     def execute_signal(self, signal, balance, target=50.0):
+        """Returns True if Retcode 10027 is detected"""
+        try:
+            import MetaTrader5 as mt5_lib
+        except ImportError:
+            mt5_lib = self.mt5.mt5 # Fallback to client's library reference
+
         instrument = signal["instrument"]
         side = signal["side"]
         price = signal["price"]
@@ -203,7 +212,14 @@ class Executor:
                 "entry_time": time.time()
             }
             self.db.log_trade(trade_data)
+            return False
         else:
-            import MetaTrader5 as mt5_lib
-            reason = mt5_lib.last_error()
-            logger.error(f"[ATTEMPT] Failed to {side} {instrument} | Reason: MT5 Error {reason}")
+            error_info = mt5_lib.last_error()
+            # If error info is a tuple, the code is first element
+            error_code = error_info[0] if isinstance(error_info, (tuple, list)) else error_info
+            logger.error(f"[ATTEMPT] Failed to {side} {instrument} | Reason: MT5 Error {error_info}")
+
+            # Return True if AutoTrading disabled (10027 or 10017)
+            if error_code in [10027, 10017]:
+                return True
+            return False

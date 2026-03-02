@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 import config
 from config import validate_config, logger
 from mt5_client import MT5Client
@@ -27,7 +28,6 @@ def main():
 
         # Core Execution Loop
         # Note: In GitHub Actions, we run for a limited time
-        import time
         start_time = time.time()
         while time.time() - start_time < 240: # Run for 4 minutes
             # Recalculate Virtual Equity and Target for real-time logging
@@ -48,7 +48,11 @@ def main():
             executor.manage_open_positions()
 
             # 2. Run Strategy Cycle
-            executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_equity)
+            autotrade_error = executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_equity)
+
+            if autotrade_error:
+                logger.warning("AutoTrading error detected. Waiting 10 seconds before next scan...")
+                time.sleep(10)
 
             # 3. Check for Rotation
             # (Logic handled inside run_cycle based on spread)

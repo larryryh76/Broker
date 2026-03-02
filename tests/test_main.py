@@ -9,13 +9,21 @@ from main import main, update_learning_state
 @patch('main.Executor')
 @patch('main.update_learning_state')
 @patch('main.update_day_and_get_target', return_value=(50.0, 5.0, 1, 1))
-@patch('time.time', side_effect=[0, 0, 300]) # Force loop to run once
+@patch('main.time')
 def test_main_flow(mock_time, mock_target, mock_update, mock_executor_class, mock_strategy_class,
                    mock_db_class, mock_mt5_class, mock_validate):
+    # Setup mock time to exit loop after one iteration
+    # 1. start_time = time.time()
+    # 2. while time.time() - start_time < 240
+    # 3. end of loop while check
+    mock_time.time.side_effect = [0, 10, 300, 400, 500, 600, 700, 800, 900, 1000]
 
     mock_mt5 = mock_mt5_class.return_value
     mock_executor = mock_executor_class.return_value
-    main()
+    mock_executor.run_cycle.return_value = False
+
+    with patch('main.time.sleep'):
+        main()
 
     mock_validate.assert_called_once()
     mock_executor.run_cycle.assert_called_once()

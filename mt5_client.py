@@ -11,6 +11,7 @@ class MT5Client:
         self.password = MT5_PASSWORD
         self.server = MT5_SERVER
         self._connected = False
+        self.mt5 = mt5
 
     def connect(self):
         if self._connected:
@@ -47,15 +48,16 @@ class MT5Client:
                     os.makedirs(config_dir)
                 config_path = os.path.join(config_dir, "startup.ini")
 
-                # Dynamic .ini generation for Algo Trading
-                ini_content = f"[Common]\nLogin={self.login}\nPassword={self.password}\nServer={self.server}\nExpertsEnable=1\nAllowLiveTrading=1\nAllowDllImport=1\n[Charts]\nExperts=1\n"
+                # Dynamic .ini generation for Algo Trading (Forcing Enabled=1)
+                ini_content = f"[Common]\nLogin={self.login}\nPassword={self.password}\nServer={self.server}\nExpertsEnable=1\nAllowLiveTrading=1\nAllowDllImport=1\nEnabled=1\n[Charts]\nExperts=1\n"
                 with open(config_path, "w") as f:
                     f.write(ini_content)
 
                 logger.info(f"Generated forced config and launching terminal: {config_path}")
 
-                # Launch with the config file to bypass all GUI prompts
-                subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}"])
+                # Launch with the config file relative to the executable for maximum compatibility
+                rel_config_path = os.path.join("config", "startup.ini")
+                subprocess.Popen([terminal_path, "/portable", f"/config:{rel_config_path}"])
 
                 # Wait for background process to bridge the IPC pipe
                 time.sleep(60)

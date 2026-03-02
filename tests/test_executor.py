@@ -19,7 +19,8 @@ def test_check_circuit_breaker_active(executor):
 
 @patch('time.sleep', return_value=None)
 @patch('executor.random.randint', return_value=1)
-def test_execute_signal(mock_rand, mock_sleep, executor):
+@patch('executor.mt5_lib', create=True)
+def test_execute_signal(mock_mt5_lib, mock_rand, mock_sleep, executor):
     executor.strategy.calculate_levels.return_value = (98, 106)
     executor.strategy.calculate_position_size.return_value = 0.01
     executor.mt5.symbol_info.return_value = MagicMock(point=0.01)

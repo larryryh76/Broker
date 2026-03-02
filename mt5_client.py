@@ -59,11 +59,22 @@ class MT5Client:
                 rel_config_path = os.path.join("config", "startup.ini")
                 subprocess.Popen([terminal_path, "/portable", f"/config:{rel_config_path}"])
 
-                # Wait for background process to bridge the IPC pipe
-                time.sleep(60)
+                # Robust IPC Wait: Give terminal 20 seconds to breathe before attempting initialize
+                logger.info("Terminal launched. Waiting 20s for IPC bridge stabilization...")
+                time.sleep(20)
 
-            # 2. Direct Initialization (Bypassing Handshake)
-            if mt5.initialize(path=terminal_path, timeout=60000, portable=True):
+            # 2. Robust Initialization (Retry Logic)
+            initialized = False
+            for attempt in range(1, 4):
+                logger.info(f"MT5 Initialization Attempt {attempt}...")
+                if mt5.initialize(path=terminal_path, timeout=60000, portable=True):
+                    initialized = True
+                    break
+                else:
+                    logger.warning(f"Initialization attempt {attempt} failed: {mt5.last_error()}. Retrying in 5s...")
+                    time.sleep(5)
+
+            if initialized:
                 # Ordered Bypass: Proceed directly to trading logic
                 logger.info("MT5 initialized. Bypassing all handshake checks and proceeding to trade analysis...")
 

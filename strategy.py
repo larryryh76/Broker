@@ -99,12 +99,16 @@ class Strategy:
 
     def calculate_position_size(self, balance, target=50.0):
         """
-        Aggressive Lot Scaling:
-        Lot_Size = (Current_Target / 50) * 0.1
+        Hyper-Compounding Lot Scaling:
+        Base: $5 -> 0.01 lots
+        Formula: lots = (balance / 5) * 0.01
         MAX_LOTS = 100
         """
-        lots = (target / 50.0) * 0.1
+        lots = (balance / 5.0) * 0.01
         lots = max(0.01, round(lots, 2))
+
+        # Confidence Multiplier (Optional)
+        # lots *= self.performance_multiplier
 
         # Safety Cap
         lots = min(lots, 100.0)

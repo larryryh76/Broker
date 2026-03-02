@@ -29,7 +29,7 @@ class Executor:
                 return True
         return False
 
-    def run_cycle(self, instruments, target=50.0):
+    def run_cycle(self, instruments, target=50.0, virtual_balance=5.0):
         logger.info("Scanning for opportunities...")
 
         # Verification: Check trade permissions
@@ -43,10 +43,11 @@ class Executor:
         acc_info = mt5_lib.account_info()
 
         if not term_info.trade_allowed:
-            logger.warning("WARNING: Terminal trade_allowed is False. 'Algo Trading' button is likely OFF.")
-            # We continue for logging, but trades will fail
+            logger.error("TERMINAL TRADE NOT ALLOWED. Exiting cycle.")
+            return
         if not acc_info.trade_allowed:
-            logger.warning("WARNING: Account trade_allowed is False. Check broker permissions.")
+            logger.error("ACCOUNT TRADE NOT ALLOWED. Exiting cycle.")
+            return
 
         # 0. Recursive Learning Adjustment
         latest_state = self.db.get_latest_learning_state()
@@ -101,7 +102,7 @@ class Executor:
 
         # 3. Execution (to be expanded with stealth delay and risk assessment)
         for signal in signals:
-            self.execute_signal(signal, balance, target=target)
+            self.execute_signal(signal, virtual_balance, target=target)
 
     def manage_open_positions(self):
         """

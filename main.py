@@ -1,5 +1,6 @@
 import sys
-from config import validate_config, INSTRUMENTS, logger
+import config
+from config import validate_config, logger
 from mt5_client import MT5Client
 from db_client import DBClient
 from strategy import Strategy
@@ -14,13 +15,25 @@ def main():
 
     mt5 = MT5Client()
     try:
+        if not mt5.connect():
+            logger.error("Could not connect to MT5. Exiting.")
+            sys.exit(1)
+
+        import MetaTrader5 as mt5_lib
+        acc_info = mt5_lib.account_info()
+        term_info = mt5_lib.terminal_info()
+
+        if not term_info.trade_allowed or not acc_info.trade_allowed:
+            logger.error("CRITICAL ERROR: Algo Trading Disabled")
+            sys.exit(1)
+
         db = DBClient()
         strategy = Strategy()
         executor = Executor(mt5, db, strategy)
 
         # Calculate Daily Target and Increment Day
-        target = update_day_and_get_target(db)
-        logger.info(f"Today's Profit Target: ${target:.2f}")
+        target, virtual_balance = update_day_and_get_target(mt5, db)
+        logger.info(f"Virtual Balance: ${virtual_balance:.2f} | Today's Target: ${target:.2f}")
 
         # Execution Loop (Fantasy Execution)
         # Note: In GitHub Actions, we run for a limited time
@@ -31,7 +44,7 @@ def main():
             executor.manage_open_positions()
 
             # 2. Run Strategy Cycle
-            executor.run_cycle(INSTRUMENTS, target=target)
+            executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_balance)
 
             # 3. Check for Rotation
             # (Logic handled inside run_cycle based on spread)
@@ -73,47 +86,37 @@ def reconcile_trades(mt5, db):
             })
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
-def update_day_and_get_target(db):
+def update_day_and_get_target(mt5, db):
     import os
+    import random
     day_file = "day_count.txt"
+    base_training_balance = 5.00
 
-    # 1. Virtual Base Initialization
-    virtual_account = 5.00
+    # Virtualization: $10,000,000 offset for Demo Accounts
+    account = mt5.get_account_summary()
+    if not account:
+        return 50.0, base_training_balance
 
-    # 2. Check current virtual balance (Base + Realized Profit)
-    latest_state = db.get_latest_learning_state()
-    realized_profit = 0.0
-    day = 1
+    real_balance = float(account["balance"])
+    # Fantasy virtualization logic
+    current_profit = real_balance - 10000000.00
 
-    if latest_state:
-        realized_profit = latest_state.get("daily_pnl", 0.0)
-        day = latest_state.get("day_count", 1)
+    current_virtual_balance = base_training_balance + current_profit
 
-    current_virtual_balance = virtual_account + realized_profit
-
-    # 3. The Hard Reset: If balance <= $5.00, start over
-    if current_virtual_balance <= 5.00:
-        logger.info(f"HARD RESET: Virtual balance (${current_virtual_balance:.2f}) at or below base. Starting Day 1 quest.")
+    # Determine Day and Target
+    if current_profit < 50.00:
         day = 1
-        realized_profit = 0.0
         target = 50.00
     else:
-        # Multiplier Progression
-        if day == 1:
-            target = 50.00
-            if realized_profit >= 50.00:
-                day = 2
-                target = 50.0 * 4 # Default multiplier 4
-                logger.info("Day 1 Complete! Moving to Day 2.")
-        else:
-            # Day 2+ Target calculation
-            target = 50.0 * 4 # Keeping it simple for the quest
+        day = 2 # Fantasy "Day 2+"
+        target = 50.0 * random.randint(4, 10)
+        logger.info(f"Quest Progress: Day 2+ Activated. Target Multiplier: {target/50:.0f}x")
 
     # Sync to local file for reference
     with open(day_file, "w") as f:
         f.write(str(day))
 
-    return target
+    return target, current_virtual_balance
 
 def get_target_for_day(day, prev_profit=50.0):
     if day == 1:

@@ -31,7 +31,7 @@ jobs:
       - name: Download Verified 64-bit MT5
         shell: powershell
         run: |
-          $dir = "D:\a\Broker\Broker\mt5_terminal"
+          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal"
           if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
           # Use the direct Exness 64-bit link
           $url = "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe"
@@ -50,7 +50,7 @@ jobs:
       - name: Create Startup Config
         shell: powershell
         run: |
-          $configDir = "D:\a\Broker\Broker\mt5_terminal\config"
+          $configDir = "$env:GITHUB_WORKSPACE\mt5_terminal\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Force -Path $configDir }
           $config = @(
             "[Common]",

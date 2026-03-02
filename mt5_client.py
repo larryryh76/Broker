@@ -17,12 +17,7 @@ class MT5Client:
         import subprocess
 
         def find_terminal():
-            # 1. Force absolute path for GitHub Actions
-            actions_path = "D:\\a\\Broker\\Broker\\mt5_terminal\\terminal64.exe"
-            if os.path.exists(actions_path):
-                return actions_path
-
-            # 2. Fallback to workspace path
+            # 1. Fallback to workspace path
             workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
             search_paths = [
                 os.path.join(workspace, "mt5_terminal", "terminal64.exe"),
@@ -39,7 +34,8 @@ class MT5Client:
         # 1. Manual Start via subprocess with config file
         try:
             if terminal_path:
-                config_path = "D:\\a\\Broker\\Broker\\mt5_terminal\\config\\startup.ini"
+                workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
+                config_path = os.path.join(workspace, "mt5_terminal", "config", "startup.ini")
                 logger.info(f"Launching terminal with config: {config_path}")
 
                 # Launch with the config file to bypass all GUI prompts
@@ -49,7 +45,7 @@ class MT5Client:
                 time.sleep(60)
 
             # 2. Initialize with explicit trade allowance
-            if mt5.initialize(timeout=60000, trade_allowed=True):
+            if mt5.initialize(path=terminal_path, timeout=60000, trade_allowed=True):
                 # Allow terminal to sync history and market watch
                 time.sleep(25)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")

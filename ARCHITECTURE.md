@@ -32,15 +32,15 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 ## Setup Instructions
 
 ### Prerequisites
-1. **Exness Account**: Login: `298682494`, Server: `Exness-MT5Trial9`.
+1. **Exness Account**: Obtain your Login and Server details from the Exness Personal Area.
 2. **MongoDB Atlas**: A cluster with a connection string.
 3. **MetaTrader 5**: Ensure the terminal is installed if running locally on Windows.
 
 ### GitHub Secrets Configuration
 Store the following in your GitHub repository secrets:
-- `MT5_LOGIN`: `298682494`
-- `MT5_PASSWORD`: `Iamolanrewaju1$`
-- `MT5_SERVER`: `Exness-MT5Trial9`
+- `MT5_LOGIN`: Your Exness account number.
+- `MT5_PASSWORD`: Your trading password.
+- `MT5_SERVER`: Your account's server (e.g., Exness-MT5Trial9).
 - `MONGODB_URI`: Your MongoDB Atlas connection string.
 
 ### Direct File Setup (GitHub Actions)

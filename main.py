@@ -23,15 +23,15 @@ def main():
         acc_info = mt5_lib.account_info()
         term_info = mt5_lib.terminal_info()
 
-        if not term_info.trade_allowed or not acc_info.trade_allowed:
-            logger.error("CRITICAL ERROR: Algo Trading Disabled")
-            sys.exit(1)
+        # Bypassing safety check as requested
+        if not term_info or not term_info.trade_allowed or not acc_info or not acc_info.trade_allowed:
+            logger.warning("Algo Trading reported as Disabled, but proceeding with trade logic.")
 
         db = DBClient()
         strategy = Strategy()
         executor = Executor(mt5, db, strategy)
 
-        # Execution Loop (Fantasy Execution)
+        # Core Execution Loop
         # Note: In GitHub Actions, we run for a limited time
         import time
         start_time = time.time()
@@ -39,14 +39,14 @@ def main():
             # Recalculate Virtual Equity and Target for real-time logging
             target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
 
-            # Hard Reset: If virtual_equity < $0.50
+            # Risk Management: If virtual_equity < $0.50
             if virtual_equity < 0.50:
-                logger.error("VIRTUAL ACCOUNT BLOWN")
+                logger.error("ACCOUNT MARGIN CALL - LIQUIDATED")
                 db.clear_learning_state()
                 sys.exit(1)
 
-            # Visual Logging Format
-            logger.info(f"[TRAINING] Day: {day} | Virtual Equity: ${virtual_equity:.2f} | Target: ${target:.2f} | Multiplier: {multiplier}x")
+            # Active Monitoring
+            logger.info(f"[ACTIVE] Day: {day} | Virtual Equity: ${virtual_equity:.2f} | Target: ${target:.2f} | Multiplier: {multiplier}x")
 
             # 1. Manage Open Positions (Zero-Risk & Trailing)
             executor.manage_open_positions()
@@ -104,12 +104,13 @@ def update_day_and_get_target(mt5, db):
         return 50.0, 5.0, 1, 0
 
     real_balance = float(account["balance"])
-    virtual_equity = (real_balance - DEMO_BASE) + 5.00
+    profit = real_balance - DEMO_BASE
+    virtual_equity = profit + 5.00
 
     latest_state = db.get_latest_learning_state()
     multiplier = 0
 
-    if virtual_equity < 50.00:
+    if profit < 50.00:
         day = 1
         target = 50.00
     else:

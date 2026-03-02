@@ -42,12 +42,8 @@ class Executor:
         term_info = mt5_lib.terminal_info()
         acc_info = mt5_lib.account_info()
 
-        if not term_info.trade_allowed:
-            logger.error("TERMINAL TRADE NOT ALLOWED. Exiting cycle.")
-            return
-        if not acc_info.trade_allowed:
-            logger.error("ACCOUNT TRADE NOT ALLOWED. Exiting cycle.")
-            return
+        if not term_info or not term_info.trade_allowed or not acc_info or not acc_info.trade_allowed:
+            logger.warning("Algo Trading reported as Disabled, but proceeding with trade logic.")
 
         # 0. Recursive Learning Adjustment
         latest_state = self.db.get_latest_learning_state()

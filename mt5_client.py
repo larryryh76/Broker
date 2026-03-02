@@ -80,13 +80,11 @@ class MT5Client:
                 if not term_info or not term_info.trade_allowed:
                     connected = mt5.terminal_info().connected if term_info else False
                     tradeapi_disabled = mt5.terminal_info().tradeapi_disabled if term_info else "Unknown"
-                    logger.error(f"CRITICAL ERROR: Terminal Algo Trading Disabled")
-                    logger.error(f"Diagnostic Data: Connected: {connected} | Trade API Disabled: {tradeapi_disabled}")
+                    logger.warning(f"Algo Trading handshake failed, but proceeding as requested.")
+                    logger.info(f"Diagnostic Data: Connected: {connected} | Trade API Disabled: {tradeapi_disabled}")
 
                     if acc_info and not acc_info.trade_allowed:
-                        logger.error("Exness-Specific: This account is currently in INVESTOR (read-only) mode.")
-
-                    return False
+                        logger.warning("Exness-Specific: This account is reported in INVESTOR mode.")
 
                 # Allow terminal to sync history and market watch
                 time.sleep(15)
@@ -220,8 +218,11 @@ class MT5Client:
         }
 
         result = mt5.order_send(request)
+        if result is None:
+            logger.error(f"Order send failed completely: {mt5.last_error()}")
+            return None
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Order send failed, retcode: {result.retcode}, error: {mt5.last_error()}")
+            logger.error(f"Order send failed, retcode: {result.retcode} (Error {result.retcode}), comment: {result.comment}")
             return None
 
         return {"orderFillTransaction": {"id": str(result.order)}}

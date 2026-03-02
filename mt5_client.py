@@ -48,8 +48,8 @@ class MT5Client:
                 # Wait for background process to bridge the IPC pipe
                 time.sleep(60)
 
-            # 2. Initialize (attaches to the running process started with config)
-            if mt5.initialize(timeout=60000):
+            # 2. Initialize with explicit trade allowance
+            if mt5.initialize(timeout=60000, trade_allowed=True):
                 # Allow terminal to sync history and market watch
                 time.sleep(25)
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")

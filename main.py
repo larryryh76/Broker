@@ -77,18 +77,43 @@ def update_day_and_get_target(db):
     import os
     day_file = "day_count.txt"
 
-    # HARD RESET: Force Day 1 as requested
-    day = 1
-    prev_profit = 50.0
+    # 1. Virtual Base Initialization
+    virtual_account = 5.00
 
-    # We ignore previous state for this reset run
-    logger.info("HARD RESET: Starting over from Day 1.")
+    # 2. Check current virtual balance (Base + Realized Profit)
+    latest_state = db.get_latest_learning_state()
+    realized_profit = 0.0
+    day = 1
+
+    if latest_state:
+        realized_profit = latest_state.get("daily_pnl", 0.0)
+        day = latest_state.get("day_count", 1)
+
+    current_virtual_balance = virtual_account + realized_profit
+
+    # 3. The Hard Reset: If balance <= $5.00, start over
+    if current_virtual_balance <= 5.00:
+        logger.info(f"HARD RESET: Virtual balance (${current_virtual_balance:.2f}) at or below base. Starting Day 1 quest.")
+        day = 1
+        realized_profit = 0.0
+        target = 50.00
+    else:
+        # Multiplier Progression
+        if day == 1:
+            target = 50.00
+            if realized_profit >= 50.00:
+                day = 2
+                target = 50.0 * 4 # Default multiplier 4
+                logger.info("Day 1 Complete! Moving to Day 2.")
+        else:
+            # Day 2+ Target calculation
+            target = 50.0 * 4 # Keeping it simple for the quest
 
     # Sync to local file for reference
     with open(day_file, "w") as f:
         f.write(str(day))
 
-    return 50.0
+    return target
 
 def get_target_for_day(day, prev_profit=50.0):
     if day == 1:

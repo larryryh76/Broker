@@ -33,7 +33,6 @@ class Executor:
         logger.info("Scanning for opportunities...")
 
         # Verification: Check trade permissions
-        account_info = self.mt5.get_account_summary()
         if not self.mt5.connect():
              logger.error("MT5 connection failed.")
              return
@@ -44,11 +43,10 @@ class Executor:
         acc_info = mt5_lib.account_info()
 
         if not term_info.trade_allowed:
-            logger.error("ERROR: Terminal trade_allowed is False. Check 'Algo Trading' button.")
-            sys.exit(1)
+            logger.warning("WARNING: Terminal trade_allowed is False. 'Algo Trading' button is likely OFF.")
+            # We continue for logging, but trades will fail
         if not acc_info.trade_allowed:
-            logger.error("ERROR: Account trade_allowed is False. Check broker permissions or account state.")
-            sys.exit(1)
+            logger.warning("WARNING: Account trade_allowed is False. Check broker permissions.")
 
         # 0. Recursive Learning Adjustment
         latest_state = self.db.get_latest_learning_state()

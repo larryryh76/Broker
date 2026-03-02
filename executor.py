@@ -1,3 +1,4 @@
+import sys
 import time
 import random
 from config import logger, DAILY_DRAWDOWN_LIMIT
@@ -30,6 +31,24 @@ class Executor:
 
     def run_cycle(self, instruments, target=50.0):
         logger.info("Scanning for opportunities...")
+
+        # Verification: Check trade permissions
+        account_info = self.mt5.get_account_summary()
+        if not self.mt5.connect():
+             logger.error("MT5 connection failed.")
+             return
+
+        # Direct MT5 library call for verification
+        import MetaTrader5 as mt5_lib
+        term_info = mt5_lib.terminal_info()
+        acc_info = mt5_lib.account_info()
+
+        if not term_info.trade_allowed:
+            logger.error("ERROR: Terminal trade_allowed is False. Check 'Algo Trading' button.")
+            sys.exit(1)
+        if not acc_info.trade_allowed:
+            logger.error("ERROR: Account trade_allowed is False. Check broker permissions or account state.")
+            sys.exit(1)
 
         # 0. Recursive Learning Adjustment
         latest_state = self.db.get_latest_learning_state()

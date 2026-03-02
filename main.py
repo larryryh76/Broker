@@ -77,33 +77,18 @@ def update_day_and_get_target(db):
     import os
     day_file = "day_count.txt"
 
-    # 1. Primary: Load from MongoDB learning state
-    latest_state = db.get_latest_learning_state()
+    # HARD RESET: Force Day 1 as requested
     day = 1
     prev_profit = 50.0
 
-    if latest_state:
-        day = latest_state.get("day_count", 1)
-        prev_profit = latest_state.get("daily_pnl", 50.0)
-        if prev_profit <= 0:
-            prev_profit = 50.0
+    # We ignore previous state for this reset run
+    logger.info("HARD RESET: Starting over from Day 1.")
 
-        current_target = get_target_for_day(day, prev_profit)
-
-        # Increment Day if target was met
-        if prev_profit >= current_target:
-            day += 1
-            logger.info(f"Target of ${current_target:.2f} met! Moving to Day {day}.")
-            # Note: We return the NEW target for the NEW day
-            prev_profit = prev_profit # Use met profit as base for next multiplier
-        else:
-            logger.info(f"Continuing Day {day}. Current Daily PnL: ${prev_profit:.2f} / Target: ${current_target:.2f}")
-
-    # 2. Secondary: Sync to local file for reference
+    # Sync to local file for reference
     with open(day_file, "w") as f:
         f.write(str(day))
 
-    return get_target_for_day(day, prev_profit)
+    return 50.0
 
 def get_target_for_day(day, prev_profit=50.0):
     if day == 1:

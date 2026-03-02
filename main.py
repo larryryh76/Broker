@@ -41,8 +41,8 @@ def main():
                 if os.path.exists("baseline.txt"): os.remove("baseline.txt")
                 sys.exit(1)
 
-            # Active Monitoring
-            logger.info(f"[TRAINING] Virtual Equity: ${virtual_equity:.2f} | Day {day} Goal: ${target:.2f}")
+            # Core Performance Monitoring
+            logger.info(f"[ACTIVE] Virtual Equity: ${virtual_equity:.2f} | Day {day} Goal: ${target:.2f}")
 
             # 1. Manage Open Positions (Zero-Risk & Trailing)
             executor.manage_open_positions()

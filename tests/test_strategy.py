@@ -47,9 +47,9 @@ def test_calculate_levels_sell(strategy):
 
 def test_calculate_position_size_small_balance(strategy):
     balance = 50
-    # Hyper-compounding logic: (50/50)*0.1 = 0.1
+    # Aggressive Quest logic: (50/5)*0.05 = 0.5
     lots = strategy.calculate_position_size(balance, target=50.0)
-    assert lots == 0.1
+    assert lots == 0.5
 
 def test_generate_signal_buy(strategy):
     data = []

@@ -99,12 +99,12 @@ class Strategy:
 
     def calculate_position_size(self, balance, target=50.0):
         """
-        Hyper-Compounding Lot Scaling:
-        Base: $5 -> 0.01 lots
-        Formula: lots = (balance / 5) * 0.01
+        Aggressive Quest Scaling:
+        Base: $5 -> 0.05 lots
+        Formula: lots = (balance / 5) * 0.05
         MAX_LOTS = 100
         """
-        lots = (balance / 5.0) * 0.01
+        lots = (balance / 5.0) * 0.05
         lots = max(0.01, round(lots, 2))
 
         # Confidence Multiplier (Optional)

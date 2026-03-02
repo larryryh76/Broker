@@ -1,5 +1,5 @@
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timezone
 from config import MONGODB_URI, DB_NAME, logger
 
 class DBClient:
@@ -19,7 +19,7 @@ class DBClient:
         confidence, instrument, entry_time, exit_time, etc.
         """
         try:
-            trade_data["timestamp"] = datetime.utcnow()
+            trade_data["timestamp"] = datetime.now(timezone.utc)
             # Mark as open if not specified
             if "status" not in trade_data:
                 trade_data["status"] = "OPEN"
@@ -58,7 +58,7 @@ class DBClient:
         max_drawdown, instrument_performance, etc.
         """
         try:
-            state_data["timestamp"] = datetime.utcnow()
+            state_data["timestamp"] = datetime.now(timezone.utc)
             result = self.learning_state_collection.insert_one(state_data)
             return result.inserted_id
         except Exception as e:
@@ -66,7 +66,7 @@ class DBClient:
             return None
 
     def get_daily_trades(self):
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         try:
             return list(self.trades_collection.find({"timestamp": {"$gte": today}}))
         except Exception as e:

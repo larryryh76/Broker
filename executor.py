@@ -130,9 +130,9 @@ class Executor:
             # Current distance from open in points
             dist_from_open = (price_current - price_open) / symbol_info.point if pos.type == 0 else (price_open - price_current) / symbol_info.point
 
-            # 1. Zero-Risk Trigger: Move SL to break-even after 50 points profit
-            if dist_from_open >= 50 and sl_current == 0:
-                logger.info(f"Zero-Risk TRIGGER: Moving SL to BREAK-EVEN for {symbol} ({ticket})")
+            # 1. No-Loss Protocol: Move SL to break-even immediately upon any profit
+            if dist_from_open > 0 and sl_current == 0:
+                logger.info(f"No-Loss SNIPER: Locking BREAK-EVEN for {symbol} ({ticket}) at {price_open}")
                 self.mt5.modify_position_sl(ticket, price_open, tp_current)
 
             # 2. Aggressive Trailing: 10-point trail once safe (sl != 0)

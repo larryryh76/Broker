@@ -38,7 +38,7 @@ class MT5Client:
         if terminal_path:
             terminal_path = os.path.abspath(terminal_path)
 
-        # 1. Manual Start via subprocess with config file
+        # Direct Initialization Bypass
         try:
             if terminal_path:
                 # Absolute Path Config Fix: Ensure the startup.ini is created relative to terminal64.exe
@@ -48,27 +48,30 @@ class MT5Client:
                     os.makedirs(config_dir)
                 config_path = os.path.join(config_dir, "startup.ini")
 
-                # Dynamic .ini generation to force Algo Trading Enabled
+                # Dynamic .ini generation to force Algo Trading Enabled (Enabled=1 is crucial)
                 ini_content = f"[Common]\nLogin={self.login}\nPassword={self.password}\nServer={self.server}\nExpertsEnable=1\nAllowLiveTrading=1\nAllowDllImport=1\nEnabled=1\n[Charts]\nExperts=1\n"
                 with open(config_path, "w") as f:
                     f.write(ini_content)
 
-                logger.info(f"Generated forced config and launching terminal: {config_path}")
+                logger.info(f"Generated forced config: {config_path}")
 
-                # Launch with the config file parameter for forced Algo Trading
-                subprocess.Popen([terminal_path, "/portable", "/config:config\\startup.ini"])
+                # 1. Background launch with portable and relative config flags
+                # The user specifically requested /config:config\startup.ini
+                subprocess.Popen([terminal_path, "/portable", r"/config:config\startup.ini"])
+                time.sleep(1) # Minimal 1s delay as requested
 
-                # Verified Handshake: Give terminal 60 seconds to bridge IPC
-                logger.info("Terminal launched. Waiting 60s for IPC handshake...")
-                time.sleep(60)
-
-            # 2. Direct Initialization (Direct absolute path)
-            if mt5.initialize(path=terminal_path, timeout=60000):
-                # Proceed directly to trading logic as ordered
-                logger.info("MT5 initialized successfully. Proceeding to trade analysis...")
-
-                # Brief sync
-                time.sleep(5)
+            # 2. Direct initialize with all credentials and path
+            # This bypasses the standard handshake and attaches directly
+            logger.info(f"Initializing MT5 directly with credentials: {terminal_path}")
+            if mt5.initialize(
+                path=terminal_path,
+                login=self.login,
+                password=self.password,
+                server=self.server,
+                timeout=60000
+            ):
+                # Proceed immediately
+                logger.info("MT5 direct initialization successful. Analysis active.")
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
 
                 # Force symbol selection into Market Watch with strict 'm' suffix

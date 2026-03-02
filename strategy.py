@@ -68,9 +68,9 @@ class Strategy:
         latest = df.iloc[-1]
         prev = df.iloc[-2]
 
-        # RSI Filter: BUY if RSI < 30, SELL if RSI > 70
-        rsi_oversold = latest["rsi"] < 30
-        rsi_overbought = latest["rsi"] > 70
+        # RSI Filter: Highly Relaxed for Training (BUY if RSI < 45, SELL if RSI > 55)
+        rsi_oversold = latest["rsi"] < 45
+        rsi_overbought = latest["rsi"] > 55
 
         # Aggressive Signal: Current price vs Previous candle high/low
         if latest["close"] > prev["high"] and rsi_oversold:

@@ -173,8 +173,7 @@ class Executor:
         order_volume = units if side == "BUY" else -units
 
         # 6. Aggressive Signal: No delays
-
-        logger.info(f"Executing {side} order for {instrument} with {units} lots...")
+        logger.info(f"[ATTEMPT] Trying to {side} {instrument} with {units} lots...")
         order_result = self.mt5.place_market_order(instrument, order_volume, stop_loss, take_profit)
 
         if order_result:
@@ -193,4 +192,6 @@ class Executor:
             }
             self.db.log_trade(trade_data)
         else:
-            logger.error(f"Failed to execute order for {instrument}")
+            import MetaTrader5 as mt5_lib
+            reason = mt5_lib.last_error()
+            logger.error(f"[ATTEMPT] Failed to {side} {instrument} | Reason: MT5 Error {reason}")

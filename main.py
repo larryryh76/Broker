@@ -56,7 +56,7 @@ def main():
             time.sleep(5)
 
         # After cycle, update learning state
-        update_learning_state(mt5, db)
+        update_learning_state(mt5, db, virtual_equity, day, multiplier)
 
         logger.info("Execution cycle complete.")
 
@@ -101,11 +101,19 @@ def update_day_and_get_target(mt5, db):
 
     real_balance = float(account["balance"])
 
-    # Persistent Baseline Fix
+    # Persistent Baseline Fix for GitHub Actions
     baseline_file = "baseline.txt"
+    latest_state = db.get_latest_learning_state()
+
     if os.path.exists(baseline_file):
         with open(baseline_file, "r") as f:
             INITIAL_DEMO_BALANCE = float(f.read().strip())
+    elif latest_state and latest_state.get("initial_demo_balance"):
+        # Fallback to MongoDB if baseline.txt was wiped by GHA
+        INITIAL_DEMO_BALANCE = latest_state.get("initial_demo_balance")
+        with open(baseline_file, "w") as f:
+            f.write(str(INITIAL_DEMO_BALANCE))
+        logger.info(f"Baseline Restored from MongoDB: {INITIAL_DEMO_BALANCE}")
     else:
         INITIAL_DEMO_BALANCE = real_balance
         with open(baseline_file, "w") as f:
@@ -138,7 +146,7 @@ def get_target_for_day(day, prev_profit=50.0):
         return 50.0
     return prev_profit * (day + 2)
 
-def update_learning_state(mt5, db):
+def update_learning_state(mt5, db, virtual_equity, day, multiplier):
     logger.info("Updating learning state...")
     reconcile_trades(mt5, db)
 
@@ -175,7 +183,6 @@ def update_learning_state(mt5, db):
 
     # Correct daily baseline tracking
     initial_daily_balance = balance
-    day = 1 # Default
 
     if latest_state:
         state_time = latest_state["timestamp"]
@@ -189,16 +196,17 @@ def update_learning_state(mt5, db):
             # New day, current balance is the new baseline
             initial_daily_balance = balance
 
-    # Capture Baseline for Persistence
-    target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
-
-    # Determine the persistent baseline
-    latest_state = db.get_latest_learning_state()
-    if latest_state and latest_state.get("initial_demo_balance"):
-        initial_demo_balance = latest_state.get("initial_demo_balance")
+    # Determine the persistent baseline from file or state
+    baseline_file = "baseline.txt"
+    if os.path.exists(baseline_file):
+        with open(baseline_file, "r") as f:
+            initial_demo_balance = float(f.read().strip())
     else:
-        account = mt5.get_account_summary()
-        initial_demo_balance = account["balance"] if account else 10000000.00
+        latest_state = db.get_latest_learning_state()
+        if latest_state and latest_state.get("initial_demo_balance"):
+            initial_demo_balance = latest_state.get("initial_demo_balance")
+        else:
+            initial_demo_balance = balance
 
     state_data = {
         "balance": balance,

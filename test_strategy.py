@@ -39,22 +39,22 @@ def test_strategy_logic():
     signal = strat.generate_signal(df, instrument="EURUSDm", df_h1=df_h1)
     print(f"Test Signal (Strict): {signal}")
 
-    # Test position sizing
-    lots_micro = strat.calculate_position_size(10.0, instrument="EURUSDm")
-    print(f"Test Micro-Lots ($10, FX): {lots_micro}")
+    # Test position sizing (Active Level Model)
+    lots_micro = strat.calculate_position_size(5.0, instrument="EURUSDm")
+    print(f"Test Micro-Lots (Level $5, FX): {lots_micro}")
     assert lots_micro == 0.01
 
-    lots_gold_locked = strat.calculate_position_size(19.0, instrument="XAUUSDm")
-    print(f"Test Gold Locked ($19): {lots_gold_locked}")
-    assert lots_gold_locked == 0 or lots_gold_locked == 0.01
+    lots_gold_locked = strat.calculate_position_size(5.0, instrument="XAUUSDm")
+    print(f"Test Gold Locked (Level $5): {lots_gold_locked}")
+    assert lots_gold_locked == 0 or lots_gold_locked == 0.01 # Depending on enforcement
 
-    lots_gold_unlocked = strat.calculate_position_size(21.0, instrument="XAUUSDm")
-    print(f"Test Gold Unlocked ($21): {lots_gold_unlocked}")
+    lots_gold_unlocked = strat.calculate_position_size(50.0, instrument="XAUUSDm")
+    print(f"Test Gold Unlocked (Level $50): {lots_gold_unlocked}")
     assert lots_gold_unlocked >= 0.10
 
-    lots_fx = strat.calculate_position_size(5.0, instrument="EURUSDm")
-    print(f"Test Lots ($5, FX): {lots_fx}")
-    assert lots_fx == 0.01
+    lots_fx = strat.calculate_position_size(250.0, instrument="EURUSDm")
+    print(f"Test Lots (Level $250, FX): {lots_fx}")
+    assert lots_fx > 0.10
 
     # Test ATR calculation
     atr = strat.calculate_atr(df)

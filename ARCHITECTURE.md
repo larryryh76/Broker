@@ -1,7 +1,7 @@
 # THE MONEY MACHINE - Architecture Documentation (Direct MT5 Edition)
 
 ## Overview
-THE MONEY MACHINE is a production-ready trading bot designed to execute on a GitHub Actions schedule. It uses a multi-indicator strategy to trade Gold (XAUUSD), GBP/JPY (GBPJPY), and Bitcoin (BTCUSD) via the Exness broker using the official MetaTrader 5 Python library.
+THE MONEY MACHINE is an ultra-intelligent, autonomous trading system. It operates using a **Virtual Sub-Capital Model**, isolating a fixed $5.00 starting capital from the broker's main balance. All risk, sizing, and objectives are calculated exclusively from this virtual sub-account.
 
 ## Core Components
 
@@ -17,9 +17,10 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 - **Trend Alignment Filter**: No BUY if H1 trend is DOWN; no SELL if H1 trend is UP (Trend defined by H1 SMA 20).
 - **Volatility Filter**: Only executes if spread < 10% of Daily ATR.
 - **Risk Management**: 1:3 Risk-to-Reward ratio.
-- **Position Sizing**: Dynamic micro-lot sizing ($5 -> 0.05 lots) with **Gold Overrides** (0.10 - 0.50 lots) for Phase 1 compounding.
+- **Position Sizing**: Dynamic micro-lot sizing calculated EXCLUSIVELY from the $5.00 virtual sub-capital + realized profit.
 - **Safety Buffer**: Hard Reset triggers if Virtual Equity drops below $3.50, re-seeding the bot and ignoring past historical/manual data via Magic Number (123456) filtering.
-- **Profit Scaling**: Progressive multiplication logic ($50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10) to reach exponential targets.
+- **Virtual Sub-Capital Model**: Broker balance is treated as an untouched reserve. The bot behaves as if it is operating on a $5 account internally.
+- **Profit Scaling**: Progressive multiplication logic ($50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10) based on realized virtual growth.
 - **Recursive Learning**: Scales risk based on real-time win rates.
 
 ### 3. Database Client (`db_client.py`)

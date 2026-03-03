@@ -76,6 +76,24 @@ class DBClient:
     def clear_learning_state(self):
         try:
             self.learning_state_collection.delete_many({})
-            logger.info("Cleared learning state (Hard Reset).")
+            self.trades_collection.delete_many({})
+            logger.info("Cleared all state and trades (Hard Reset).")
         except Exception as e:
             logger.error(f"Error clearing learning state: {e}")
+
+    def get_idle_scans(self):
+        state = self.get_latest_learning_state()
+        return state.get("consecutive_idle_scans", 0) if state else 0
+
+    def get_total_realized_profit(self):
+        """Calculates sum of profit_loss for all CLOSED trades executed by the bot."""
+        try:
+            pipeline = [
+                {"$match": {"status": "CLOSED"}},
+                {"$group": {"_id": None, "total": {"$sum": "$profit_loss"}}}
+            ]
+            result = list(self.trades_collection.aggregate(pipeline))
+            return result[0]["total"] if result else 0.0
+        except Exception as e:
+            logger.error(f"Error calculating total realized profit: {e}")
+            return 0.0

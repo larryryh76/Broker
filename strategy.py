@@ -221,6 +221,11 @@ class Strategy:
             # Intelligence RELAXED: Lower entry barrier when scanning idle
             threshold = 2.0
 
+        # EXECUTION ENFORCEMENT: Final override if idle too long
+        if dominance_buy > dominance_sell and dominance_buy >= 2.0 and relaxed:
+             # Force action if bias is clear but threshold not quite reached
+             threshold = 2.0
+
         if dominance_buy >= threshold and dominance_buy > dominance_sell:
             conf = min(0.95, dominance_buy / 5.0)
             return {"side": "BUY", "confidence": conf, "price": latest["close"]}
@@ -263,30 +268,34 @@ class Strategy:
 
         return False, None
 
-    def calculate_position_size(self, balance, instrument="", target=50.0):
+    def calculate_position_size(self, active_level, instrument="", target=50.0):
         """
         Aggressive Quest Scaling:
         Base: $5 -> 0.05 lots
-        Phase 1 Optimization:
-        - Strict 0.01 lots until Virtual Equity > $15.00
-        - Gold Unlock only after Virtual Equity >= $20.00
+        - Sizing is derived EXCLUSIVELY from Active Virtual Level
+        - Gold Unlock only after Active Level >= $50.00
         """
-        # Micro-Lot Enforcement
-        if balance <= 15.00:
+        if "XAU" in instrument:
+            # Gold Unlock Check (Promotion level required)
+            if active_level < 50.00:
+                return 0 # Locked
+
+        # Micro-Lot Enforcement for Bootstrap Level
+        if active_level < 50.00:
             return 0.01
 
         if "XAU" in instrument:
-            # Gold Unlock Check
-            if balance < 20.00:
+            # Gold Unlock Check (Promotion level required)
+            if active_level < 50.00:
                 return 0 # Locked
 
-            if balance < 50:
+            if active_level < 250:
                 # Gold Override for aggressive Phase 1
-                lots = 0.10 + (balance / 50.0) * 0.40
+                lots = 0.10 + (active_level / 250.0) * 0.40
             else:
-                lots = (balance / 5.0) * 0.05
+                lots = (active_level / 5.0) * 0.05
         else:
-            lots = (balance / 5.0) * 0.05
+            lots = (active_level / 5.0) * 0.05
 
         lots = max(0.01, round(lots, 2))
 

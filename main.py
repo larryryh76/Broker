@@ -14,7 +14,7 @@ def main():
         sys.exit(1)
 
     logger.info("--- THE MONEY MACHINE: ULTRA-INTELLIGENT TRADING SYSTEM ---")
-    logger.info("[MISSION] Precision trading. Flawless growth curve. Outcome Dominance.")
+    logger.info("[MISSION] Precision trading. Virtual Sub-Capital Model ($5.00).")
 
     mt5 = MT5Client()
     try:
@@ -37,8 +37,9 @@ def main():
             # Recalculate Virtual Equity and Target for real-time logging
             target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
 
-            # Risk Management: Reset if profit < -$1.50 (Equity < $3.50)
-            if virtual_equity < 3.50:
+            # Risk Management: Reset if equity < $0.50 (90% loss)
+            # Threshold set to $0.50 as per "Stop the Panic Reset" objective
+            if virtual_equity < 0.50:
                 # Check for active positions before reset
                 active = mt5.get_open_trades()
                 if not active:
@@ -51,15 +52,15 @@ def main():
 
             # Core Performance Monitoring
             if day == 1:
-                logger.info("[PHASE 1] Bootstrapping Initial Capital ($5 -> $50)")
+                logger.info("[PHASE 1] Virtual Sub-Capital ($5 -> $50)")
             logger.info(f"[DECISION AUTHORITY] Outcome Dominance Active.")
-            logger.info(f"[ACTIVE] Intelligence State: Virtual Equity ${virtual_equity:.2f} | Objective: ${target:.2f}")
+            logger.info(f"[STATE] Virtual Equity: ${virtual_equity:.2f} | Objective: ${target:.2f} (Day {day})")
 
             # 1. Manage Open Positions (Intelligent Exit & Stops)
             executor.manage_open_positions(virtual_equity=virtual_equity)
 
             # 2. Run Strategy Cycle
-            autotrade_error = executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_equity)
+            autotrade_error = executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_equity, active_level=multiplier)
 
             if autotrade_error:
                 logger.warning("AutoTrading error detected. Waiting 10 seconds before next scan...")
@@ -106,66 +107,48 @@ def reconcile_trades(mt5, db):
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
 def update_day_and_get_target(mt5, db):
-    import os
+    # CAPITAL ISOLATION: Locked Virtual Sub-Capital
+    # Broker balance is ignored. All decision-making uses the $5.00 base.
 
-    # Virtualization Logic
-    account = mt5.get_account_summary()
-    if not account:
-        return 50.0, 5.0, 1, 0
+    realized_profit = db.get_total_realized_profit()
+    virtual_equity = 5.00 + realized_profit
 
-    real_balance = float(account["balance"])
+    # VIRTUAL CAPITAL PROMOTION & FALLBACK
+    # Levels: $5, $50, $250, $1500, $10500... (Discrete approved levels)
+    # Target sequence: $50 (Day 1) -> 5x, 6x, 7x, 8x, 9x, 10x
+    day1_target = 50.0
+    day2_target = day1_target * 5   # $250
+    day3_target = day2_target * 6   # $1500
+    day4_target = day3_target * 7   # $10500
+    day5_target = day4_target * 8   # $84000
+    day6_target = day5_target * 9   # $756000
+    day7_target = day6_target * 10  # $7.56M
 
-    # Persistent Baseline Fix for GitHub Actions
-    baseline_file = "baseline.txt"
-    latest_state = db.get_latest_learning_state()
+    targets = [day1_target, day2_target, day3_target, day4_target, day5_target, day6_target, day7_target]
+    approved_levels = [5.00] + targets
 
-    if os.path.exists(baseline_file):
-        with open(baseline_file, "r") as f:
-            INITIAL_DEMO_BALANCE = float(f.read().strip())
-    elif latest_state and latest_state.get("initial_demo_balance"):
-        # Fallback to MongoDB if baseline.txt was wiped by GHA
-        INITIAL_DEMO_BALANCE = latest_state.get("initial_demo_balance")
-        with open(baseline_file, "w") as f:
-            f.write(str(INITIAL_DEMO_BALANCE))
-        logger.info(f"Baseline Restored from MongoDB: {INITIAL_DEMO_BALANCE}")
-    else:
-        INITIAL_DEMO_BALANCE = real_balance
-        with open(baseline_file, "w") as f:
-            f.write(str(INITIAL_DEMO_BALANCE))
-        logger.info(f"Persistent Baseline Created: {INITIAL_DEMO_BALANCE}")
+    # Determine ACTIVE Virtual Capital Level
+    # Promotion: Earned through performance. Fallback: Reverts if equity drops.
+    active_level = 5.00
+    for level in approved_levels:
+        if virtual_equity >= level:
+            active_level = level
+        else:
+            break
 
-    # Calculate Profit and Virtual Equity
-    profit = real_balance - INITIAL_DEMO_BALANCE
-    virtual_equity = profit + 5.00
-
-    # Progressive Target Alignment: $50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10
-    # Absolute growth curve enforcement
-    day1_base = 50.0
-    day2_target = day1_base * 5  # $250
-    day3_target = day2_target * 6 # $1500
-    day4_target = day3_target * 7 # $10500
-    day5_target = day4_target * 8 # $84000
-    day6_target = day5_target * 9 # $756000
-    day7_target = day6_target * 10 # $7.56M
-
-    targets = [day1_base, day2_target, day3_target, day4_target, day5_target, day6_target, day7_target]
-
+    # Sequential target progression based exclusively on virtual performance
     day = 1
     target = targets[0]
-
     for i, t in enumerate(targets):
-        if profit >= t:
-            day = i + 2 # We reached target for day i+1, so we are on day i+2
-            if day <= len(targets):
-                target = targets[day-1]
-            else:
-                target = targets[-1] * (day + 3) # Beyond defined targets
+        if virtual_equity >= (t - 0.01):
+            day = i + 2
+            target = targets[day-1] if day <= len(targets) else targets[-1] * (day + 3)
         else:
             day = i + 1
             target = t
             break
 
-    return target, virtual_equity, day, 0
+    return target, virtual_equity, day, active_level
 
 def update_learning_state(mt5, db, virtual_equity, day, multiplier):
     logger.info("Updating learning state...")
@@ -202,32 +185,21 @@ def update_learning_state(mt5, db, virtual_equity, day, multiplier):
 
     latest_state = db.get_latest_learning_state()
 
-    # Correct daily baseline tracking
-    initial_daily_balance = balance
+    # Virtual Sub-Capital Model: Use Virtual Equity for baseline tracking
+    initial_daily_virtual_equity = virtual_equity
+    consecutive_idle_scans = db.get_idle_scans() if not any(t.get("status") == "CLOSED" for t in all_daily_trades) else 0
 
     if latest_state:
         state_time = latest_state["timestamp"]
         if state_time.tzinfo is None:
             state_time = state_time.replace(tzinfo=timezone.utc)
 
-        # If latest state was today, keep its baseline
+        # If latest state was today, keep its virtual baseline
         if state_time.date() == datetime.now(timezone.utc).date():
-            initial_daily_balance = latest_state.get("initial_daily_balance", balance)
+            initial_daily_virtual_equity = latest_state.get("initial_daily_virtual_equity", virtual_equity)
         else:
-            # New day, current balance is the new baseline
-            initial_daily_balance = balance
-
-    # Determine the persistent baseline from file or state
-    baseline_file = "baseline.txt"
-    if os.path.exists(baseline_file):
-        with open(baseline_file, "r") as f:
-            initial_demo_balance = float(f.read().strip())
-    else:
-        latest_state = db.get_latest_learning_state()
-        if latest_state and latest_state.get("initial_demo_balance"):
-            initial_demo_balance = latest_state.get("initial_demo_balance")
-        else:
-            initial_demo_balance = balance
+            # New day, current virtual equity is the new baseline
+            initial_daily_virtual_equity = virtual_equity
 
     state_data = {
         "balance": balance,
@@ -236,8 +208,8 @@ def update_learning_state(mt5, db, virtual_equity, day, multiplier):
         "total_trades": total_trades,
         "win_rate": win_rate,
         "instrument_performance": instrument_perf,
-        "initial_daily_balance": initial_daily_balance,
-        "initial_demo_balance": initial_demo_balance,
+        "initial_daily_virtual_equity": initial_daily_virtual_equity,
+        "consecutive_idle_scans": consecutive_idle_scans,
         "day_count": day,
         "multiplier": multiplier
     }

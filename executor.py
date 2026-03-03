@@ -12,7 +12,7 @@ class Executor:
         self._last_sl_move_time = 0 # DEPRECATED
         self._idle_cycles = 0
 
-    def check_circuit_breaker(self, balance):
+    def check_circuit_breaker(self, virtual_equity):
         latest_state = self.db.get_latest_learning_state()
         if not latest_state:
             return False
@@ -24,37 +24,34 @@ class Executor:
 
         # Only apply circuit breaker if the state is from today
         if state_time.date() == datetime.now(timezone.utc).date():
-            initial_daily_balance = latest_state.get("initial_daily_balance", balance)
-            drawdown = (initial_daily_balance - balance) / initial_daily_balance
+            initial_daily_virtual_equity = latest_state.get("initial_daily_virtual_equity", virtual_equity)
+            if initial_daily_virtual_equity <= 0:
+                return False
+
+            drawdown = (initial_daily_virtual_equity - virtual_equity) / initial_daily_virtual_equity
 
             if drawdown >= DAILY_DRAWDOWN_LIMIT:
                 logger.warning(f"CIRCUIT BREAKER ACTIVATED: Drawdown is {drawdown*100:.2f}% (Limit: {DAILY_DRAWDOWN_LIMIT*100}%)")
                 return True
         return False
 
-    def run_cycle(self, instruments, target=50.0, virtual_balance=5.0):
-        # Relaxed mode check: If no trades for 3 cycles, increase sensitivity
-        is_relaxed = self._idle_cycles > 3
+    def run_cycle(self, instruments, target=50.0, virtual_balance=5.0, active_level=5.0):
+        # DAILY EXECUTION ENFORCEMENT
+        # Track consecutive idle cycles across sessions via DB
+        latest_state = self.db.get_latest_learning_state()
+        db_idle_scans = latest_state.get("consecutive_idle_scans", 0) if latest_state else 0
+        total_idle = self._idle_cycles + db_idle_scans
+
+        # Relaxed mode check: Escalating urgency if no trades executed
+        is_relaxed = total_idle > 3
         if is_relaxed:
-            logger.info("Intelligence RELAXED: Scanning without execution detected.")
+            logger.info(f"Execution Urgency HIGH (Idle cycles: {total_idle}). Thresholds RELAXED.")
 
         # 0. Daily Momentum Check (Dynamic target protection)
-        latest_state = self.db.get_latest_learning_state()
-        if latest_state:
-            initial_daily_balance = latest_state.get("initial_daily_balance", 0)
-            account = self.mt5.get_account_summary()
-            if account and initial_daily_balance > 0:
-                current_balance = float(account["balance"])
-
-                # Check for historical massive loss from screenshot (Emergency Block)
-                # Note: This is already partially handled by Magic Number filtering,
-                # but we add an explicit sanity check for equity progression.
-
-                # Dynamic Daily Target Protection:
-                # If target reached, stop trading to secure the growth curve.
-                if virtual_balance >= target:
-                    logger.info(f"DAILY OBJECTIVE SECURED (${virtual_balance:.2f} >= ${target:.2f}). HALTING OPERATION.")
-                    return False
+        # If objective reached, stop trading to secure the growth curve.
+        if virtual_balance >= target:
+            logger.info(f"DAILY OBJECTIVE SECURED (${virtual_balance:.2f} >= ${target:.2f}). HALTING OPERATION.")
+            return False
 
         logger.info("Scanning for opportunities...")
 
@@ -82,9 +79,7 @@ class Executor:
         if not account:
             return
 
-        balance = float(account["balance"])
-
-        if self.check_circuit_breaker(balance):
+        if self.check_circuit_breaker(virtual_balance):
             logger.info("Trading halted due to circuit breaker.")
             return
 
@@ -145,7 +140,8 @@ class Executor:
                 # Dynamic Margin Check
                 import MetaTrader5 as mt5_lib
                 order_type = mt5_lib.ORDER_TYPE_BUY if signal["side"] == "BUY" else mt5_lib.ORDER_TYPE_SELL
-                volume = self.strategy.calculate_position_size(virtual_balance, instrument=instrument, target=target)
+                # Sizing is based EXCLUSIVELY on the Active Virtual Capital Level
+                volume = self.strategy.calculate_position_size(active_level, instrument=instrument, target=target)
 
                 if volume <= 0:
                     continue # Locked or invalid
@@ -162,17 +158,24 @@ class Executor:
                 signals.append(signal)
                 logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread:.5f}, ATR: {atr if atr else 0:.5f})")
 
-        # 3. Aggressive Execution: Scaling with Opportunity
+        # 3. Decision Authority Override: Scaling with Outcome Dominance
         error_detected = False
         executed_in_cycle = False
 
+        # Strict Global Position Limit: ONE trade at a time
+        # Intelligence is measured by closed profitable outcomes, not volume.
+        total_open = sum(pos_counts.values())
+
+        # DAILY EXECUTION ENFORCEMENT: Force action if urgency is extreme
+        force_action = total_idle > 10 and total_open == 0
+
+        if total_open >= 1:
+            return False
+
         for signal in signals:
             inst = signal["instrument"]
-            # Re-verify per-symbol limit
-            if pos_counts.get(inst, 0) >= 3:
-                continue
 
-            if self.execute_signal(signal, virtual_balance, target=target):
+            if self.execute_signal(signal, virtual_balance, target=target, active_level=active_level):
                 error_detected = True
             else:
                 executed_in_cycle = True
@@ -183,8 +186,22 @@ class Executor:
 
         if executed_in_cycle:
             self._idle_cycles = 0
+            # Reset DB counter on success
+            latest_state = self.db.get_latest_learning_state()
+            if latest_state:
+                self.db.learning_state_collection.update_one(
+                    {"_id": latest_state["_id"]},
+                    {"$set": {"consecutive_idle_scans": 0}}
+                )
         else:
             self._idle_cycles += 1
+            # Update DB counter
+            latest_state = self.db.get_latest_learning_state()
+            if latest_state:
+                self.db.learning_state_collection.update_one(
+                    {"_id": latest_state["_id"]},
+                    {"$inc": {"consecutive_idle_scans": 1}}
+                )
 
         return error_detected
 
@@ -291,7 +308,7 @@ class Executor:
                              self._last_sl_error_time = time.time()
                              break
 
-    def execute_signal(self, signal, balance, target=50.0):
+    def execute_signal(self, signal, balance, target=50.0, active_level=5.0):
         """Returns True if Retcode 10027 is detected"""
         try:
             import MetaTrader5 as mt5_lib
@@ -307,7 +324,8 @@ class Executor:
         stop_loss, take_profit = self.strategy.calculate_levels(side, price)
 
         # 5. Position Sizing
-        units = self.strategy.calculate_position_size(balance, instrument=instrument, target=target)
+        # Sizing is based EXCLUSIVELY on the Active Virtual Capital Level
+        units = self.strategy.calculate_position_size(active_level, instrument=instrument, target=target)
 
         # Side: positive for BUY, negative for SELL
         order_volume = units if side == "BUY" else -units

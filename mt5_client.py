@@ -374,3 +374,38 @@ class MT5Client:
             logger.error(f"Modify SL failed for {ticket}: Retcode {result.retcode}, comment: {result.comment}")
             return False
         return True
+
+    def close_position(self, ticket):
+        if not self.connect():
+            return False
+
+        pos = mt5.positions_get(ticket=ticket)
+        if not pos or len(pos) == 0:
+            return False
+
+        pos = pos[0]
+        symbol = pos.symbol
+        volume = pos.volume
+        order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+        price = mt5.symbol_info_tick(symbol).bid if order_type == mt5.ORDER_TYPE_SELL else mt5.symbol_info_tick(symbol).ask
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": float(volume),
+            "type": order_type,
+            "position": ticket,
+            "price": price,
+            "deviation": 20,
+            "magic": 123456,
+            "comment": "MoneyMachine Close",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC,
+        }
+
+        result = mt5.order_send(request)
+        if result and result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"Close failed for {ticket}: Retcode {result.retcode}, comment: {result.comment}")
+            return False
+
+        return True

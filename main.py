@@ -27,6 +27,9 @@ def main():
         strategy = Strategy()
         executor = Executor(mt5, db, strategy)
 
+        # Initial Reconciliation
+        reconcile_trades(mt5, db)
+
         # Core Execution Loop
         # Note: In GitHub Actions, we run for a limited time
         start_time = time.time()
@@ -35,13 +38,16 @@ def main():
             target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
 
             # Risk Management: Reset if profit < -$1.50 (Equity < $3.50)
-            # Increased threshold as per "Safety Buffer" request
             if virtual_equity < 3.50:
-                logger.error("VIRTUAL ACCOUNT BLOWN - HARD RESET")
-                db.clear_learning_state()
-                # Remove baseline to force restart
-                if os.path.exists("baseline.txt"): os.remove("baseline.txt")
-                sys.exit(1)
+                # Check for active positions before reset
+                active = mt5.get_open_trades()
+                if not active:
+                    logger.error("VIRTUAL ACCOUNT BLOWN - HARD RESET")
+                    db.clear_learning_state()
+                    if os.path.exists("baseline.txt"): os.remove("baseline.txt")
+                    sys.exit(1)
+                else:
+                    logger.warning("Equity low, but trades are active. Holding reset.")
 
             # Core Performance Monitoring
             if day == 1:
@@ -49,8 +55,8 @@ def main():
             logger.info(f"[DECISION AUTHORITY] Outcome Dominance Active.")
             logger.info(f"[ACTIVE] Intelligence State: Virtual Equity ${virtual_equity:.2f} | Objective: ${target:.2f}")
 
-            # 1. Manage Open Positions (Zero-Risk & Trailing)
-            executor.manage_open_positions()
+            # 1. Manage Open Positions (Intelligent Exit & Stops)
+            executor.manage_open_positions(virtual_equity=virtual_equity)
 
             # 2. Run Strategy Cycle
             autotrade_error = executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_equity)

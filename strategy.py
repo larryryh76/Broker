@@ -244,6 +244,22 @@ class Strategy:
 
         return stop_loss, take_profit
 
+    def analyze_exit(self, symbol, current_profit, dominance_score, virtual_equity):
+        """
+        Intelligent Exit Logic:
+        Authorizes closure if dominance of existing direction weakens or
+        substantial profit is achieved relative to Phase 1 objectives.
+        """
+        # Threshold: $0.20 profit on $5.00 account (4% return) is substantial
+        if virtual_equity < 50.0 and current_profit >= 0.20:
+            return True, "OBJECTIVE_REACHED"
+
+        # Exit if dominance falls below 2.0 (weakened prediction)
+        if dominance_score < 2.0:
+            return True, "DOMINANCE_WEAKENED"
+
+        return False, None
+
     def calculate_position_size(self, balance, instrument="", target=50.0):
         """
         Aggressive Quest Scaling:

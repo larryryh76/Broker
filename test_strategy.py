@@ -68,6 +68,15 @@ def test_strategy_logic():
     print(f"Test Liquidity Gap: {gap}")
     assert gap == "SELL"
 
+    # Test Exit Analysis
+    should_close, reason = strat.analyze_exit("EURUSDm", 0.25, 3.5, 5.0)
+    print(f"Test Exit (Profit): {should_close}, {reason}")
+    assert should_close == True and reason == "OBJECTIVE_REACHED"
+
+    should_close_d, reason_d = strat.analyze_exit("EURUSDm", 0.01, 1.5, 5.0)
+    print(f"Test Exit (Dominance): {should_close_d}, {reason_d}")
+    assert should_close_d == True and reason_d == "DOMINANCE_WEAKENED"
+
 if __name__ == "__main__":
     test_strategy_logic()
     print("Strategy logic test passed.")

@@ -178,11 +178,11 @@ class Executor:
 
         return error_detected
 
-    def manage_open_positions(self):
+    def manage_open_positions(self, virtual_equity=5.0):
         """
-        Zero-Risk Trigger & Aggressive Trailing Stop
+        Intelligent Management: Exit Analysis & Stop Discipline
         """
-        # Intelligence Filter: 10s cooldown between SL modifications
+        # Intelligence Filter: 10s cooldown between API modifications
         if time.time() - self._last_sl_move_time < 10:
             return
 
@@ -212,15 +212,38 @@ class Executor:
             sl_current = pos.sl
             tp_current = pos.tp
 
+            # 0. Intelligent Exit Analysis
+            # Recalculate indicators for the open symbol
+            candles = self.mt5.get_candles(symbol, count=100)
+            df = self.strategy.prepare_data(candles)
+            df = self.strategy.calculate_indicators(df)
+
+            # Score dominance for current position side
+            dominance_score = 0.0
+            if df is not None:
+                latest = df.iloc[-1]
+                if pos.type == 0: # BUY
+                    if latest["rsi"] < 35: dominance_score += 1.0
+                    if latest["ma_fast"] > latest["ma_slow"]: dominance_score += 1.0
+                    if latest["close"] <= latest["bb_lower"]: dominance_score += 1.0
+                else: # SELL
+                    if latest["rsi"] > 65: dominance_score += 1.0
+                    if latest["ma_fast"] < latest["ma_slow"]: dominance_score += 1.0
+                    if latest["close"] >= latest["bb_upper"]: dominance_score += 1.0
+
+            should_close, reason = self.strategy.analyze_exit(symbol, pos.profit, dominance_score, virtual_equity)
+            if should_close:
+                logger.info(f"INTELLIGENT EXIT: Closing {symbol} ({ticket}) | Reason: {reason} | Profit: ${pos.profit:.2f}")
+                if self.mt5.close_position(ticket):
+                    self._last_sl_move_time = time.time()
+                continue
+
             # Current distance from open in points
             dist_from_open = (price_current - price_open) / symbol_info.point if pos.type == 0 else (price_open - price_current) / symbol_info.point
 
             # 1. No-Loss Protocol: The $0.05 Safety Switch
-            # If trade profit >= $0.05, move SL to +$0.01 immediately.
-            # This mathematically guarantees "profit without making a loss".
-            if pos.profit >= 0.05 and (sl_current == 0 or abs(sl_current - price_open) < 0.00001):
+            if pos.profit >= 0.05 and (sl_current == 0 or abs(sl_current - price_open) < symbol_info.point * 0.5):
                 # Calculate SL for +$0.01 profit
-                # For 0.01 lots: 1 point (0.00001 for FX, 0.01 for Gold) equals exactly $0.01 profit.
                 offset = symbol_info.point
                 sl_be = price_open + offset if pos.type == 0 else price_open - offset
 
@@ -231,17 +254,22 @@ class Executor:
             # 2. Aggressive Trailing: 10-point trail once safe (sl != 0)
             elif sl_current != 0:
                 new_sl = 0
+                # Meaningful Margin Discipline: Only move SL if improvement > 5 points
+                min_improvement = 5 * symbol_info.point
+
                 if pos.type == 0: # BUY
                     # If current price is > 10 points above current SL, move SL up
-                    if price_current - sl_current > 10 * symbol_info.point:
-                        new_sl = price_current - 10 * symbol_info.point
+                    candidate_sl = price_current - 10 * symbol_info.point
+                    if candidate_sl > sl_current + min_improvement:
+                        new_sl = candidate_sl
                 else: # SELL
                     # If current price is < 10 points below current SL, move SL down
-                    if sl_current - price_current > 10 * symbol_info.point:
-                        new_sl = price_current + 10 * symbol_info.point
+                    candidate_sl = price_current + 10 * symbol_info.point
+                    if candidate_sl < sl_current - min_improvement:
+                        new_sl = candidate_sl
 
                 if new_sl != 0:
-                    logger.info(f"TRAIL: Moving SL for {symbol} to lock in profit.")
+                    logger.info(f"TRAIL: Moving SL for {symbol} to lock in profit (Improvement: {abs(new_sl - sl_current) / symbol_info.point:.1f} pts)")
                     success = self.mt5.modify_position_sl(ticket, new_sl, tp_current)
                     if success:
                         self._last_sl_move_time = time.time()

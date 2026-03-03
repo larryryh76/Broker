@@ -14,7 +14,7 @@ def main():
         sys.exit(1)
 
     logger.info("--- THE MONEY MACHINE: ULTRA-INTELLIGENT TRADING SYSTEM ---")
-    logger.info("[MISSION] Precision trading. Flawless growth curve. Zero regression.")
+    logger.info("[MISSION] Precision trading. Flawless growth curve. Outcome Dominance.")
 
     mt5 = MT5Client()
     try:
@@ -46,6 +46,7 @@ def main():
             # Core Performance Monitoring
             if day == 1:
                 logger.info("[PHASE 1] Bootstrapping Initial Capital ($5 -> $50)")
+            logger.info(f"[DECISION AUTHORITY] Outcome Dominance Active.")
             logger.info(f"[ACTIVE] Intelligence State: Virtual Equity ${virtual_equity:.2f} | Objective: ${target:.2f}")
 
             # 1. Manage Open Positions (Zero-Risk & Trailing)

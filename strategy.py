@@ -155,8 +155,10 @@ class Strategy:
 
     def generate_signal(self, df, instrument="", df_h1=None):
         """
-        Ultra-Intelligent Signal: Absolute Alignment (3/3)
-        RSI 7 + Bollinger Bands + Moving Average + Market Structure + Trend Alignment
+        Decision Authority Model: Outcome Dominance
+        Absolute certainty is not required. Trades are authorized when predicted outcome
+        dominance exceeds all alternatives. Intelligence is measured by outcome dominance,
+        not perfection.
         """
         if df is None or len(df) < 50:
             return None
@@ -168,14 +170,10 @@ class Strategy:
         if gap_side:
             return {"side": gap_side, "confidence": 0.95, "price": latest["close"], "reason": "LIQUIDITY_GAP"}
 
-        # Market Structure Filter (REQUIRED)
-        # Price must be near Daily High/Low or a Pivot level
+        # Market Structure Check (REQUIRED)
         structure_levels = ["daily_high", "daily_low", "pivot", "r1", "s1"]
         near_structure = False
-
-        # Buffer: 10 pips (Gold: $1.00, FX: 0.0010)
         buffer = 1.00 if "XAU" in instrument else 0.0010
-
         for level in structure_levels:
             if level in latest and abs(latest["close"] - latest[level]) <= buffer:
                 near_structure = True
@@ -189,30 +187,43 @@ class Strategy:
         if mistake_side:
             return {"side": mistake_side, "confidence": 0.95, "price": latest["close"], "reason": "MARKET_MISTAKE"}
 
-        # 1. RSI (Extreme Boundaries)
-        # 35/65 thresholds for Phase 1 optimization
-        rsi_long = latest["rsi"] < 35
-        rsi_short = latest["rsi"] > 65
+        # Directional Factor Weights (Outcome Dominance Model)
+        WEIGHT_TREND = 2.0  # Intelligence Priority
+        WEIGHT_RSI = 1.0
+        WEIGHT_BB = 1.0
+        WEIGHT_MA = 1.0
 
-        # 2. Moving Average Alignment (Directional)
-        ma_aligned_long = latest["ma_fast"] > latest["ma_slow"]
-        ma_aligned_short = latest["ma_fast"] < latest["ma_slow"]
+        dominance_buy = 0.0
+        dominance_sell = 0.0
+
+        # 1. RSI (Boundary Analysis)
+        if latest["rsi"] < 35: dominance_buy += WEIGHT_RSI
+        if latest["rsi"] > 65: dominance_sell += WEIGHT_RSI
+
+        # 2. Moving Average Alignment (Momentum Analysis)
+        if latest["ma_fast"] > latest["ma_slow"]: dominance_buy += WEIGHT_MA
+        if latest["ma_fast"] < latest["ma_slow"]: dominance_sell += WEIGHT_MA
 
         # 3. Bollinger Band Touch (Exhaustion)
-        bb_long = latest["close"] <= latest["bb_lower"]
-        bb_short = latest["close"] >= latest["bb_upper"]
+        if latest["close"] <= latest["bb_lower"]: dominance_buy += WEIGHT_BB
+        if latest["close"] >= latest["bb_upper"]: dominance_sell += WEIGHT_BB
 
-        # 4. Trend Alignment (H1 Intelligence)
+        # 4. Trend Alignment (Systemic Intelligence)
         trend = self.get_h1_trend(df_h1) if df_h1 is not None else "UNKNOWN"
-        trend_long = (trend == "UP" or trend == "UNKNOWN")
-        trend_short = (trend == "DOWN" or trend == "UNKNOWN")
+        if trend == "UP" or trend == "UNKNOWN": dominance_buy += WEIGHT_TREND
+        if trend == "DOWN" or trend == "UNKNOWN": dominance_sell += WEIGHT_TREND
 
-        # ABSOLUTE ALIGNMENT REQUIREMENT (Precision > Frequency)
-        # All conditions must be True for 3/3 confirmation
-        if rsi_long and bb_long and ma_aligned_long and trend_long:
-            return {"side": "BUY", "confidence": 0.90, "price": latest["close"]}
-        elif rsi_short and bb_short and ma_aligned_short and trend_short:
-            return {"side": "SELL", "confidence": 0.90, "price": latest["close"]}
+        # Outcome Dominance Decision Authority
+        # Threshold: 3.0 out of 5.0 (Clear Superiority)
+        # Authorizes trade when predicted outcome dominance exceeds all alternatives.
+        threshold = 3.0
+
+        if dominance_buy >= threshold and dominance_buy > dominance_sell:
+            conf = min(0.95, dominance_buy / 5.0)
+            return {"side": "BUY", "confidence": conf, "price": latest["close"]}
+        elif dominance_sell >= threshold and dominance_sell > dominance_buy:
+            conf = min(0.95, dominance_sell / 5.0)
+            return {"side": "SELL", "confidence": conf, "price": latest["close"]}
 
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 

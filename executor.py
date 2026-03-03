@@ -30,6 +30,21 @@ class Executor:
         return False
 
     def run_cycle(self, instruments, target=50.0, virtual_balance=5.0):
+        # 0. Daily Momentum Check
+        latest_state = self.db.get_latest_learning_state()
+        if latest_state:
+            initial_daily_balance = latest_state.get("initial_daily_balance", 0)
+            account = self.mt5.get_account_summary()
+            if account and initial_daily_balance > 0:
+                current_balance = float(account["balance"])
+                # Calculate daily profit in absolute terms
+                # Note: Virtual target +$45.00 from current balance
+                # Assuming initial_daily_balance is our reference for the day
+                daily_profit = current_balance - initial_daily_balance
+                if daily_profit >= 45.00:
+                    logger.info(f"DAILY TARGET REACHED (${daily_profit:.2f}). Protecting gains.")
+                    return False
+
         logger.info("Scanning for opportunities...")
 
         # Asset Prioritization for Phase 1
@@ -183,10 +198,20 @@ class Executor:
             # Current distance from open in points
             dist_from_open = (price_current - price_open) / symbol_info.point if pos.type == 0 else (price_open - price_current) / symbol_info.point
 
-            # 1. No-Loss Protocol: Move SL to break-even at +50 points (5 pips)
-            if dist_from_open >= 50 and sl_current == 0:
-                logger.info(f"No-Loss LOCK: Moving SL to BREAK-EVEN (+50 pts) for {symbol} ({ticket})")
-                self.mt5.modify_position_sl(ticket, price_open, tp_current)
+            # 1. No-Loss Protocol: Hard Breakeven at +5 pips (50 points)
+            # Requested: Once in profit by $0.10 (on $5), move SL to +$0.01 immediately
+            # $0.10 profit on 0.01 lots for EURUSD is 10 pips.
+            # 5 pips on 0.01 lots is $0.05.
+            # We'll use the 5 pips (50 points) trigger as requested.
+            if dist_from_open >= 50 and (sl_current == 0 or abs(sl_current - price_open) < 0.00001):
+                # Calculate SL for +$0.01 profit
+                # For BUY: SL = price_open + (1 point)
+                # For SELL: SL = price_open - (1 point)
+                offset = symbol_info.point
+                sl_be = price_open + offset if pos.type == 0 else price_open - offset
+
+                logger.info(f"HARD BREAKEVEN (+5 pips): Moving SL to +1 pt for {symbol} ({ticket})")
+                self.mt5.modify_position_sl(ticket, sl_be, tp_current)
 
             # 2. Aggressive Trailing: 10-point trail once safe (sl != 0)
             elif sl_current != 0:

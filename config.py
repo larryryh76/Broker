@@ -15,7 +15,8 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("DB_NAME", "the_money_machine")
 
 # Trading Configuration
-INSTRUMENTS = ["XAUUSD", "GBPJPY", "BTCUSD", "EURUSD", "ETHUSD"]
+# BTC/ETH pruned to focus margin on Forex and Gold for Phase 1 Compounding
+INSTRUMENTS = ["XAUUSD", "GBPJPY", "EURUSD"]
 RISK_REWARD_RATIO = 3
 DAILY_DRAWDOWN_LIMIT = 0.05
 MIN_CONFIDENCE = 0.70

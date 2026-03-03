@@ -51,6 +51,13 @@ def test_strategy_logic():
     print(f"Test ATR: {atr}")
     assert atr is not None
 
+    # Test Liquidity Gap
+    # Create a gap
+    df.iloc[-1, df.columns.get_loc('close')] = df.iloc[-1]['open'] + (3 * atr)
+    gap = strat.check_liquidity_gap(df, "EURUSDm")
+    print(f"Test Liquidity Gap: {gap}")
+    assert gap == "SELL"
+
 if __name__ == "__main__":
     test_strategy_logic()
     print("Strategy logic test passed.")

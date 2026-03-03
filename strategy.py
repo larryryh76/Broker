@@ -91,6 +91,29 @@ class Strategy:
 
         return df
 
+    def check_liquidity_gap(self, df, instrument):
+        """
+        Liquidity Gap Filter:
+        If price moves > 2x 14-period ATR in 5 minutes (current candle),
+        trigger a mean-reversion trade. (EURUSDm and GBPJPYm focus)
+        """
+        if df is None or len(df) < 15:
+            return None
+
+        if "EURUSD" not in instrument and "GBPJPY" not in instrument:
+            return None
+
+        latest = df.iloc[-1]
+        atr = self.calculate_atr(df, length=14)
+        if not atr:
+            return None
+
+        move = abs(latest["close"] - latest["open"])
+        if move > (2 * atr):
+            # Mean-reversion
+            return "SELL" if latest["close"] > latest["open"] else "BUY"
+        return None
+
     def check_market_mistake(self, df, instrument):
         """
         Market Mistake Filter:
@@ -122,6 +145,11 @@ class Strategy:
 
         latest = df.iloc[-1]
 
+        # Liquidity Gap Check (Mean Reversion)
+        gap_side = self.check_liquidity_gap(df, instrument)
+        if gap_side:
+            return {"side": gap_side, "confidence": 0.95, "price": latest["close"], "reason": "LIQUIDITY_GAP"}
+
         # Market Structure Filter (REQUIRED)
         # Price must be near Daily High/Low or a Pivot level
         structure_levels = ["daily_high", "daily_low", "pivot", "r1", "s1"]
@@ -144,8 +172,9 @@ class Strategy:
             return {"side": mistake_side, "confidence": 0.95, "price": latest["close"], "reason": "MARKET_MISTAKE"}
 
         # 1. RSI Sensitivity (Aggressive)
-        rsi_long = latest["rsi"] < 40
-        rsi_short = latest["rsi"] > 60
+        # Adjusted to 35/65 as per requested Phase 1 optimization
+        rsi_long = latest["rsi"] < 35
+        rsi_short = latest["rsi"] > 65
 
         # 2. Moving Average Alignment
         ma_aligned_long = latest["ma_fast"] > latest["ma_slow"]

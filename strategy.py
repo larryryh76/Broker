@@ -48,6 +48,12 @@ class Strategy:
         df = pd.DataFrame(data)
         return df
 
+    def calculate_atr(self, df, length=14):
+        if df is None or len(df) < length:
+            return None
+        atr = ta.atr(df["high"], df["low"], df["close"], length=length)
+        return atr.iloc[-1] if atr is not None else None
+
     def calculate_indicators(self, df):
         if df is None or len(df) < 50:
             return None

@@ -37,7 +37,8 @@ class Executor:
              logger.error("MT5 connection failed.")
              return
 
-        # Ordered Bypass: Proceeding directly with trade logic as ordered
+        # Check if trading is allowed globally
+        self.mt5.check_trade_allowed()
 
         # 0. Recursive Learning Adjustment
         latest_state = self.db.get_latest_learning_state()
@@ -72,10 +73,26 @@ class Executor:
             if not symbol_info or not tick:
                 continue
 
-            spread_points = (tick.ask - tick.bid) / symbol_info.point
-            if spread_points > 20:
-                # logger.info(f"Skipping {instrument} due to high spread: {spread_points}")
+            # Fetch Daily ATR for Volatility Filter
+            import MetaTrader5 as mt5_lib
+            daily_candles = self.mt5.get_candles(instrument, count=20, timeframe=mt5_lib.TIMEFRAME_D1)
+            if not daily_candles:
                 continue
+
+            df_daily = self.strategy.prepare_data(daily_candles)
+            atr = self.strategy.calculate_atr(df_daily)
+
+            spread = tick.ask - tick.bid
+            if atr:
+                # Volatility Filter: Spread must be less than 10% of Daily ATR
+                if spread > (0.10 * atr):
+                    logger.warning(f"Skipping {instrument} - High Volatility (Spread {spread:.5f} > 10% ATR {atr:.5f})")
+                    continue
+            else:
+                # Fallback to absolute point spread check if ATR unavailable
+                spread_points = spread / symbol_info.point
+                if spread_points > 20:
+                    continue
 
             candles = self.mt5.get_candles(instrument)
             if not candles:
@@ -88,7 +105,7 @@ class Executor:
             if signal and signal["side"] != "SKIP":
                 signal["instrument"] = instrument
                 signals.append(signal)
-                logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread_points})")
+                logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread:.5f}, ATR: {atr if atr else 0:.5f})")
 
         # 3. Aggressive Execution: Up to 3 concurrent trades on different symbols
         error_detected = False
@@ -102,6 +119,9 @@ class Executor:
                 error_detected = True
             else:
                 active_slots += 1
+                # Entry Cooling: Wait 5 seconds before next scan to let market 'breathe'
+                logger.info("Entry Cooling: Waiting 5 seconds...")
+                time.sleep(5)
 
         return error_detected
 
@@ -177,15 +197,6 @@ class Executor:
         side = signal["side"]
         price = signal["price"]
         confidence = signal["confidence"]
-
-        # Max Spread Check: 20 points
-        symbol_info = self.mt5.symbol_info(instrument)
-        tick = self.mt5.symbol_info_tick(instrument)
-        if symbol_info and tick:
-            spread_points = (tick.ask - tick.bid) / symbol_info.point
-            if spread_points > 20:
-                logger.warning(f"Spread too high for {instrument}: {spread_points} points. Skipping.")
-                return
 
         # Check if balance is extremely low for the instrument
         if balance < 10 and ("BTC" in instrument or "XAU" in instrument):

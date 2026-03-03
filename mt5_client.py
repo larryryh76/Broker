@@ -49,7 +49,22 @@ class MT5Client:
                 config_path = os.path.join(config_dir, "startup.ini")
 
                 # Dynamic .ini generation to force Algo Trading Enabled (Enabled=1 is crucial)
-                ini_content = f"[Common]\nLogin={self.login}\nPassword={self.password}\nServer={self.server}\nExpertsEnable=1\nAllowLiveTrading=1\nAllowDllImport=1\nEnabled=1\n[Charts]\nExperts=1\n"
+                # Adding AllowLiveTrading=1 under [Experts] as per specific request
+                ini_content = (
+                    f"[Common]\n"
+                    f"Login={self.login}\n"
+                    f"Password={self.password}\n"
+                    f"Server={self.server}\n"
+                    f"ExpertsEnable=1\n"
+                    f"AllowLiveTrading=1\n"
+                    f"AllowDllImport=1\n"
+                    f"Enabled=1\n"
+                    f"[Experts]\n"
+                    f"AllowLiveTrading=1\n"
+                    f"Enabled=1\n"
+                    f"[Charts]\n"
+                    f"Experts=1\n"
+                )
                 with open(config_path, "w") as f:
                     f.write(ini_content)
 
@@ -189,9 +204,23 @@ class MT5Client:
             return None
         return mt5.symbol_info_tick(instrument)
 
+    def check_trade_allowed(self):
+        if not self.connect():
+            return False
+        info = mt5.terminal_info()
+        if info is None:
+            return False
+        if not info.trade_allowed:
+            logger.critical("CRITICAL: Trading Blocked (trade_allowed is False)")
+            return False
+        return True
+
     def place_market_order(self, instrument, volume, stop_loss=None, take_profit=None):
         if not self.connect():
             return None
+
+        # Check if trading is allowed before placing order
+        self.check_trade_allowed()
 
         # Determine side
         tick = mt5.symbol_info_tick(instrument)

@@ -33,6 +33,11 @@ def test_strategy_logic():
     print(f"Test Lots ($5, FX): {lots_fx}")
     assert lots_fx == 0.05
 
+    # Test ATR calculation
+    atr = strat.calculate_atr(df)
+    print(f"Test ATR: {atr}")
+    assert atr is not None
+
 if __name__ == "__main__":
     test_strategy_logic()
     print("Strategy logic test passed.")

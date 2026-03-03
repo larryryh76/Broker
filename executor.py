@@ -83,7 +83,7 @@ class Executor:
 
             df = self.strategy.prepare_data(candles)
             df = self.strategy.calculate_indicators(df)
-            signal = self.strategy.generate_signal(df)
+            signal = self.strategy.generate_signal(df, instrument=instrument)
 
             if signal and signal["side"] != "SKIP":
                 signal["instrument"] = instrument
@@ -196,7 +196,7 @@ class Executor:
         stop_loss, take_profit = self.strategy.calculate_levels(side, price)
 
         # 5. Position Sizing
-        units = self.strategy.calculate_position_size(balance, target=target)
+        units = self.strategy.calculate_position_size(balance, instrument=instrument, target=target)
 
         # Side: positive for BUY, negative for SELL
         order_volume = units if side == "BUY" else -units

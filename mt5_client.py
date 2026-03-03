@@ -55,9 +55,9 @@ class MT5Client:
 
                 logger.info(f"Generated forced config: {config_path}")
 
-                # 1. Background launch with portable and relative config flags
+                # 1. Background launch with portable and absolute config flags
                 # Forced Algo Trading via startup.ini
-                subprocess.Popen([terminal_path, "/portable", r"/config:config\startup.ini"])
+                subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}"])
                 time.sleep(1) # Minimal 1s delay for process creation
 
             # 2. Direct initialize with all credentials and path

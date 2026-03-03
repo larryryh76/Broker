@@ -52,42 +52,73 @@ class Strategy:
         if df is None or len(df) < 50:
             return None
 
-        # RSI 14
-        df["rsi"] = ta.rsi(df["close"], length=14)
+        # RSI 7 (Increased Sensitivity)
+        df["rsi"] = ta.rsi(df["close"], length=7)
 
         # Moving Averages: 20-period fast and 50-period slow
         df["ma_fast"] = ta.sma(df["close"], length=20)
         df["ma_slow"] = ta.sma(df["close"], length=50)
 
+        # Bollinger Bands (Extreme Deviation Detection)
+        bb = ta.bbands(df["close"], length=20, std=2)
+        # Use standard column names provided by pandas_ta
+        df["bb_upper"] = bb.iloc[:, 2] # BBU
+        df["bb_lower"] = bb.iloc[:, 0] # BBL
+
         return df
 
-    def generate_signal(self, df):
+    def check_market_mistake(self, df, instrument):
         """
-        Maximized Intelligence Signal: RSI + MA Alignment + Price Action
-        Relaxed for maximum efficiency in Phase 1 compounding.
+        Market Mistake Filter:
+        If price is > 100 points away from MA_FAST, it's a mistake/overextension.
+        Execute instant reversal.
+        """
+        if df is None or len(df) < 2:
+            return None
+
+        latest = df.iloc[-1]
+        dist = abs(latest["close"] - latest["ma_fast"])
+
+        # Threshold: 100 points (Gold: $1.00, FX: 10 pips)
+        threshold = 1.00 if "XAU" in instrument else 0.001
+
+        if dist > threshold:
+            if latest["close"] > latest["ma_fast"]:
+                return "SELL" # Reversal from overbought
+            else:
+                return "BUY" # Reversal from oversold
+        return None
+
+    def generate_signal(self, df, instrument=""):
+        """
+        Hyper-Aggressive Signal: RSI 7 + BB + MA
         """
         if df is None or len(df) < 50:
             return None
 
         latest = df.iloc[-1]
 
-        # 1. RSI Sensitivity (Pivot at 50)
-        rsi_long = latest["rsi"] < 55 # Responsive to micro-trends
-        rsi_short = latest["rsi"] > 45
+        # Market Mistake Check (Highest Priority)
+        mistake_side = self.check_market_mistake(df, instrument)
+        if mistake_side:
+            return {"side": mistake_side, "confidence": 0.95, "price": latest["close"], "reason": "MARKET_MISTAKE"}
 
-        # 2. Moving Average Alignment (Fast/Slow)
+        # 1. RSI Sensitivity (Aggressive)
+        rsi_long = latest["rsi"] < 40
+        rsi_short = latest["rsi"] > 60
+
+        # 2. Moving Average Alignment
         ma_aligned_long = latest["ma_fast"] > latest["ma_slow"]
         ma_aligned_short = latest["ma_fast"] < latest["ma_slow"]
 
-        # 3. Price Action Confirmation (Price relative to Fast MA)
-        price_conf_long = latest["close"] > latest["ma_fast"]
-        price_conf_short = latest["close"] < latest["ma_fast"]
+        # 3. Bollinger Band Touch
+        bb_long = latest["close"] <= latest["bb_lower"]
+        bb_short = latest["close"] >= latest["bb_upper"]
 
-        # 3-Indicator Alignment Check
-        if rsi_long and ma_aligned_long and price_conf_long:
-            return {"side": "BUY", "confidence": 0.90, "price": latest["close"]}
-        elif rsi_short and ma_aligned_short and price_conf_short:
-            return {"side": "SELL", "confidence": 0.90, "price": latest["close"]}
+        if (rsi_long or bb_long) and ma_aligned_long:
+            return {"side": "BUY", "confidence": 0.85, "price": latest["close"]}
+        elif (rsi_short or bb_short) and ma_aligned_short:
+            return {"side": "SELL", "confidence": 0.85, "price": latest["close"]}
 
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 
@@ -108,18 +139,19 @@ class Strategy:
 
         return stop_loss, take_profit
 
-    def calculate_position_size(self, balance, target=50.0):
+    def calculate_position_size(self, balance, instrument="", target=50.0):
         """
         Aggressive Quest Scaling:
         Base: $5 -> 0.05 lots
-        Formula: lots = (balance / 5) * 0.05
-        MAX_LOTS = 100
+        Gold Override: 0.10 - 0.50 lots for Phase 1
         """
-        lots = (balance / 5.0) * 0.05
-        lots = max(0.01, round(lots, 2))
+        if "XAU" in instrument and balance < 50:
+            # Gold Override for aggressive Phase 1
+            lots = 0.10 + (balance / 50.0) * 0.40
+        else:
+            lots = (balance / 5.0) * 0.05
 
-        # Confidence Multiplier (Optional)
-        # lots *= self.performance_multiplier
+        lots = max(0.01, round(lots, 2))
 
         # Safety Cap
         lots = min(lots, 100.0)

@@ -11,10 +11,10 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 - **Note**: This library requires a Windows environment and an active MT5 terminal.
 
 ### 2. Strategy Engine (`strategy.py`)
-- **Technical Indicators**: RSI (14), Fast SMA (20), and Slow SMA (50).
-- **Signal Generation**: Requires 2 out of 3 indicator alignment.
-- **Risk Management**: 1:3 Risk-to-Reward ratio.
-- **Position Sizing**: Dynamic micro-lot sizing (0.01 minimum) optimized for small accounts ($5+).
+- **Technical Indicators**: RSI (7), Fast SMA (20), Slow SMA (50), and Bollinger Bands.
+- **Signal Generation**: Hyper-aggressive RSI/BB alignment + **Market Mistake Filter** (instant reversal if price deviates >100 points from MA).
+- **Risk Management**: 1:3 Risk-to-Reward ratio with **No-Loss Protocol** (moves SL to break-even at +50 points profit).
+- **Position Sizing**: Dynamic micro-lot sizing ($5 -> 0.05 lots) with **Gold Overrides** (0.10 - 0.50 lots) for Phase 1 compounding.
 - **Recursive Learning**: Scales risk based on real-time win rates.
 
 ### 3. Database Client (`db_client.py`)
@@ -22,7 +22,9 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 - Tracks trade history and daily performance snapshots.
 
 ### 4. Execution Layer (`executor.py`)
-- Manages the execution cycle: circuit breaker check -> analysis -> stealth delay -> order placement.
+- Manages the execution cycle: circuit breaker check -> analysis -> immediate execution -> trade management.
+- **Direct Execution**: Bypasses delays and handshakes to maximize efficiency within the 5-minute GitHub Actions window.
+- **Active Management**: Implements aggressive trailing stops (10-point trail) to lock in profit.
 - **Duplicate Prevention**: Skips signals if a position is already open for that symbol.
 
 ### 5. Deployment (`.github/workflows/trading-bot-schedule.yml`)
@@ -60,6 +62,8 @@ To avoid installation issues on GitHub runners:
 3. Bot checks for >5% Daily Drawdown (Circuit Breaker).
 4. Bot analyzes markets for RSI/SMA alignment.
 5. If signal found and no duplicate position exists:
-   - Waits a random 30-290 seconds.
-   - Places 0.01 micro-lot trade with SL/TP.
-6. Logs activity to MongoDB and updates learning state.
+   - Places aggressive micro-lot trade (0.05 - 0.50) with SL/TP immediately.
+6. Monitors open positions:
+   - Triggers No-Loss SL at +50 points.
+   - Activates 10-point Trailing Stop.
+7. Logs activity to MongoDB and updates learning state.

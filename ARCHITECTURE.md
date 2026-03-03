@@ -13,9 +13,11 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 ### 2. Strategy Engine (`strategy.py`)
 - **Technical Indicators**: RSI (7), Fast SMA (20), Slow SMA (50), and Bollinger Bands.
 - **Signal Generation**: Hyper-aggressive RSI/BB alignment + **Market Mistake Filter** (instant reversal if price deviates >100 points from MA).
+- **Market Structure Filter**: REQUIRED proximity to Daily High/Low or Pivot Points (P, S1, R1) before entry.
 - **Volatility Filter**: Only executes if spread < 10% of Daily ATR.
-- **Risk Management**: 1:3 Risk-to-Reward ratio with **No-Loss Protocol** (moves SL to break-even at +50 points profit).
+- **Risk Management**: 1:3 Risk-to-Reward ratio with **No-Loss Protocol** (moves SL to break-even at +50 points/5 pips profit).
 - **Position Sizing**: Dynamic micro-lot sizing ($5 -> 0.05 lots) with **Gold Overrides** (0.10 - 0.50 lots) for Phase 1 compounding.
+- **Safety Buffer**: Hard Reset triggers if Virtual Equity drops below $3.50, re-seeding the bot and ignoring past historical/manual data via Magic Number filtering.
 - **Recursive Learning**: Scales risk based on real-time win rates.
 
 ### 3. Database Client (`db_client.py`)
@@ -24,9 +26,10 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 
 ### 4. Execution Layer (`executor.py`)
 - Manages the execution cycle: circuit breaker check -> analysis -> immediate execution -> trade management.
+- **Strict Position Limit**: Max 1 open trade during Phase 1 (Virtual Equity < $50) to prevent capital overexposure.
 - **Entry Cooling**: Implements a 5-second sleep after each execution to prevent redundant entries.
 - **Direct Execution**: Bypasses delays and handshakes to maximize efficiency within the 5-minute GitHub Actions window.
-- **Active Management**: Implements aggressive trailing stops (10-point trail) to lock in profit.
+- **Active Management**: Implements the **No-Loss Protocol** (moves SL to break-even at +5 pip profit) and aggressive trailing stops (10-point trail).
 - **Duplicate Prevention**: Skips signals if a position is already open for that symbol.
 
 ### 5. Deployment (`.github/workflows/trading-bot-schedule.yml`)

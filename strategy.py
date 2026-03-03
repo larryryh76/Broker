@@ -54,9 +54,27 @@ class Strategy:
         atr = ta.atr(df["high"], df["low"], df["close"], length=length)
         return atr.iloc[-1] if atr is not None else None
 
-    def calculate_indicators(self, df):
+    def calculate_indicators(self, df, df_d1=None):
         if df is None or len(df) < 50:
             return None
+
+        # Market Structure: Daily High, Low, and Pivots
+        if df_d1 is not None and len(df_d1) >= 1:
+            yesterday = df_d1.iloc[-1]
+            high = yesterday["high"]
+            low = yesterday["low"]
+            close = yesterday["close"]
+
+            # Standard Pivot Points
+            pivot = (high + low + close) / 3
+            r1 = (2 * pivot) - low
+            s1 = (2 * pivot) - high
+
+            df["daily_high"] = high
+            df["daily_low"] = low
+            df["pivot"] = pivot
+            df["r1"] = r1
+            df["s1"] = s1
 
         # RSI 7 (Increased Sensitivity)
         df["rsi"] = ta.rsi(df["close"], length=7)
@@ -97,12 +115,28 @@ class Strategy:
 
     def generate_signal(self, df, instrument=""):
         """
-        Hyper-Aggressive Signal: RSI 7 + BB + MA
+        Hyper-Aggressive Signal: RSI 7 + BB + MA + Market Structure
         """
         if df is None or len(df) < 50:
             return None
 
         latest = df.iloc[-1]
+
+        # Market Structure Filter (REQUIRED)
+        # Price must be near Daily High/Low or a Pivot level
+        structure_levels = ["daily_high", "daily_low", "pivot", "r1", "s1"]
+        near_structure = False
+
+        # Buffer: 10 pips (Gold: $1.00, FX: 0.0010)
+        buffer = 1.00 if "XAU" in instrument else 0.0010
+
+        for level in structure_levels:
+            if level in latest and abs(latest["close"] - latest[level]) <= buffer:
+                near_structure = True
+                break
+
+        if not near_structure:
+            return {"side": "SKIP", "confidence": 0, "price": latest["close"], "reason": "NOT_NEAR_STRUCTURE"}
 
         # Market Mistake Check (Highest Priority)
         mistake_side = self.check_market_mistake(df, instrument)

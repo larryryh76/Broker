@@ -105,7 +105,7 @@ class Executor:
                 continue
 
             df = self.strategy.prepare_data(candles)
-            df = self.strategy.calculate_indicators(df)
+            df = self.strategy.calculate_indicators(df, df_d1=df_daily)
             signal = self.strategy.generate_signal(df, instrument=instrument)
 
             if signal and signal["side"] != "SKIP":
@@ -129,12 +129,15 @@ class Executor:
                 signals.append(signal)
                 logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread:.5f}, ATR: {atr if atr else 0:.5f})")
 
-        # 3. Aggressive Execution: Up to 3 concurrent trades on different symbols
+        # 3. Aggressive Execution: Up to 3 concurrent trades (Limit to 1 in Phase 1)
         error_detected = False
         active_slots = len(open_instruments)
 
+        # Strict Position Limit: 1 Trade at a time for Phase 1
+        max_trades = 1 if virtual_balance < 50.0 else 3
+
         for signal in signals:
-            if active_slots >= 3:
+            if active_slots >= max_trades:
                 break
 
             if self.execute_signal(signal, virtual_balance, target=target):

@@ -14,7 +14,12 @@ def test_strategy_logic():
         })
 
     df = strat.prepare_data(data)
-    df = strat.calculate_indicators(df)
+
+    # Mock D1 data for structure test
+    d1_data = [{"high": 120, "low": 80, "close": 110}]
+    df_d1 = pd.DataFrame(d1_data)
+
+    df = strat.calculate_indicators(df, df_d1=df_d1)
 
     assert "rsi" in df.columns
     assert "ma_fast" in df.columns

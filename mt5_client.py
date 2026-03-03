@@ -291,14 +291,18 @@ class MT5Client:
         to_date = datetime.now()
 
         # history_deals_get returns deals (actual executions)
+        # Filtering by MAGIC number (123456) to ignore historical manual trades or "Revenge" data
         deals = mt5.history_deals_get(from_date, to_date)
         if deals is None:
             return []
 
         adapted_trades = []
         for deal in deals:
+            # ONLY consider deals executed by this bot's magic number
+            if deal.magic != 123456:
+                continue
+
             # We want entry/exit deals that resulted in a closed position
-            # Simplified: just return all deals with profit
             if deal.entry == mt5.DEAL_ENTRY_OUT: # Exit deal
                 adapted_trades.append({
                     "id": str(deal.order), # Map to order ID we stored

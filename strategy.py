@@ -153,7 +153,7 @@ class Strategy:
                 return "BUY" # Reversal from oversold
         return None
 
-    def generate_signal(self, df, instrument="", df_h1=None):
+    def generate_signal(self, df, instrument="", df_h1=None, relaxed=False):
         """
         Decision Authority Model: Outcome Dominance
         Absolute certainty is not required. Trades are authorized when predicted outcome
@@ -217,6 +217,9 @@ class Strategy:
         # Threshold: 3.0 out of 5.0 (Clear Superiority)
         # Authorizes trade when predicted outcome dominance exceeds all alternatives.
         threshold = 3.0
+        if relaxed:
+            # Intelligence RELAXED: Lower entry barrier when scanning idle
+            threshold = 2.0
 
         if dominance_buy >= threshold and dominance_buy > dominance_sell:
             conf = min(0.95, dominance_buy / 5.0)

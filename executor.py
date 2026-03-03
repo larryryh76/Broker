@@ -8,7 +8,9 @@ class Executor:
         self.mt5 = mt5_client
         self.db = db_client
         self.strategy = strategy
-        self._last_sl_move_time = 0
+        self._last_api_action = {} # Symbol based cooldowns
+        self._last_sl_move_time = 0 # DEPRECATED
+        self._idle_cycles = 0
 
     def check_circuit_breaker(self, balance):
         latest_state = self.db.get_latest_learning_state()
@@ -31,6 +33,11 @@ class Executor:
         return False
 
     def run_cycle(self, instruments, target=50.0, virtual_balance=5.0):
+        # Relaxed mode check: If no trades for 3 cycles, increase sensitivity
+        is_relaxed = self._idle_cycles > 3
+        if is_relaxed:
+            logger.info("Intelligence RELAXED: Scanning without execution detected.")
+
         # 0. Daily Momentum Check (Dynamic target protection)
         latest_state = self.db.get_latest_learning_state()
         if latest_state:
@@ -81,15 +88,17 @@ class Executor:
             logger.info("Trading halted due to circuit breaker.")
             return
 
-        # 1.5 Check for open positions to avoid duplicates
+        # 1.5 Check for open positions
         open_positions = self.mt5.get_open_trades()
-        open_instruments = [p["symbol"] for p in open_positions]
+        pos_counts = {}
+        for p in open_positions:
+            pos_counts[p["symbol"]] = pos_counts.get(p["symbol"], 0) + 1
 
         # 2. Market Data and Signal Generation
-        # Multi-Asset Rotation: If Gold spread is too high, it will be skipped
         signals = []
         for instrument in instruments:
-            if instrument in open_instruments:
+            # Limit simultaneous trades per symbol to a maximum of 3
+            if pos_counts.get(instrument, 0) >= 3:
                 continue
 
             # Spread Check (Pre-Scan for efficiency)
@@ -130,7 +139,7 @@ class Executor:
             h1_candles = self.mt5.get_candles(instrument, count=50, timeframe=mt5_lib.TIMEFRAME_H1)
             df_h1 = self.strategy.prepare_data(h1_candles) if h1_candles else None
 
-            signal = self.strategy.generate_signal(df, instrument=instrument, df_h1=df_h1)
+            signal = self.strategy.generate_signal(df, instrument=instrument, df_h1=df_h1, relaxed=is_relaxed)
 
             if signal and signal["side"] != "SKIP":
                 # Dynamic Margin Check
@@ -153,28 +162,29 @@ class Executor:
                 signals.append(signal)
                 logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread:.5f}, ATR: {atr if atr else 0:.5f})")
 
-        # 3. Aggressive Execution: Maximum ONE open position globally
+        # 3. Aggressive Execution: Scaling with Opportunity
         error_detected = False
-        active_slots = len(open_instruments)
-
-        # Strict Global Position Limit: 1 Trade at a time to prevent stacking losses
-        max_trades = 1
+        executed_in_cycle = False
 
         for signal in signals:
-            if active_slots >= max_trades:
-                break
-
-            # Fetch H1 candles for Trend Alignment validation
-            h1_candles = self.mt5.get_candles(signal["instrument"], count=50, timeframe=mt5_lib.TIMEFRAME_H1)
-            df_h1 = self.strategy.prepare_data(h1_candles) if h1_candles else None
+            inst = signal["instrument"]
+            # Re-verify per-symbol limit
+            if pos_counts.get(inst, 0) >= 3:
+                continue
 
             if self.execute_signal(signal, virtual_balance, target=target):
                 error_detected = True
             else:
-                active_slots += 1
-                # Entry Cooling: Wait 5 seconds before next scan to let market 'breathe'
-                logger.info("Entry Cooling: Waiting 5 seconds...")
-                time.sleep(5)
+                executed_in_cycle = True
+                pos_counts[inst] = pos_counts.get(inst, 0) + 1
+                # Entry Cooling: Symbol-specific
+                self._last_api_action[inst] = time.time()
+                logger.info(f"Entry Secured for {inst}. Objective scaling active.")
+
+        if executed_in_cycle:
+            self._idle_cycles = 0
+        else:
+            self._idle_cycles += 1
 
         return error_detected
 
@@ -182,10 +192,6 @@ class Executor:
         """
         Intelligent Management: Exit Analysis & Stop Discipline
         """
-        # Intelligence Filter: 10s cooldown between API modifications
-        if time.time() - self._last_sl_move_time < 10:
-            return
-
         # Rate-limiting for AutoTrading errors
         if hasattr(self, '_last_sl_error_time'):
             if time.time() - self._last_sl_error_time < 60:
@@ -195,6 +201,10 @@ class Executor:
         for p in positions:
             symbol = p["symbol"]
             ticket = p["ticket"]
+
+            # Intelligence Filter: 10s cooldown per symbol
+            if time.time() - self._last_api_action.get(symbol, 0) < 10:
+                continue
 
             # Fetch current position details from MT5 directly for precise info
             pos_info = self.mt5.positions_get(ticket=ticket)
@@ -235,7 +245,7 @@ class Executor:
             if should_close:
                 logger.info(f"INTELLIGENT EXIT: Closing {symbol} ({ticket}) | Reason: {reason} | Profit: ${pos.profit:.2f}")
                 if self.mt5.close_position(ticket):
-                    self._last_sl_move_time = time.time()
+                    self._last_api_action[symbol] = time.time()
                 continue
 
             # Current distance from open in points
@@ -249,7 +259,7 @@ class Executor:
 
                 logger.info(f"$0.05 SAFETY SWITCH: Moving SL to +1 pt (+$0.01) for {symbol} ({ticket})")
                 if self.mt5.modify_position_sl(ticket, sl_be, tp_current):
-                    self._last_sl_move_time = time.time()
+                    self._last_api_action[symbol] = time.time()
 
             # 2. Aggressive Trailing: 10-point trail once safe (sl != 0)
             elif sl_current != 0:
@@ -272,7 +282,7 @@ class Executor:
                     logger.info(f"TRAIL: Moving SL for {symbol} to lock in profit (Improvement: {abs(new_sl - sl_current) / symbol_info.point:.1f} pts)")
                     success = self.mt5.modify_position_sl(ticket, new_sl, tp_current)
                     if success:
-                        self._last_sl_move_time = time.time()
+                        self._last_api_action[symbol] = time.time()
                     else:
                          # Check if failure was due to AutoTrading (10017)
                          import MetaTrader5 as mt5_lib

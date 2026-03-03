@@ -144,16 +144,29 @@ class Executor:
                 signals.append(signal)
                 logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread:.5f}, ATR: {atr if atr else 0:.5f})")
 
-        # 3. Aggressive Execution: Up to 3 concurrent trades (Limit to 1 in Phase 1)
+        # 3. Aggressive Execution: Maximum ONE open position globally
         error_detected = False
         active_slots = len(open_instruments)
 
-        # Strict Position Limit: 1 Trade at a time for Phase 1
-        max_trades = 1 if virtual_balance < 50.0 else 3
+        # Strict Global Position Limit: 1 Trade at a time to prevent stacking losses
+        max_trades = 1
 
         for signal in signals:
             if active_slots >= max_trades:
                 break
+
+            # Trend Alignment Filter: Fetch H1 candles for the instrument
+            h1_candles = self.mt5.get_candles(signal["instrument"], count=50, timeframe=mt5_lib.TIMEFRAME_H1)
+            if h1_candles:
+                df_h1 = self.strategy.prepare_data(h1_candles)
+                trend = self.strategy.get_h1_trend(df_h1)
+
+                if signal["side"] == "BUY" and trend == "DOWN":
+                    logger.warning(f"Trend Alignment BLOCK: Skipping BUY on {signal['instrument']} because H1 trend is DOWN.")
+                    continue
+                elif signal["side"] == "SELL" and trend == "UP":
+                    logger.warning(f"Trend Alignment BLOCK: Skipping SELL on {signal['instrument']} because H1 trend is UP.")
+                    continue
 
             if self.execute_signal(signal, virtual_balance, target=target):
                 error_detected = True
@@ -198,19 +211,16 @@ class Executor:
             # Current distance from open in points
             dist_from_open = (price_current - price_open) / symbol_info.point if pos.type == 0 else (price_open - price_current) / symbol_info.point
 
-            # 1. No-Loss Protocol: Hard Breakeven at +5 pips (50 points)
-            # Requested: Once in profit by $0.10 (on $5), move SL to +$0.01 immediately
-            # $0.10 profit on 0.01 lots for EURUSD is 10 pips.
-            # 5 pips on 0.01 lots is $0.05.
-            # We'll use the 5 pips (50 points) trigger as requested.
-            if dist_from_open >= 50 and (sl_current == 0 or abs(sl_current - price_open) < 0.00001):
+            # 1. No-Loss Protocol: The $0.05 Safety Switch
+            # If trade profit >= $0.05, move SL to +$0.01 immediately.
+            # This mathematically guarantees "profit without making a loss".
+            if pos.profit >= 0.05 and (sl_current == 0 or abs(sl_current - price_open) < 0.00001):
                 # Calculate SL for +$0.01 profit
-                # For BUY: SL = price_open + (1 point)
-                # For SELL: SL = price_open - (1 point)
+                # For 0.01 lots: 1 point (0.00001 for FX, 0.01 for Gold) equals exactly $0.01 profit.
                 offset = symbol_info.point
                 sl_be = price_open + offset if pos.type == 0 else price_open - offset
 
-                logger.info(f"HARD BREAKEVEN (+5 pips): Moving SL to +1 pt for {symbol} ({ticket})")
+                logger.info(f"$0.05 SAFETY SWITCH: Moving SL to +1 pt (+$0.01) for {symbol} ({ticket})")
                 self.mt5.modify_position_sl(ticket, sl_be, tp_current)
 
             # 2. Aggressive Trailing: 10-point trail once safe (sl != 0)

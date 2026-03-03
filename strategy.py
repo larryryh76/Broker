@@ -54,6 +54,23 @@ class Strategy:
         atr = ta.atr(df["high"], df["low"], df["close"], length=length)
         return atr.iloc[-1] if atr is not None else None
 
+    def get_h1_trend(self, df_h1):
+        """
+        Trend Alignment Filter:
+        Returns 'UP' if price is above H1 SMA 20, 'DOWN' if below.
+        """
+        if df_h1 is None or len(df_h1) < 20:
+            return "UNKNOWN"
+
+        latest = df_h1.iloc[-1]
+        sma_20 = ta.sma(df_h1["close"], length=20).iloc[-1]
+
+        if latest["close"] > sma_20:
+            return "UP"
+        elif latest["close"] < sma_20:
+            return "DOWN"
+        return "NEUTRAL"
+
     def calculate_indicators(self, df, df_d1=None):
         if df is None or len(df) < 50:
             return None

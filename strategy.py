@@ -62,21 +62,32 @@ class Strategy:
         return df
 
     def generate_signal(self, df):
-        if df is None or len(df) < 50: # Need 50 for RSI and MAs
+        """
+        Maximized Intelligence Signal: RSI + MA Alignment + Price Action
+        Relaxed for maximum efficiency in Phase 1 compounding.
+        """
+        if df is None or len(df) < 50:
             return None
 
         latest = df.iloc[-1]
-        prev = df.iloc[-2]
 
-        # RSI Filter: Highly Relaxed for Training (BUY if RSI < 45, SELL if RSI > 55)
-        rsi_oversold = latest["rsi"] < 45
-        rsi_overbought = latest["rsi"] > 55
+        # 1. RSI Sensitivity (Pivot at 50)
+        rsi_long = latest["rsi"] < 55 # Responsive to micro-trends
+        rsi_short = latest["rsi"] > 45
 
-        # Aggressive Signal: Current price vs Previous candle high/low
-        if latest["close"] > prev["high"] and rsi_oversold:
-            return {"side": "BUY", "confidence": 0.95, "price": latest["close"]}
-        elif latest["close"] < prev["low"] and rsi_overbought:
-            return {"side": "SELL", "confidence": 0.95, "price": latest["close"]}
+        # 2. Moving Average Alignment (Fast/Slow)
+        ma_aligned_long = latest["ma_fast"] > latest["ma_slow"]
+        ma_aligned_short = latest["ma_fast"] < latest["ma_slow"]
+
+        # 3. Price Action Confirmation (Price relative to Fast MA)
+        price_conf_long = latest["close"] > latest["ma_fast"]
+        price_conf_short = latest["close"] < latest["ma_fast"]
+
+        # 3-Indicator Alignment Check
+        if rsi_long and ma_aligned_long and price_conf_long:
+            return {"side": "BUY", "confidence": 0.90, "price": latest["close"]}
+        elif rsi_short and ma_aligned_short and price_conf_short:
+            return {"side": "SELL", "confidence": 0.90, "price": latest["close"]}
 
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 

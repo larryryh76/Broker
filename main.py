@@ -42,6 +42,8 @@ def main():
                 sys.exit(1)
 
             # Core Performance Monitoring
+            if day == 1:
+                logger.info("Compounding Session: Phase 1 ($5 -> $50)")
             logger.info(f"[ACTIVE] Virtual Equity: ${virtual_equity:.2f} | Day {day} Goal: ${target:.2f}")
 
             # 1. Manage Open Positions (Zero-Risk & Trailing)

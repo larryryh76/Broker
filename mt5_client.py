@@ -56,20 +56,36 @@ class MT5Client:
                 logger.info(f"Generated forced config: {config_path}")
 
                 # 1. Background launch with portable and relative config flags
-                # The user specifically requested /config:config\startup.ini
+                # Forced Algo Trading via startup.ini
                 subprocess.Popen([terminal_path, "/portable", r"/config:config\startup.ini"])
-                time.sleep(1) # Minimal 1s delay as requested
+                time.sleep(1) # Minimal 1s delay for process creation
 
             # 2. Direct initialize with all credentials and path
-            # This bypasses the standard handshake and attaches directly
+            # This bypasses the standard handshake and attaches directly to the primed process
             logger.info(f"Initializing MT5 directly with credentials: {terminal_path}")
-            if mt5.initialize(
-                path=terminal_path,
-                login=self.login,
-                password=self.password,
-                server=self.server,
-                timeout=60000
-            ):
+
+            # Attempt initialize with portable flag if supported
+            init_success = False
+            try:
+                init_success = mt5.initialize(
+                    path=terminal_path,
+                    login=self.login,
+                    password=self.password,
+                    server=self.server,
+                    timeout=60000,
+                    portable=True
+                )
+            except TypeError:
+                # Fallback if portable is not a keyword argument in this version
+                init_success = mt5.initialize(
+                    path=terminal_path,
+                    login=self.login,
+                    password=self.password,
+                    server=self.server,
+                    timeout=60000
+                )
+
+            if init_success:
                 # Proceed immediately
                 logger.info("MT5 direct initialization successful. Analysis active.")
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")

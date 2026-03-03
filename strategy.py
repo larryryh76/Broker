@@ -149,11 +149,24 @@ class Strategy:
         """
         Aggressive Quest Scaling:
         Base: $5 -> 0.05 lots
-        Gold Override: 0.10 - 0.50 lots for Phase 1
+        Phase 1 Optimization:
+        - Strict 0.01 lots until Virtual Equity > $15.00
+        - Gold Unlock only after Virtual Equity >= $20.00
         """
-        if "XAU" in instrument and balance < 50:
-            # Gold Override for aggressive Phase 1
-            lots = 0.10 + (balance / 50.0) * 0.40
+        # Micro-Lot Enforcement
+        if balance <= 15.00:
+            return 0.01
+
+        if "XAU" in instrument:
+            # Gold Unlock Check
+            if balance < 20.00:
+                return 0 # Locked
+
+            if balance < 50:
+                # Gold Override for aggressive Phase 1
+                lots = 0.10 + (balance / 50.0) * 0.40
+            else:
+                lots = (balance / 5.0) * 0.05
         else:
             lots = (balance / 5.0) * 0.05
 

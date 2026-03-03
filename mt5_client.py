@@ -273,6 +273,14 @@ class MT5Client:
             return None
         return (tick.bid + tick.ask) / 2
 
+    def calculate_margin(self, instrument, order_type, volume, price):
+        if not self.connect():
+            return None
+        margin = mt5.order_calc_margin(order_type, instrument, volume, price)
+        if margin is None:
+            logger.error(f"Failed to calculate margin for {instrument}: {mt5.last_error()}")
+        return margin
+
     def get_closed_trades(self, count=50):
         if not self.connect():
             return []

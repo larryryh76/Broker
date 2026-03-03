@@ -32,6 +32,12 @@ class Executor:
     def run_cycle(self, instruments, target=50.0, virtual_balance=5.0):
         logger.info("Scanning for opportunities...")
 
+        # Asset Prioritization for Phase 1
+        if virtual_balance < 50.0:
+            priority = ["EURUSDm", "GBPJPYm"]
+            # Move priority instruments to the front
+            instruments = priority + [inst for inst in instruments if inst not in priority]
+
         # Verification: Check trade permissions
         if not self.mt5.connect():
              logger.error("MT5 connection failed.")
@@ -103,6 +109,22 @@ class Executor:
             signal = self.strategy.generate_signal(df, instrument=instrument)
 
             if signal and signal["side"] != "SKIP":
+                # Dynamic Margin Check
+                import MetaTrader5 as mt5_lib
+                order_type = mt5_lib.ORDER_TYPE_BUY if signal["side"] == "BUY" else mt5_lib.ORDER_TYPE_SELL
+                volume = self.strategy.calculate_position_size(virtual_balance, instrument=instrument, target=target)
+
+                if volume <= 0:
+                    continue # Locked or invalid
+
+                required_margin = self.mt5.calculate_margin(instrument, order_type, volume, signal["price"])
+
+                if required_margin:
+                    # If margin required is > 80% of current Virtual Equity, skip/look for cheaper pair
+                    if required_margin > (0.80 * virtual_balance):
+                        logger.warning(f"Skipping {instrument} - Margin too high (${required_margin:.2f} > 80% of Equity ${virtual_balance:.2f})")
+                        continue
+
                 signal["instrument"] = instrument
                 signals.append(signal)
                 logger.info(f"ALGO SIGNAL: {instrument} {signal['side']} @ {signal['price']} (Spread: {spread:.5f}, ATR: {atr if atr else 0:.5f})")
@@ -197,11 +219,6 @@ class Executor:
         side = signal["side"]
         price = signal["price"]
         confidence = signal["confidence"]
-
-        # Check if balance is extremely low for the instrument
-        if balance < 10 and ("BTC" in instrument or "XAU" in instrument):
-            logger.warning(f"Balance too low to trade {instrument}. Skipping.")
-            return
 
         # 4. Risk Assessment & Levels
         stop_loss, take_profit = self.strategy.calculate_levels(side, price)

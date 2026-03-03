@@ -19,7 +19,8 @@ DB_NAME = os.getenv("DB_NAME", "the_money_machine")
 INSTRUMENTS = ["XAUUSD", "GBPJPY", "EURUSD"]
 RISK_REWARD_RATIO = 3
 DAILY_DRAWDOWN_LIMIT = 0.05
-MIN_CONFIDENCE = 0.70
+# Increased discipline: Only high-confidence setups allowed
+MIN_CONFIDENCE = 0.85
 
 # Logging Setup
 logging.basicConfig(

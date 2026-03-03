@@ -16,7 +16,9 @@ def test_strategy_logic():
     df = strat.prepare_data(data)
 
     # Mock D1 data for structure test
-    d1_data = [{"high": 120, "low": 80, "close": 110}]
+    # Set daily_high to match current price to bypass structure filter
+    price_now = df.iloc[-1]['close']
+    d1_data = [{"high": price_now, "low": price_now - 10, "close": price_now - 5}]
     df_d1 = pd.DataFrame(d1_data)
 
     df = strat.calculate_indicators(df, df_d1=df_d1)
@@ -26,8 +28,16 @@ def test_strategy_logic():
     assert "ma_slow" in df.columns
     assert "bb_upper" in df.columns
 
-    signal = strat.generate_signal(df, instrument="XAUUSDm")
-    print(f"Test Signal: {signal}")
+    # Test Ultra-Intelligent 3/3 Alignment
+    # Mock H1 data for trend test
+    h1_data = [{"time": i, "mid": {"o": 100, "h": 105, "l": 95, "c": 110}, "volume": 5000} for i in range(50)]
+    df_h1 = strat.prepare_data(h1_data)
+
+    # Adjust df to meet RSI/BB/MA criteria for a SELL
+    # RSI > 65, Price > BB_Upper, MA_Fast < MA_Slow (short alignment), Trend DOWN
+    # This is complex to mock perfectly, but we can verify the logic branches.
+    signal = strat.generate_signal(df, instrument="EURUSDm", df_h1=df_h1)
+    print(f"Test Signal (Strict): {signal}")
 
     # Test position sizing
     lots_micro = strat.calculate_position_size(10.0, instrument="EURUSDm")

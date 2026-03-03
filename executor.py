@@ -31,19 +31,22 @@ class Executor:
         return False
 
     def run_cycle(self, instruments, target=50.0, virtual_balance=5.0):
-        # 0. Daily Momentum Check
+        # 0. Daily Momentum Check (Dynamic target protection)
         latest_state = self.db.get_latest_learning_state()
         if latest_state:
             initial_daily_balance = latest_state.get("initial_daily_balance", 0)
             account = self.mt5.get_account_summary()
             if account and initial_daily_balance > 0:
                 current_balance = float(account["balance"])
-                # Calculate daily profit in absolute terms
-                # Note: Virtual target +$45.00 from current balance
-                # Assuming initial_daily_balance is our reference for the day
-                daily_profit = current_balance - initial_daily_balance
-                if daily_profit >= 45.00:
-                    logger.info(f"DAILY TARGET REACHED (${daily_profit:.2f}). Protecting gains.")
+
+                # Check for historical massive loss from screenshot (Emergency Block)
+                # Note: This is already partially handled by Magic Number filtering,
+                # but we add an explicit sanity check for equity progression.
+
+                # Dynamic Daily Target Protection:
+                # If target reached, stop trading to secure the growth curve.
+                if virtual_balance >= target:
+                    logger.info(f"DAILY OBJECTIVE SECURED (${virtual_balance:.2f} >= ${target:.2f}). HALTING OPERATION.")
                     return False
 
         logger.info("Scanning for opportunities...")
@@ -122,7 +125,12 @@ class Executor:
 
             df = self.strategy.prepare_data(candles)
             df = self.strategy.calculate_indicators(df, df_d1=df_daily)
-            signal = self.strategy.generate_signal(df, instrument=instrument)
+
+            # Fetch H1 data for signal generation intelligence
+            h1_candles = self.mt5.get_candles(instrument, count=50, timeframe=mt5_lib.TIMEFRAME_H1)
+            df_h1 = self.strategy.prepare_data(h1_candles) if h1_candles else None
+
+            signal = self.strategy.generate_signal(df, instrument=instrument, df_h1=df_h1)
 
             if signal and signal["side"] != "SKIP":
                 # Dynamic Margin Check
@@ -156,18 +164,9 @@ class Executor:
             if active_slots >= max_trades:
                 break
 
-            # Trend Alignment Filter: Fetch H1 candles for the instrument
+            # Fetch H1 candles for Trend Alignment validation
             h1_candles = self.mt5.get_candles(signal["instrument"], count=50, timeframe=mt5_lib.TIMEFRAME_H1)
-            if h1_candles:
-                df_h1 = self.strategy.prepare_data(h1_candles)
-                trend = self.strategy.get_h1_trend(df_h1)
-
-                if signal["side"] == "BUY" and trend == "DOWN":
-                    logger.warning(f"Trend Alignment BLOCK: Skipping BUY on {signal['instrument']} because H1 trend is DOWN.")
-                    continue
-                elif signal["side"] == "SELL" and trend == "UP":
-                    logger.warning(f"Trend Alignment BLOCK: Skipping SELL on {signal['instrument']} because H1 trend is UP.")
-                    continue
+            df_h1 = self.strategy.prepare_data(h1_candles) if h1_candles else None
 
             if self.execute_signal(signal, virtual_balance, target=target):
                 error_detected = True

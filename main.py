@@ -13,7 +13,8 @@ def main():
         logger.error("Configuration validation failed. Exiting.")
         sys.exit(1)
 
-    logger.info("Initializing The Money Machine...")
+    logger.info("--- THE MONEY MACHINE: ULTRA-INTELLIGENT TRADING SYSTEM ---")
+    logger.info("[MISSION] Precision trading. Flawless growth curve. Zero regression.")
 
     mt5 = MT5Client()
     try:
@@ -44,8 +45,8 @@ def main():
 
             # Core Performance Monitoring
             if day == 1:
-                logger.info("Compounding Session: Phase 1 ($5 -> $50)")
-            logger.info(f"[ACTIVE] Virtual Equity: ${virtual_equity:.2f} | Day {day} Goal: ${target:.2f}")
+                logger.info("[PHASE 1] Bootstrapping Initial Capital ($5 -> $50)")
+            logger.info(f"[ACTIVE] Intelligence State: Virtual Equity ${virtual_equity:.2f} | Objective: ${target:.2f}")
 
             # 1. Manage Open Positions (Zero-Risk & Trailing)
             executor.manage_open_positions()
@@ -130,13 +131,17 @@ def update_day_and_get_target(mt5, db):
     profit = real_balance - INITIAL_DEMO_BALANCE
     virtual_equity = profit + 5.00
 
-    # Progressive multiplication logic: $50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10
-    # Day 1: $50
-    # Day 2: $250 (50 * 5)
-    # Day 3: $1500 (250 * 6)
-    # Day 4: $10500 (1500 * 7)
+    # Progressive Target Alignment: $50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10
+    # Absolute growth curve enforcement
+    day1_base = 50.0
+    day2_target = day1_base * 5  # $250
+    day3_target = day2_target * 6 # $1500
+    day4_target = day3_target * 7 # $10500
+    day5_target = day4_target * 8 # $84000
+    day6_target = day5_target * 9 # $756000
+    day7_target = day6_target * 10 # $7.56M
 
-    targets = [50.0, 250.0, 1500.0, 10500.0, 84000.0, 756000.0, 7560000.0]
+    targets = [day1_base, day2_target, day3_target, day4_target, day5_target, day6_target, day7_target]
 
     day = 1
     target = targets[0]

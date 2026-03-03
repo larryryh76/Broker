@@ -153,9 +153,10 @@ class Strategy:
                 return "BUY" # Reversal from oversold
         return None
 
-    def generate_signal(self, df, instrument=""):
+    def generate_signal(self, df, instrument="", df_h1=None):
         """
-        Hyper-Aggressive Signal: RSI 7 + BB + MA + Market Structure
+        Ultra-Intelligent Signal: Absolute Alignment (3/3)
+        RSI 7 + Bollinger Bands + Moving Average + Market Structure + Trend Alignment
         """
         if df is None or len(df) < 50:
             return None
@@ -188,23 +189,30 @@ class Strategy:
         if mistake_side:
             return {"side": mistake_side, "confidence": 0.95, "price": latest["close"], "reason": "MARKET_MISTAKE"}
 
-        # 1. RSI Sensitivity (Aggressive)
-        # Adjusted to 35/65 as per requested Phase 1 optimization
+        # 1. RSI (Extreme Boundaries)
+        # 35/65 thresholds for Phase 1 optimization
         rsi_long = latest["rsi"] < 35
         rsi_short = latest["rsi"] > 65
 
-        # 2. Moving Average Alignment
+        # 2. Moving Average Alignment (Directional)
         ma_aligned_long = latest["ma_fast"] > latest["ma_slow"]
         ma_aligned_short = latest["ma_fast"] < latest["ma_slow"]
 
-        # 3. Bollinger Band Touch
+        # 3. Bollinger Band Touch (Exhaustion)
         bb_long = latest["close"] <= latest["bb_lower"]
         bb_short = latest["close"] >= latest["bb_upper"]
 
-        if (rsi_long or bb_long) and ma_aligned_long:
-            return {"side": "BUY", "confidence": 0.85, "price": latest["close"]}
-        elif (rsi_short or bb_short) and ma_aligned_short:
-            return {"side": "SELL", "confidence": 0.85, "price": latest["close"]}
+        # 4. Trend Alignment (H1 Intelligence)
+        trend = self.get_h1_trend(df_h1) if df_h1 is not None else "UNKNOWN"
+        trend_long = (trend == "UP" or trend == "UNKNOWN")
+        trend_short = (trend == "DOWN" or trend == "UNKNOWN")
+
+        # ABSOLUTE ALIGNMENT REQUIREMENT (Precision > Frequency)
+        # All conditions must be True for 3/3 confirmation
+        if rsi_long and bb_long and ma_aligned_long and trend_long:
+            return {"side": "BUY", "confidence": 0.90, "price": latest["close"]}
+        elif rsi_short and bb_short and ma_aligned_short and trend_short:
+            return {"side": "SELL", "confidence": 0.90, "price": latest["close"]}
 
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 

@@ -8,6 +8,7 @@ class Executor:
         self.mt5 = mt5_client
         self.db = db_client
         self.strategy = strategy
+        self._last_sl_move_time = 0
 
     def check_circuit_breaker(self, balance):
         latest_state = self.db.get_latest_learning_state()
@@ -182,6 +183,10 @@ class Executor:
         """
         Zero-Risk Trigger & Aggressive Trailing Stop
         """
+        # Intelligence Filter: 10s cooldown between SL modifications
+        if time.time() - self._last_sl_move_time < 10:
+            return
+
         # Rate-limiting for AutoTrading errors
         if hasattr(self, '_last_sl_error_time'):
             if time.time() - self._last_sl_error_time < 60:
@@ -221,7 +226,8 @@ class Executor:
                 sl_be = price_open + offset if pos.type == 0 else price_open - offset
 
                 logger.info(f"$0.05 SAFETY SWITCH: Moving SL to +1 pt (+$0.01) for {symbol} ({ticket})")
-                self.mt5.modify_position_sl(ticket, sl_be, tp_current)
+                if self.mt5.modify_position_sl(ticket, sl_be, tp_current):
+                    self._last_sl_move_time = time.time()
 
             # 2. Aggressive Trailing: 10-point trail once safe (sl != 0)
             elif sl_current != 0:
@@ -238,7 +244,9 @@ class Executor:
                 if new_sl != 0:
                     logger.info(f"TRAIL: Moving SL for {symbol} to lock in profit.")
                     success = self.mt5.modify_position_sl(ticket, new_sl, tp_current)
-                    if not success:
+                    if success:
+                        self._last_sl_move_time = time.time()
+                    else:
                          # Check if failure was due to AutoTrading (10017)
                          import MetaTrader5 as mt5_lib
                          if mt5_lib.last_error()[0] == 10017:

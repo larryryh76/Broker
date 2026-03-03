@@ -98,7 +98,6 @@ def reconcile_trades(mt5, db):
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
 def update_day_and_get_target(mt5, db):
-    import random
     import os
 
     # Virtualization Logic
@@ -131,27 +130,30 @@ def update_day_and_get_target(mt5, db):
     profit = real_balance - INITIAL_DEMO_BALANCE
     virtual_equity = profit + 5.00
 
-    latest_state = db.get_latest_learning_state()
-    multiplier = 0
+    # Progressive multiplication logic: $50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10
+    # Day 1: $50
+    # Day 2: $250 (50 * 5)
+    # Day 3: $1500 (250 * 6)
+    # Day 4: $10500 (1500 * 7)
 
-    if profit < 50.00:
-        day = 1
-        target = 50.00
-    else:
-        day = 2
-        # Use one-time random multiplier from persistent state or generate new
-        if latest_state and latest_state.get("day_count") == 2 and latest_state.get("multiplier"):
-            multiplier = latest_state.get("multiplier")
+    targets = [50.0, 250.0, 1500.0, 10500.0, 84000.0, 756000.0, 7560000.0]
+
+    day = 1
+    target = targets[0]
+
+    for i, t in enumerate(targets):
+        if profit >= t:
+            day = i + 2 # We reached target for day i+1, so we are on day i+2
+            if day <= len(targets):
+                target = targets[day-1]
+            else:
+                target = targets[-1] * (day + 3) # Beyond defined targets
         else:
-            multiplier = random.randint(4, 10)
-        target = 50.00 * multiplier
+            day = i + 1
+            target = t
+            break
 
-    return target, virtual_equity, day, multiplier
-
-def get_target_for_day(day, prev_profit=50.0):
-    if day == 1:
-        return 50.0
-    return prev_profit * (day + 2)
+    return target, virtual_equity, day, 0
 
 def update_learning_state(mt5, db, virtual_equity, day, multiplier):
     logger.info("Updating learning state...")

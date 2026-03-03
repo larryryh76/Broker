@@ -18,7 +18,8 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 - **Volatility Filter**: Only executes if spread < 10% of Daily ATR.
 - **Risk Management**: 1:3 Risk-to-Reward ratio.
 - **Position Sizing**: Dynamic micro-lot sizing ($5 -> 0.05 lots) with **Gold Overrides** (0.10 - 0.50 lots) for Phase 1 compounding.
-- **Safety Buffer**: Hard Reset triggers if Virtual Equity drops below $3.50, re-seeding the bot and ignoring past historical/manual data via Magic Number filtering.
+- **Safety Buffer**: Hard Reset triggers if Virtual Equity drops below $3.50, re-seeding the bot and ignoring past historical/manual data via Magic Number (123456) filtering.
+- **Profit Scaling**: Progressive multiplication logic ($50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10) to reach exponential targets.
 - **Recursive Learning**: Scales risk based on real-time win rates.
 
 ### 3. Database Client (`db_client.py`)
@@ -28,6 +29,7 @@ THE MONEY MACHINE is a production-ready trading bot designed to execute on a Git
 ### 4. Execution Layer (`executor.py`)
 - Manages the execution cycle: circuit breaker check -> analysis -> immediate execution -> trade management.
 - **Maximum ONE Open Position**: Strictly forbidden from opening a second trade globally if one is already open, preventing "stacking losses".
+- **Intelligence Filter**: Implements a 10-second cooldown between consecutive Stop Loss modifications to prevent system errors.
 - **Entry Cooling**: Implements a 5-second sleep after each execution to prevent redundant entries.
 - **Direct Execution**: Bypasses delays and handshakes to maximize efficiency within the 5-minute GitHub Actions window.
 - **Active Management**: Implements the **$0.05 Safety Switch** (moves SL to +$0.01 profit once +$0.05 reached) and aggressive trailing stops (10-point trail).

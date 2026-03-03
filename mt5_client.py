@@ -315,16 +315,31 @@ class MT5Client:
     def get_open_trades(self):
         if not self.connect():
             return []
-        positions = mt5.positions_get()
+        # Filter by Magic Number to ignore manual/historical trades (like BTC)
+        positions = mt5.positions_get(magic=123456)
         if positions is None:
             return []
 
         adapted_positions = []
         for p in positions:
-            adapted_positions.append({
-                "symbol": p.symbol,
-                "ticket": p.ticket
-            })
+            # Double check magic and filter by active instruments if needed
+            from config import INSTRUMENTS
+            monitored = False
+            for inst in INSTRUMENTS:
+                if inst in p.symbol:
+                    monitored = True
+                    break
+
+            if monitored:
+                adapted_positions.append({
+                    "symbol": p.symbol,
+                    "ticket": p.ticket,
+                    "profit": p.profit,
+                    "price_open": p.price_open,
+                    "type": p.type,
+                    "sl": p.sl,
+                    "tp": p.tp
+                })
         return adapted_positions
 
     def positions_get(self, ticket=None):

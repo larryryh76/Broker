@@ -6,7 +6,7 @@ from mt5_client import MT5Client
 def mt5_client():
     with patch('mt5_client.MT5_LOGIN', 298682494), \
          patch('mt5_client.MT5_PASSWORD', 'Iamolanrewaju1$'), \
-         patch('mt5_client.MT5_SERVER', 'Exness-MT5Trial9'), \
+         patch('mt5_client.MT5_SERVER', 'FBS-Real'), \
          patch('os.path.exists', return_value=True), \
          patch('subprocess.Popen'), \
          patch('mt5_client.mt5') as mock_mt5:

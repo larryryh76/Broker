@@ -45,20 +45,20 @@ THE MONEY MACHINE is an ultra-intelligent, autonomous trading system. It operate
 ## Setup Instructions
 
 ### Prerequisites
-1. **Exness Account**: Obtain your Login and Server details from the Exness Personal Area.
+1. **Trading Account**: Obtain your MT5 Login and Server details from your broker (e.g., FBS).
 2. **MongoDB Atlas**: A cluster with a connection string.
 3. **MetaTrader 5**: Ensure the terminal is installed if running locally on Windows.
 
 ### GitHub Secrets Configuration
 Store the following in your GitHub repository secrets:
-- `MT5_LOGIN`: Your Exness account number.
+- `MT5_LOGIN`: Your MT5 account number.
 - `MT5_PASSWORD`: Your trading password.
-- `MT5_SERVER`: Your account's server (e.g., Exness-MT5Trial9).
+- `MT5_SERVER`: Your account's server (e.g., FBS-Real).
 - `MONGODB_URI`: Your MongoDB Atlas connection string.
 
 ### Direct File Setup (GitHub Actions)
 To avoid installation issues on GitHub runners:
-1. Copy the contents of `C:\Program Files\Exness MetaTrader 5` from your computer.
+1. Copy the contents of your MetaTrader 5 installation from your computer.
 2. Upload them to a folder named `mt5_terminal` in the root of this repository.
 3. Ensure `terminal64.exe` is inside that folder.
 

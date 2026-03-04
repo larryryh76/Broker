@@ -46,22 +46,31 @@ def test_calculate_levels_sell(strategy):
     assert tp == 94
 
 def test_calculate_position_size_small_balance(strategy):
-    balance = 50
-    # Aggressive Quest logic: (50/5)*0.05 = 0.5
-    lots = strategy.calculate_position_size(balance, target=50.0)
+    active_level = 50
+    # Aggressive Quest logic: (50/5)*0.05 = 0.5. With realized_pnl=0, idle_multiplier=1.5 -> 0.75
+    lots = strategy.calculate_position_size(active_level, target=50.0, realized_pnl=1.0) # multiplier 1.0
     assert lots == 0.5
 
 def test_generate_signal_buy(strategy):
     data = []
     for i in range(60):
         data.append({
-            "high": 100, "low": 90, "close": 20, # RSI low
-            "rsi": 20, "ma_fast": 100, "ma_slow": 90
+            "open": 95, "high": 100, "low": 90, "close": 95,
+            "rsi": 40, "ma_fast": 96, "ma_slow": 90,
+            "daily_high": 150, "daily_low": 50, "pivot": 110, "r1": 130, "s1": 70,
+            "bb_lower": 92, "bb_upper": 108
         })
-    data[-1]["close"] = 110 # Close > prev high
+
+    # Setup for Dominance Buy: RSI < 35 (+1), MA Fast > Slow (+1), Close < BB Lower (+1) = 3.0 (Hits Threshold)
+    data[-1]["rsi"] = 20
+    data[-1]["ma_fast"] = 100
+    data[-1]["ma_slow"] = 90
+    data[-1]["close"] = 85
+    data[-1]["bb_lower"] = 90
+    data[-1]["pivot"] = 85 # Near Structure
 
     df = pd.DataFrame(data)
-    signal = strategy.generate_signal(df)
+    signal = strategy.generate_signal(df, instrument="XAUUSD", realized_pnl=10.0)
     assert signal["side"] == "BUY"
 
 def test_adjust_parameters_high_win_rate(strategy):

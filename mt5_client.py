@@ -27,7 +27,6 @@ class MT5Client:
             search_paths = [
                 os.path.join(workspace, "mt5_terminal", "terminal64.exe"),
                 "C:\\Program Files\\FBS MetaTrader 5\\terminal64.exe",
-                "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
                 "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
             ]
             for path in search_paths:
@@ -185,7 +184,7 @@ class MT5Client:
         if not self.connect():
             return None
 
-        # MetaTrader 5 symbols can sometimes have suffixes on Exness
+        # MetaTrader 5 symbols can sometimes have suffixes depending on the broker
         # We'll try the name directly
         rates = mt5.copy_rates_from_pos(instrument, timeframe, 0, count)
         if rates is None:

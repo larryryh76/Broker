@@ -12,7 +12,7 @@ def executor():
 def test_check_circuit_breaker_active(executor):
     from datetime import datetime, timezone
     executor.db.get_latest_learning_state.return_value = {
-        "initial_daily_balance": 100,
+        "initial_daily_virtual_equity": 100,
         "timestamp": datetime.now(timezone.utc)
     }
     assert executor.check_circuit_breaker(94) is True

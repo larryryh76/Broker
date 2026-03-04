@@ -33,8 +33,8 @@ jobs:
         run: |
           $dir = "$env:GITHUB_WORKSPACE\mt5_terminal"
           if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
-          # Use the direct Exness 64-bit link
-          $url = "https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe"
+          # Use the direct FBS 64-bit link
+          $url = "https://download.mql5.com/cdn/web/fbs.markets.inc/mt5/fbs5setup.exe"
           Invoke-WebRequest -Uri $url -OutFile "$dir\setup.exe"
           # Extract the terminal64.exe specifically from the setup
           Start-Process -FilePath "$dir\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$dir" -Wait

@@ -47,6 +47,13 @@ jobs:
             throw "terminal64.exe not found after extraction!"
           }
 
+      - name: Pre-Execution Environment Prep
+        shell: powershell
+        run: |
+          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal\MQL5\Profiles\Charts\Default"
+          if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
+          New-Item -ItemType File -Force -Path "$dir\default.tpl"
+          Write-Host "Created empty default.tpl at $dir"
 
       - name: Run Trading Bot
         shell: cmd

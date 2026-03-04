@@ -75,9 +75,9 @@ class MT5Client:
                 logger.info(f"Launching terminal via subprocess (Cycle {cycle})")
                 subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}", "/notest", "/nosound"])
 
-                # 2. Stabilization Window: Wait 30 seconds for bypassing splash screens
-                logger.info(f"Waiting 30 seconds for terminal stabilization...")
-                time.sleep(30)
+                # 2. Stabilization Window: Wait 45 seconds for bypassing splash screens
+                logger.info(f"Waiting 45 seconds for terminal stabilization...")
+                time.sleep(45)
 
                 # 3. Credentials Enforcement: Explicitly pass credentials to initialize()
                 logger.info("Calling mt5.initialize() with Credentials Enforcement...")
@@ -109,13 +109,37 @@ class MT5Client:
                         break
                     else:
                         logger.error("Initialize returned True but account_info() is None. Retrying...")
+                else:
+                    logger.warning("First attempt failed. Triggering 'Headless Force' second attempt...")
+                    # os.system taskkill for aggressive cleanup
+                    os.system('taskkill /f /im terminal64.exe')
+                    time.sleep(2)
+
+                    # Relaunch
+                    logger.info("Relaunching terminal for second attempt...")
+                    subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}", "/notest", "/nosound"])
+                    time.sleep(45)
+
+                    # Second attempt: Without explicit credentials (read from startup.ini)
+                    logger.info("Calling mt5.initialize() WITHOUT explicit credentials...")
+                    try:
+                        init_success = mt5.initialize(path=terminal_path, timeout=90000, portable=True)
+                    except TypeError:
+                        init_success = mt5.initialize(path=terminal_path, timeout=90000)
+
+                    if init_success:
+                        acc_info = mt5.account_info()
+                        if acc_info:
+                            logger.info(f"HEADLESS-FORCE SUCCESS. Balance confirmed: ${acc_info.balance:.2f}")
+                            self._connected = True
+                            break
 
             except Exception as e:
                 logger.error(f"Error in connect cycle {cycle}: {e}")
 
             # 4. Loop-Back Correction: Failure Cleanup
             logger.warning(f"Connection Cycle {cycle} failed. Triggering Loop-Back Correction...")
-            subprocess.run(["taskkill", "/F", "/IM", "terminal64.exe", "/T"], capture_output=True)
+            os.system('taskkill /f /im terminal64.exe')
             time.sleep(2)
 
             # Cycle 3: Clear corrupted history data

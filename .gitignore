@@ -1,5 +1,9 @@
 __pycache__/
 *.pyc
 .env
-# Allow MT5 terminal files
+# Allow MT5 terminal files but ignore data/logs
 !mt5_terminal/
+mt5_terminal/bases/
+mt5_terminal/logs/
+mt5_terminal/MQL5/Logs/
+mt5_terminal/config/*.ini

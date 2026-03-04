@@ -73,7 +73,7 @@ class MT5Client:
                 # 1. Background launch with portable and absolute config flags
                 # Forced Algo Trading via startup.ini
                 subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}"])
-                time.sleep(1) # Minimal 1s delay for process creation
+                time.sleep(10) # 10s delay for process creation
 
             # 2. Direct initialize with all credentials and path
             # This bypasses the standard handshake and attaches directly to the primed process
@@ -87,7 +87,7 @@ class MT5Client:
                     login=self.login,
                     password=self.password,
                     server=self.server,
-                    timeout=60000,
+                    timeout=90000,
                     portable=True
                 )
             except TypeError:
@@ -97,7 +97,7 @@ class MT5Client:
                     login=self.login,
                     password=self.password,
                     server=self.server,
-                    timeout=60000
+                    timeout=90000
                 )
 
             if init_success:

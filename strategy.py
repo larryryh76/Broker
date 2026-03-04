@@ -6,6 +6,14 @@ class Strategy:
     def __init__(self):
         self.win_rate_threshold = 0.50
         self.performance_multiplier = 1.0
+        self.idle_multiplier = 1.0
+        self._consecutive_losses = 0
+
+    def adjust_for_loss(self, consecutive_losses):
+        """Loss Intelligence Update: After 2 consecutive losses, increase probability-weighted risk."""
+        self._consecutive_losses = consecutive_losses
+        if consecutive_losses >= 2:
+            logger.info(f"LOSS INTELLIGENCE Active ({consecutive_losses} losses): Increasing risk profile & targeting faster exits.")
 
     def adjust_parameters(self, learning_state):
         """
@@ -153,12 +161,10 @@ class Strategy:
                 return "BUY" # Reversal from oversold
         return None
 
-    def generate_signal(self, df, instrument="", df_h1=None, relaxed=False):
+    def generate_signal(self, df, instrument="", df_h1=None, idle_cycles=0, realized_pnl=0, daily_target=50.0):
         """
-        Decision Authority Model: Outcome Dominance
-        Absolute certainty is not required. Trades are authorized when predicted outcome
-        dominance exceeds all alternatives. Intelligence is measured by outcome dominance,
-        not perfection.
+        Decision Authority Model: Outcome Dominance & Decisiveness
+        Incremental relaxation of thresholds based on inactivity (idle_cycles).
         """
         if df is None or len(df) < 50:
             return None
@@ -214,18 +220,29 @@ class Strategy:
         if trend == "DOWN" or trend == "UNKNOWN": dominance_sell += WEIGHT_TREND
 
         # Outcome Dominance Decision Authority
-        # Threshold: 3.0 out of 5.0 (Clear Superiority)
-        # Authorizes trade when predicted outcome dominance exceeds all alternatives.
-        threshold = 3.0
-        if relaxed:
-            # Intelligence RELAXED: Lower entry barrier when scanning idle
-            threshold = 2.0
+        # BASE Threshold: 3.0 out of 5.0 (Clear Superiority)
+        # Incremental Relaxation: Decrease threshold as idle_cycles increase
+        base_threshold = 3.0
 
-        # EXECUTION ENFORCEMENT: Final override if idle too long
-        if dominance_buy > dominance_sell and dominance_buy >= 2.0 and relaxed:
-             # Force action if bias is clear but threshold not quite reached
-             threshold = 2.0
+        # Incremental relaxation (0.2 reduction per cycle after 3)
+        relaxation = max(0, (idle_cycles - 3) * 0.2)
 
+        # Aggression Scaling Logic: If cumulative PnL is negative OR flat, reduce strictness
+        if realized_pnl <= 0:
+            relaxation += 0.5
+
+        # LOSS INTERPRETATION: After 2 losses, stop waiting for "perfect" conditions
+        if self._consecutive_losses >= 2:
+            relaxation += 1.0
+
+        threshold = max(1.5, base_threshold - relaxation)
+
+        if idle_cycles > 0 or realized_pnl <= 0 or self._consecutive_losses >= 2:
+            logger.info(f"Decision Threshold: {threshold:.2f} (Idle: {idle_cycles}, PnL: {realized_pnl:.2f}, Losses: {self._consecutive_losses})")
+
+        # TREND & MOMENTUM PRIORITY: When uncertain, favor trend continuation
+        # If one side has clear superiority but doesn't hit threshold,
+        # allow execution if idle cycles are extreme or objective is unmet.
         if dominance_buy >= threshold and dominance_buy > dominance_sell:
             conf = min(0.95, dominance_buy / 5.0)
             return {"side": "BUY", "confidence": conf, "price": latest["close"]}
@@ -233,14 +250,25 @@ class Strategy:
             conf = min(0.95, dominance_sell / 5.0)
             return {"side": "SELL", "confidence": conf, "price": latest["close"]}
 
+        # MOMENTUM PRIORITY OVERRIDE
+        # If bias is clear (2.0 delta) and objective unmet, favor momentum
+        if realized_pnl < daily_target and abs(dominance_buy - dominance_sell) >= 2.0:
+            side = "BUY" if dominance_buy > dominance_sell else "SELL"
+            logger.info(f"MOMENTUM PRIORITY: Decisive Bias detected for {side}. Triggering execution.")
+            return {"side": side, "confidence": 0.80, "price": latest["close"], "reason": "MOMENTUM_PRIORITY"}
+
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 
     def calculate_levels(self, side, price):
         """
         Stop Loss: 2% from entry
-        Take Profit: 1:3 ratio
+        Take Profit: 1:3 ratio (Modified by objective urgency)
         """
         risk_pct = 0.02
+
+        # LOSS INTELLIGENCE: Increase stop distance to avoid noise
+        if self._consecutive_losses >= 1:
+            risk_pct = 0.03
         if side == "BUY":
             stop_loss = price * (1 - risk_pct)
             take_profit = price + (price - stop_loss) * RISK_REWARD_RATIO
@@ -268,21 +296,33 @@ class Strategy:
 
         return False, None
 
-    def calculate_position_size(self, active_level, instrument="", target=50.0):
+    def calculate_position_size(self, active_level, instrument="", target=50.0, idle_cycles=0, realized_pnl=0):
         """
-        Aggressive Quest Scaling:
-        Base: $5 -> 0.05 lots
-        - Sizing is derived EXCLUSIVELY from Active Virtual Level
-        - Gold Unlock only after Active Level >= $50.00
+        Aggressive Quest Scaling & Multiplier Escalation:
+        - Multiplier must NOT remain fixed at 1.0 during inactivity.
+        - Increment Multiplier gradually (1.2 -> 1.4 -> 1.6...)
         """
+        # Multiplier Escalation Logic (mandatory during inactivity)
+        self.idle_multiplier = 1.0 + (idle_cycles * 0.2)
+
+        # AGGRESSION SCALING: If negative/flat, increase size progressively
+        if realized_pnl <= 0:
+            self.idle_multiplier += 0.5
+
+        self.idle_multiplier = min(5.0, self.idle_multiplier) # Increased cap for profit pursuit
+
         if "XAU" in instrument:
             # Gold Unlock Check (Promotion level required)
             if active_level < 50.00:
                 return 0 # Locked
 
+        # ANTI-FREEZE: Never stop trading entirely. Reduce size if confidence low (implied by active_level)
+
         # Micro-Lot Enforcement for Bootstrap Level
         if active_level < 50.00:
-            return 0.01
+            # Escalated micro-sizing for Phase 1
+            lots = 0.01 * self.idle_multiplier
+            return round(lots, 2)
 
         if "XAU" in instrument:
             # Gold Unlock Check (Promotion level required)
@@ -291,11 +331,11 @@ class Strategy:
 
             if active_level < 250:
                 # Gold Override for aggressive Phase 1
-                lots = 0.10 + (active_level / 250.0) * 0.40
+                lots = (0.10 + (active_level / 250.0) * 0.40) * self.idle_multiplier
             else:
-                lots = (active_level / 5.0) * 0.05
+                lots = (active_level / 5.0) * 0.05 * self.idle_multiplier
         else:
-            lots = (active_level / 5.0) * 0.05
+            lots = (active_level / 5.0) * 0.05 * self.idle_multiplier
 
         lots = max(0.01, round(lots, 2))
 

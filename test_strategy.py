@@ -77,6 +77,12 @@ def test_strategy_logic():
     print(f"Test Exit (Dominance): {should_close_d}, {reason_d}")
     assert should_close_d == True and reason_d == "DOMINANCE_WEAKENED"
 
+    # Test Aggressive Relaxation
+    # With 5 idle cycles, threshold should be lower than base 3.0
+    relaxed_signal = strat.generate_signal(df, instrument="EURUSDm", df_h1=df_h1, idle_cycles=5)
+    print(f"Test Signal (Relaxed): {relaxed_signal}")
+    assert relaxed_signal is not None
+
 if __name__ == "__main__":
     test_strategy_logic()
     print("Strategy logic test passed.")

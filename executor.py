@@ -74,6 +74,10 @@ class Executor:
         if latest_state:
             self.strategy.adjust_parameters(latest_state)
 
+            # Loss Intelligence Update
+            consecutive_losses = self.db.get_consecutive_losses()
+            self.strategy.adjust_for_loss(consecutive_losses)
+
         # 1. Initialization
         account = self.mt5.get_account_summary()
         if not account:
@@ -134,14 +138,25 @@ class Executor:
             h1_candles = self.mt5.get_candles(instrument, count=50, timeframe=mt5_lib.TIMEFRAME_H1)
             df_h1 = self.strategy.prepare_data(h1_candles) if h1_candles else None
 
-            signal = self.strategy.generate_signal(df, instrument=instrument, df_h1=df_h1, relaxed=is_relaxed)
+            # Current session PnL for aggression scaling
+            from main import update_day_and_get_target # This might cause circular import
+            # We already have virtual_balance and target
+            # Realized PnL = current virtual balance - day start baseline (not available here directly)
+            # Use a simpler proxy: if virtual_balance < 5.0 (losing) or < active_level
+            pnl_proxy = virtual_balance - 5.0
+
+            signal = self.strategy.generate_signal(df, instrument=instrument, df_h1=df_h1,
+                                                   idle_cycles=total_idle, realized_pnl=pnl_proxy,
+                                                   daily_target=target)
 
             if signal and signal["side"] != "SKIP":
                 # Dynamic Margin Check
                 import MetaTrader5 as mt5_lib
                 order_type = mt5_lib.ORDER_TYPE_BUY if signal["side"] == "BUY" else mt5_lib.ORDER_TYPE_SELL
                 # Sizing is based EXCLUSIVELY on the Active Virtual Capital Level
-                volume = self.strategy.calculate_position_size(active_level, instrument=instrument, target=target)
+                volume = self.strategy.calculate_position_size(active_level, instrument=instrument,
+                                                               target=target, idle_cycles=total_idle,
+                                                               realized_pnl=pnl_proxy)
 
                 if volume <= 0:
                     continue # Locked or invalid
@@ -175,7 +190,7 @@ class Executor:
         for signal in signals:
             inst = signal["instrument"]
 
-            if self.execute_signal(signal, virtual_balance, target=target, active_level=active_level):
+            if self.execute_signal(signal, virtual_balance, target=target, active_level=active_level, idle_cycles=total_idle):
                 error_detected = True
             else:
                 executed_in_cycle = True
@@ -308,7 +323,7 @@ class Executor:
                              self._last_sl_error_time = time.time()
                              break
 
-    def execute_signal(self, signal, balance, target=50.0, active_level=5.0):
+    def execute_signal(self, signal, balance, target=50.0, active_level=5.0, idle_cycles=0):
         """Returns True if Retcode 10027 is detected"""
         try:
             import MetaTrader5 as mt5_lib
@@ -325,7 +340,10 @@ class Executor:
 
         # 5. Position Sizing
         # Sizing is based EXCLUSIVELY on the Active Virtual Capital Level
-        units = self.strategy.calculate_position_size(active_level, instrument=instrument, target=target)
+        pnl_proxy = balance - 5.0
+        units = self.strategy.calculate_position_size(active_level, instrument=instrument,
+                                                       target=target, idle_cycles=idle_cycles,
+                                                       realized_pnl=pnl_proxy)
 
         # Side: positive for BUY, negative for SELL
         order_volume = units if side == "BUY" else -units

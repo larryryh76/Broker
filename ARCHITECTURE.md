@@ -19,8 +19,10 @@ THE MONEY MACHINE is an ultra-intelligent, autonomous trading system. It operate
 - **Risk Management**: 1:3 Risk-to-Reward ratio.
 - **Position Sizing**: Dynamic micro-lot sizing calculated EXCLUSIVELY from the $5.00 virtual sub-capital + realized profit.
 - **Safety Buffer**: Hard Reset triggers if Virtual Equity drops below $3.50, re-seeding the bot and ignoring past historical/manual data via Magic Number (123456) filtering.
-- **Virtual Sub-Capital Model**: Broker balance is treated as an untouched reserve. The bot behaves as if it is operating on a $5 account internally.
+- **Virtual Sub-Capital Model**: Broker balance is treated as an untouched reserve. All risk and sizing is derived EXCLUSIVELY from an isolated $5.00 base.
 - **Profit Scaling**: Progressive multiplication logic ($50 -> x5 -> x6 -> x7 -> x8 -> x9 -> x10) based on realized virtual growth.
+- **Aggression Escalation**: Multiplier increases and entry thresholds relax incrementally for each cycle without execution to ensure daily targets are met.
+- **Loss Intelligence**: Predictive parameters adapt immediately after losses to prevent recurring failures.
 - **Recursive Learning**: Scales risk based on real-time win rates.
 
 ### 3. Database Client (`db_client.py`)

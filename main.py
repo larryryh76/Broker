@@ -14,7 +14,7 @@ def main():
         sys.exit(1)
 
     logger.info("--- THE MONEY MACHINE: ULTRA-INTELLIGENT TRADING SYSTEM ---")
-    logger.info("[MISSION] Precision trading. Virtual Sub-Capital Model ($5.00).")
+    logger.info("[MISSION] Precision trading. Profit Oriented Intelligence. Virtual $5.00.")
 
     mt5 = MT5Client()
     try:
@@ -34,6 +34,9 @@ def main():
         # Note: In GitHub Actions, we run for a limited time
         start_time = time.time()
         while time.time() - start_time < 240: # Run for 4 minutes
+            # High-Speed Adaptation: Update state and targets within the loop
+            reconcile_trades(mt5, db)
+
             # Recalculate Virtual Equity and Target for real-time logging
             target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
 

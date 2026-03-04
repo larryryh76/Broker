@@ -85,6 +85,21 @@ class DBClient:
         state = self.get_latest_learning_state()
         return state.get("consecutive_idle_scans", 0) if state else 0
 
+    def get_consecutive_losses(self, count=5):
+        """Fetches the outcome of the last N CLOSED trades."""
+        try:
+            trades = list(self.trades_collection.find({"status": "CLOSED"}).sort("timestamp", -1).limit(count))
+            losses = 0
+            for t in trades:
+                if t.get("profit_loss", 0) < 0:
+                    losses += 1
+                else:
+                    break
+            return losses
+        except Exception as e:
+            logger.error(f"Error fetching consecutive losses: {e}")
+            return 0
+
     def get_total_realized_profit(self):
         """Calculates sum of profit_loss for all CLOSED trades executed by the bot."""
         try:

@@ -309,11 +309,11 @@ class Strategy:
 
         return False, None
 
-    def calculate_position_size(self, active_level, instrument="", target=50.0, idle_cycles=0, realized_pnl=0):
+    def calculate_position_size(self, active_level, instrument="", target=50.0, idle_cycles=0, realized_pnl=0, volume_min=0.01, volume_step=0.01):
         """
         Aggressive Quest Scaling & Multiplier Escalation:
-        - Multiplier must NOT remain fixed at 1.0 during inactivity.
-        - Increment Multiplier gradually (1.2 -> 1.4 -> 1.6...)
+        - Sizing respects FBS minimum volume and step specifications.
+        - Multiplier escalates during inactivity to ensure daily presence.
         """
         # Multiplier Escalation Logic (mandatory during inactivity)
         self.idle_multiplier = 1.0 + (idle_cycles * 0.2)
@@ -333,9 +333,11 @@ class Strategy:
 
         # Micro-Lot Enforcement for Bootstrap Level
         if active_level < 50.00:
-            # Escalated micro-sizing for Phase 1
-            lots = 0.01 * self.idle_multiplier
-            return round(lots, 2)
+            # Escalated micro-sizing for Phase 1 based on broker min volume
+            lots = volume_min * self.idle_multiplier
+            steps = round(lots / volume_step)
+            lots = steps * volume_step
+            return round(max(volume_min, lots), 2)
 
         if "XAU" in instrument:
             # Gold Unlock Check (Promotion level required)
@@ -350,7 +352,10 @@ class Strategy:
         else:
             lots = (active_level / 5.0) * 0.05 * self.idle_multiplier
 
-        lots = max(0.01, round(lots, 2))
+        # Ensure alignment with volume step
+        steps = round(lots / volume_step)
+        lots = steps * volume_step
+        lots = max(volume_min, round(lots, 2))
 
         # Safety Cap
         lots = min(lots, 100.0)

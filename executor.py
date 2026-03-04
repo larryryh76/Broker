@@ -56,8 +56,15 @@ class Executor:
         logger.info("Scanning for opportunities...")
 
         # Asset Prioritization for Phase 1
+        # FBS mapped symbols may have suffixes; prioritizing by original name
         if virtual_balance < 50.0:
-            priority = ["EURUSDm", "GBPJPYm"]
+            priority_bases = ["EURUSD", "GBPJPY"]
+            priority = []
+            for base in priority_bases:
+                for inst in instruments:
+                    if base in inst:
+                        priority.append(inst)
+
             # Move priority instruments to the front
             instruments = priority + [inst for inst in instruments if inst not in priority]
 
@@ -150,13 +157,19 @@ class Executor:
                                                    daily_target=target)
 
             if signal and signal["side"] != "SKIP":
+                # FBS SPECIFICATIONS: Get min volume and step
+                sym_info = self.mt5.symbol_info(instrument)
+                v_min = sym_info.volume_min if sym_info else 0.01
+                v_step = sym_info.volume_step if sym_info else 0.01
+
                 # Dynamic Margin Check
                 import MetaTrader5 as mt5_lib
                 order_type = mt5_lib.ORDER_TYPE_BUY if signal["side"] == "BUY" else mt5_lib.ORDER_TYPE_SELL
                 # Sizing is based EXCLUSIVELY on the Active Virtual Capital Level
                 volume = self.strategy.calculate_position_size(active_level, instrument=instrument,
                                                                target=target, idle_cycles=total_idle,
-                                                               realized_pnl=pnl_proxy)
+                                                               realized_pnl=pnl_proxy,
+                                                               volume_min=v_min, volume_step=v_step)
 
                 if volume <= 0:
                     continue # Locked or invalid
@@ -345,11 +358,17 @@ class Executor:
         stop_loss, take_profit = self.strategy.calculate_levels(side, price, active_level=active_level)
 
         # 5. Position Sizing
+        # FBS SPECIFICATIONS: Get min volume and step
+        sym_info = self.mt5.symbol_info(instrument)
+        v_min = sym_info.volume_min if sym_info else 0.01
+        v_step = sym_info.volume_step if sym_info else 0.01
+
         # Sizing is based EXCLUSIVELY on the Active Virtual Capital Level
         pnl_proxy = balance - 5.0
         units = self.strategy.calculate_position_size(active_level, instrument=instrument,
                                                        target=target, idle_cycles=idle_cycles,
-                                                       realized_pnl=pnl_proxy)
+                                                       realized_pnl=pnl_proxy,
+                                                       volume_min=v_min, volume_step=v_step)
 
         # Side: positive for BUY, negative for SELL
         order_volume = units if side == "BUY" else -units

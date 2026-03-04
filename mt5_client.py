@@ -26,6 +26,7 @@ class MT5Client:
             workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
             search_paths = [
                 os.path.join(workspace, "mt5_terminal", "terminal64.exe"),
+                "C:\\Program Files\\FBS MetaTrader 5\\terminal64.exe",
                 "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
                 "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
             ]
@@ -102,28 +103,39 @@ class MT5Client:
 
             if init_success:
                 # Proceed immediately
-                logger.info("MT5 direct initialization successful. Analysis active.")
+                logger.info("MT5 (FBS) direct initialization successful. Analysis active.")
                 logger.info(f"Terminal Info: {mt5.terminal_info()}")
 
-                # Force symbol selection into Market Watch with strict 'm' suffix
+                # FBS Account Type Detection & Symbol Mapping
+                acc_info = mt5.account_info()
+                is_cent = False
+                if acc_info:
+                    logger.info(f"Account Info: {acc_info}")
+                    if "cent" in acc_info.server.lower() or "cent" in acc_info.company.lower():
+                        is_cent = True
+                        logger.info("FBS CENT Account detected. Adjusting specs.")
+
                 from config import INSTRUMENTS
                 actual_instruments = []
                 for sym in INSTRUMENTS:
-                    # Exness Standard requires 'm' suffix
+                    # FBS Mapping Logic:
+                    # FBS Standard/Cent uses suffixes like -mt5 or none.
+                    # We will dynamically probe.
                     found_sym = None
-                    candidate = sym + "m" if not sym.endswith("m") else sym
-                    if mt5.symbol_select(candidate, True):
-                        # Sync history for the symbol
-                        mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
-                        found_sym = candidate
+                    candidates = [sym, sym + "-mt5", sym + "m"]
+
+                    for candidate in candidates:
+                        if mt5.symbol_select(candidate, True):
+                            # Sync history
+                            mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
+                            found_sym = candidate
+                            break
 
                     if found_sym:
                         actual_instruments.append(found_sym)
-                        logger.info(f"Symbol {found_sym} selected and synced successfully.")
-                        # Log symbol info for debugging
-                        logger.info(f"{found_sym} Info: {mt5.symbol_info(found_sym)}")
+                        logger.info(f"FBS Symbol mapped: {sym} -> {found_sym}")
                     else:
-                        logger.warning(f"Failed to select {sym} or {sym}m in Market Watch.")
+                        logger.warning(f"FBS Symbol mapping failed for {sym}. Skipping.")
 
                 # Update the global INSTRUMENTS list with the found symbols
                 import config

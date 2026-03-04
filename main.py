@@ -13,7 +13,7 @@ def main():
         logger.error("Configuration validation failed. Exiting.")
         sys.exit(1)
 
-    logger.info("--- THE MONEY MACHINE: SUPREME AUTHORITY LAYER ---")
+    logger.info("--- THE MONEY MACHINE: SUPREME AUTHORITY LAYER (FBS MT5) ---")
     logger.info("[RULE] Intelligence Singularity: Achieve Daily Objectives. Zero Fear.")
 
     mt5 = MT5Client()

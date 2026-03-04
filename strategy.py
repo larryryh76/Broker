@@ -259,40 +259,53 @@ class Strategy:
 
         return {"side": "SKIP", "confidence": 0, "price": latest["close"]}
 
-    def calculate_levels(self, side, price):
+    def calculate_levels(self, side, price, active_level=5.0):
         """
-        Stop Loss: 2% from entry
-        Take Profit: 1:3 ratio (Modified by objective urgency)
+        Capital-Objective Coherence:
+        Stop Loss: 2% (widening on loss).
+        Take Profit: Scales with Active Level to match exponential objectives.
         """
         risk_pct = 0.02
 
         # LOSS INTELLIGENCE: Increase stop distance to avoid noise
         if self._consecutive_losses >= 1:
             risk_pct = 0.03
+
+        # CAPITAL-OBJECTIVE COHERENCE: Widen Reward as Level increases
+        # Level 5: 1:3 | Level 50: 1:4 | Level 250: 1:5 ...
+        import math
+        reward_multiplier = 3.0 + max(0, math.log10(active_level / 5.0) * 2.0)
+
         if side == "BUY":
             stop_loss = price * (1 - risk_pct)
-            take_profit = price + (price - stop_loss) * RISK_REWARD_RATIO
+            take_profit = price + (price - stop_loss) * reward_multiplier
         elif side == "SELL":
             stop_loss = price * (1 + risk_pct)
-            take_profit = price - (stop_loss - price) * RISK_REWARD_RATIO
+            take_profit = price - (stop_loss - price) * reward_multiplier
         else:
             return None, None
 
         return stop_loss, take_profit
 
-    def analyze_exit(self, symbol, current_profit, dominance_score, virtual_equity):
+    def analyze_exit(self, symbol, current_profit, dominance_score, virtual_equity, active_level):
         """
-        Intelligent Exit Logic:
-        Authorizes closure if dominance of existing direction weakens or
-        substantial profit is achieved relative to Phase 1 objectives.
+        Entry-Exit Coherence:
+        Exit conditions must be harder to trigger than entry.
+        Profit realization has higher priority than indefinite holding.
         """
-        # Threshold: $0.20 profit on $5.00 account (4% return) is substantial
-        if virtual_equity < 50.0 and current_profit >= 0.20:
-            return True, "OBJECTIVE_REACHED"
+        # PROFIT AUTHORITY: Scale profit target with Active Level
+        # 4% of active_level is the minimum dominance threshold for closure
+        profit_threshold = active_level * 0.04
 
-        # Exit if dominance falls below 2.0 (weakened prediction)
-        if dominance_score < 2.0:
-            return True, "DOMINANCE_WEAKENED"
+        if current_profit >= profit_threshold:
+            return True, "OBJECTIVE_DOMINANCE"
+
+        # LOSS-AGGRESSION REBALANCE: Decrease exit sensitivity after loss
+        weakness_threshold = 1.5 if self._consecutive_losses == 0 else 1.0
+
+        # Exit if dominance falls below threshold (weakened prediction)
+        if dominance_score < weakness_threshold:
+            return True, "PREDICTION_EXPIRED"
 
         return False, None
 

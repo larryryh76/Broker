@@ -68,14 +68,26 @@ def test_strategy_logic():
     print(f"Test Liquidity Gap: {gap}")
     assert gap == "SELL"
 
-    # Test Exit Analysis
-    should_close, reason = strat.analyze_exit("EURUSDm", 0.25, 3.5, 5.0)
+    # Test Exit Analysis (Supreme Authority Layer)
+    # Threshold for $5 Level is $0.20
+    should_close, reason = strat.analyze_exit("EURUSDm", 0.25, 3.5, 5.0, 5.0)
     print(f"Test Exit (Profit): {should_close}, {reason}")
-    assert should_close == True and reason == "OBJECTIVE_REACHED"
+    assert should_close == True and reason == "OBJECTIVE_DOMINANCE"
 
-    should_close_d, reason_d = strat.analyze_exit("EURUSDm", 0.01, 1.5, 5.0)
+    # Prediction Expiration (Dominance < 1.5 normally, < 1.0 on loss)
+    should_close_d, reason_d = strat.analyze_exit("EURUSDm", 0.01, 0.5, 5.0, 5.0)
     print(f"Test Exit (Dominance): {should_close_d}, {reason_d}")
-    assert should_close_d == True and reason_d == "DOMINANCE_WEAKENED"
+    assert should_close_d == True and reason_d == "PREDICTION_EXPIRED"
+
+    # Test Coherence (Reward Ratios)
+    levels_5 = strat.calculate_levels("BUY", 1.0, active_level=5.0)
+    levels_250 = strat.calculate_levels("BUY", 1.0, active_level=250.0)
+
+    # Verify widened targets
+    dist_5 = levels_5[1] - 1.0
+    dist_250 = levels_250[1] - 1.0
+    print(f"Reward Target dist ($5): {dist_5:.4f} | dist ($250): {dist_250:.4f}")
+    assert dist_250 > dist_5
 
     # Test Aggressive Relaxation
     # With 5 idle cycles, threshold should be lower than base 3.0

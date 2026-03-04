@@ -273,9 +273,13 @@ class Executor:
                     if latest["ma_fast"] < latest["ma_slow"]: dominance_score += 1.0
                     if latest["close"] >= latest["bb_upper"]: dominance_score += 1.0
 
-            should_close, reason = self.strategy.analyze_exit(symbol, pos.profit, dominance_score, virtual_equity)
+            # Resolve Active Level for dynamic scaling
+            latest_state = self.db.get_latest_learning_state()
+            active_level = latest_state.get("multiplier", 5.0) if latest_state else 5.0
+
+            should_close, reason = self.strategy.analyze_exit(symbol, pos.profit, dominance_score, virtual_equity, active_level)
             if should_close:
-                logger.info(f"INTELLIGENT EXIT: Closing {symbol} ({ticket}) | Reason: {reason} | Profit: ${pos.profit:.2f}")
+                logger.info(f"SUPREME EXIT: Closing {symbol} ({ticket}) | Reason: {reason} | Profit: ${pos.profit:.2f}")
                 if self.mt5.close_position(ticket):
                     self._last_api_action[symbol] = time.time()
                 continue
@@ -283,13 +287,15 @@ class Executor:
             # Current distance from open in points
             dist_from_open = (price_current - price_open) / symbol_info.point if pos.type == 0 else (price_open - price_current) / symbol_info.point
 
-            # 1. No-Loss Protocol: The $0.05 Safety Switch
-            if pos.profit >= 0.05 and (sl_current == 0 or abs(sl_current - price_open) < symbol_info.point * 0.5):
-                # Calculate SL for +$0.01 profit
+            # 1. No-Loss Protocol: The Safety Switch
+            # Scales with Active Level: $0.05 for $5 level, $0.50 for $50 level, etc.
+            safety_threshold = active_level * 0.01
+            if pos.profit >= safety_threshold and (sl_current == 0 or abs(sl_current - price_open) < symbol_info.point * 0.5):
+                # Calculate SL for guaranteed profit (1 point offset)
                 offset = symbol_info.point
                 sl_be = price_open + offset if pos.type == 0 else price_open - offset
 
-                logger.info(f"$0.05 SAFETY SWITCH: Moving SL to +1 pt (+$0.01) for {symbol} ({ticket})")
+                logger.info(f"SAFETY SWITCH (${safety_threshold:.2f}): Moving SL to +1 pt for {symbol} ({ticket})")
                 if self.mt5.modify_position_sl(ticket, sl_be, tp_current):
                     self._last_api_action[symbol] = time.time()
 
@@ -336,7 +342,7 @@ class Executor:
         confidence = signal["confidence"]
 
         # 4. Risk Assessment & Levels
-        stop_loss, take_profit = self.strategy.calculate_levels(side, price)
+        stop_loss, take_profit = self.strategy.calculate_levels(side, price, active_level=active_level)
 
         # 5. Position Sizing
         # Sizing is based EXCLUSIVELY on the Active Virtual Capital Level

@@ -13,8 +13,8 @@ def main():
         logger.error("Configuration validation failed. Exiting.")
         sys.exit(1)
 
-    logger.info("--- THE MONEY MACHINE: ULTRA-INTELLIGENT TRADING SYSTEM ---")
-    logger.info("[MISSION] Precision trading. Profit Oriented Intelligence. Virtual $5.00.")
+    logger.info("--- THE MONEY MACHINE: SUPREME AUTHORITY LAYER ---")
+    logger.info("[RULE] Intelligence Singularity: Achieve Daily Objectives. Zero Fear.")
 
     mt5 = MT5Client()
     try:
@@ -65,17 +65,14 @@ def main():
             # 2. Run Strategy Cycle
             autotrade_error = executor.run_cycle(config.INSTRUMENTS, target=target, virtual_balance=virtual_equity, active_level=multiplier)
 
+            # 3. High-Speed Adaptation: Update learning state immediately if trades occurred
+            update_learning_state(mt5, db, virtual_equity, day, multiplier)
+
             if autotrade_error:
                 logger.warning("AutoTrading error detected. Waiting 10 seconds before next scan...")
                 time.sleep(10)
 
-            # 3. Check for Rotation
-            # (Logic handled inside run_cycle based on spread)
-
             time.sleep(5)
-
-        # After cycle, update learning state
-        update_learning_state(mt5, db, virtual_equity, day, multiplier)
 
         logger.info("Execution cycle complete.")
 

@@ -8,7 +8,7 @@ THE MONEY MACHINE is an ultra-intelligent, autonomous trading system. It operate
 ### 1. MT5 Client (`mt5_client.py`)
 - Interfaces directly with the MetaTrader 5 terminal using the `MetaTrader5` Python library.
 - Handles market data acquisition, account status, and trade execution.
-- **Note**: This library requires a Windows environment and an active MT5 terminal.
+- **Note**: This library requires a Windows environment and an active MT5 terminal. Operates in a pure headless mode without visualization overhead.
 
 ### 2. Strategy Engine (`strategy.py`)
 - **Technical Indicators**: RSI (7), Fast SMA (20), Slow SMA (50), and Bollinger Bands.

@@ -48,15 +48,6 @@ jobs:
           }
 
 
-      - name: Setup Headless Display
-        uses: pyvista/setup-headless-display-action@v3
-
-      - name: Setup Virtual Monitor
-        shell: powershell
-        run: |
-          pip install PyVirtualDisplay
-          Set-DisplayResolution -Width 1920 -Height 1080 -Force
-
       - name: Run Trading Bot
         shell: cmd
         env:

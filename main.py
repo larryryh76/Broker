@@ -38,7 +38,7 @@ def main():
             reconcile_trades(mt5, db)
 
             # Recalculate Virtual Equity and Target for real-time logging
-            target, virtual_equity, day, multiplier = update_day_and_get_target(mt5, db)
+            target, virtual_equity, day, multiplier = update_day_and_get_target(db)
 
             # Risk Management: Reset if equity < $0.50 (90% loss)
             # Threshold set to $0.50 as per "Stop the Panic Reset" objective
@@ -106,7 +106,7 @@ def reconcile_trades(mt5, db):
             })
             logger.info(f"Trade {order_id} reconciled: PL=${realized_pl}")
 
-def update_day_and_get_target(mt5, db):
+def update_day_and_get_target(db):
     # CAPITAL ISOLATION: Locked Virtual Sub-Capital
     # Broker balance is ignored. All decision-making uses the $5.00 base.
 

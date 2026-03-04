@@ -20,9 +20,9 @@ class MT5Client:
         import time
         import os
         import subprocess
+        import shutil
 
         def find_terminal():
-            # 1. Fallback to workspace path
             workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
             search_paths = [
                 os.path.join(workspace, "mt5_terminal", "terminal64.exe"),
@@ -35,21 +35,24 @@ class MT5Client:
             return None
 
         terminal_path = find_terminal()
-        if terminal_path:
-            terminal_path = os.path.abspath(terminal_path)
+        if not terminal_path:
+            logger.error("Could not find terminal64.exe")
+            return False
 
-        # Direct Initialization Bypass
-        try:
-            if terminal_path:
-                # Absolute Path Config Fix: Ensure the startup.ini is created relative to terminal64.exe
-                terminal_dir = os.path.dirname(os.path.abspath(terminal_path))
+        terminal_path = os.path.abspath(terminal_path)
+        terminal_dir = os.path.dirname(terminal_path)
+
+        # 'Force-Connect' Protocol: 5 Aggressive Cycles
+        for cycle in range(1, 6):
+            logger.info(f"FORCE-CONNECT Cycle {cycle}/5 started...")
+
+            try:
+                # 1. Shell-Level Initialization: Manual launch with startup.ini and performance flags
                 config_dir = os.path.join(terminal_dir, "config")
                 if not os.path.exists(config_dir):
                     os.makedirs(config_dir)
                 config_path = os.path.join(config_dir, "startup.ini")
 
-                # Dynamic .ini generation to force Algo Trading Enabled (Enabled=1 is crucial)
-                # Adding AllowLiveTrading=1 under [Experts] as per specific request
                 ini_content = (
                     f"[Common]\n"
                     f"Login={self.login}\n"
@@ -68,96 +71,94 @@ class MT5Client:
                 with open(config_path, "w") as f:
                     f.write(ini_content)
 
-                logger.info(f"Generated forced config: {config_path}")
+                # Performance Flags: /notest and /nosound to reduce CPU load during handshake
+                logger.info(f"Launching terminal via subprocess (Cycle {cycle})")
+                subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}", "/notest", "/nosound"])
 
-                # 1. Background launch with portable and absolute config flags
-                # Forced Algo Trading via startup.ini
-                subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}"])
-                time.sleep(10) # 10s delay for process creation
+                # 2. Stabilization Window: Wait 30 seconds for bypassing splash screens
+                logger.info(f"Waiting 30 seconds for terminal stabilization...")
+                time.sleep(30)
 
-            # 2. Direct initialize with all credentials and path
-            # This bypasses the standard handshake and attaches directly to the primed process
-            logger.info(f"Initializing MT5 directly with credentials: {terminal_path}")
+                # 3. Credentials Enforcement: Explicitly pass credentials to initialize()
+                logger.info("Calling mt5.initialize() with Credentials Enforcement...")
+                init_success = False
+                try:
+                    init_success = mt5.initialize(
+                        path=terminal_path,
+                        login=self.login,
+                        password=self.password,
+                        server=self.server,
+                        timeout=90000,
+                        portable=True
+                    )
+                except TypeError:
+                    init_success = mt5.initialize(
+                        path=terminal_path,
+                        login=self.login,
+                        password=self.password,
+                        server=self.server,
+                        timeout=90000
+                    )
 
-            # Attempt initialize with portable flag if supported
-            init_success = False
+                if init_success:
+                    # 5. Verification: Confirm balance reading
+                    acc_info = mt5.account_info()
+                    if acc_info:
+                        logger.info(f"FORCE-CONNECT SUCCESS. Outcome Dominance Balance confirmed: ${acc_info.balance:.2f}")
+                        self._connected = True
+                        break
+                    else:
+                        logger.error("Initialize returned True but account_info() is None. Retrying...")
+
+            except Exception as e:
+                logger.error(f"Error in connect cycle {cycle}: {e}")
+
+            # 4. Loop-Back Correction: Failure Cleanup
+            logger.warning(f"Connection Cycle {cycle} failed. Triggering Loop-Back Correction...")
+            subprocess.run(["taskkill", "/F", "/IM", "terminal64.exe", "/T"], capture_output=True)
+            time.sleep(2)
+
+            # Cycle 3: Clear corrupted history data
+            if cycle == 3:
+                bases_dir = os.path.join(terminal_dir, "bases")
+                if os.path.exists(bases_dir):
+                    logger.warning("Clearing 'bases' directory to resolve corrupted history hangs...")
+                    try:
+                        shutil.rmtree(bases_dir)
+                    except Exception as e:
+                        logger.error(f"Could not delete bases directory: {e}")
+
+        if self._connected:
+            # Proceed with FBS-specific symbol mapping (once connected)
             try:
-                init_success = mt5.initialize(
-                    path=terminal_path,
-                    login=self.login,
-                    password=self.password,
-                    server=self.server,
-                    timeout=90000,
-                    portable=True
-                )
-            except TypeError:
-                # Fallback if portable is not a keyword argument in this version
-                init_success = mt5.initialize(
-                    path=terminal_path,
-                    login=self.login,
-                    password=self.password,
-                    server=self.server,
-                    timeout=90000
-                )
-
-            if init_success:
-                # Proceed immediately
-                logger.info("MT5 (FBS) direct initialization successful. Analysis active.")
-                logger.info(f"Terminal Info: {mt5.terminal_info()}")
-
                 # FBS Account Type Detection & Symbol Mapping
                 acc_info = mt5.account_info()
-                is_cent = False
                 if acc_info:
-                    logger.info(f"Account Info: {acc_info}")
                     if "cent" in acc_info.server.lower() or "cent" in acc_info.company.lower():
-                        is_cent = True
                         logger.info("FBS CENT Account detected. Adjusting specs.")
 
                 from config import INSTRUMENTS
                 actual_instruments = []
                 for sym in INSTRUMENTS:
-                    # FBS Mapping Logic:
-                    # FBS Standard/Cent uses suffixes like -mt5 or none.
-                    # We will dynamically probe.
                     found_sym = None
                     candidates = [sym, sym + "-mt5", sym + "m"]
-
                     for candidate in candidates:
                         if mt5.symbol_select(candidate, True):
-                            # Sync history
                             mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
                             found_sym = candidate
                             break
-
                     if found_sym:
                         actual_instruments.append(found_sym)
                         logger.info(f"FBS Symbol mapped: {sym} -> {found_sym}")
                     else:
                         logger.warning(f"FBS Symbol mapping failed for {sym}. Skipping.")
 
-                # Update the global INSTRUMENTS list with the found symbols
                 import config
                 config.INSTRUMENTS = actual_instruments
-
-                # Check if already logged in from command line
-                account_info = mt5.account_info()
-                if account_info and account_info.login == self.login:
-                    logger.info("MT5 already logged in via command line.")
-                    self._connected = True
-                    return True
-
-                # 3. Fallback manual login
-                if mt5.login(login=self.login, password=self.password, server=self.server):
-                    logger.info("MT5 logged in successfully.")
-                    self._connected = True
-                    return True
-                else:
-                    logger.error(f"MT5 login failed: {mt5.last_error()}")
-            else:
-                logger.error(f"MT5 initialize failed: {mt5.last_error()}")
-        except Exception as e:
-            logger.error(f"Manual start failed: {e}")
+                return True
+            except Exception as e:
+                logger.error(f"Error during symbol mapping: {e}")
+                return True # Still connected
 
         return False
 
@@ -184,8 +185,6 @@ class MT5Client:
         if not self.connect():
             return None
 
-        # MetaTrader 5 symbols can sometimes have suffixes depending on the broker
-        # We'll try the name directly
         rates = mt5.copy_rates_from_pos(instrument, timeframe, 0, count)
         if rates is None:
             logger.error(f"Failed to copy rates for {instrument}, error: {mt5.last_error()}")

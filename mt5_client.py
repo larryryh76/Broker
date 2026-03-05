@@ -42,6 +42,16 @@ class MT5Client:
         terminal_path = os.path.abspath(terminal_path)
         terminal_dir = os.path.dirname(terminal_path)
 
+        # Surgical Fix: Physically delete bases and logs before Cycle 1 to skip sync
+        for folder in ["bases", "logs"]:
+            folder_path = os.path.join(terminal_dir, folder)
+            if os.path.exists(folder_path):
+                logger.info(f"Removing corrupted cache: {folder_path}")
+                try:
+                    shutil.rmtree(folder_path)
+                except Exception as e:
+                    logger.error(f"Failed to clear {folder}: {e}")
+
         # 'Force-Connect' Protocol: 5 Aggressive Cycles
         for cycle in range(1, 6):
             logger.info(f"FORCE-CONNECT Cycle {cycle}/5 started...")
@@ -51,8 +61,19 @@ class MT5Client:
                 config_dir = os.path.join(terminal_dir, "config")
                 if not os.path.exists(config_dir):
                     os.makedirs(config_dir)
-                config_path = os.path.join(config_dir, "startup.ini")
 
+                # Surgical Fix: Bypass 'New Account' Wizard and Certificate checks
+                common_path = os.path.join(config_dir, "common.ini")
+                common_content = (
+                    f"[Common]\n"
+                    f"Login={self.login}\n"
+                    f"ProxyEnable=0\n"
+                    f"CertifyEnable=0\n"
+                )
+                with open(common_path, "w") as f:
+                    f.write(common_content)
+
+                config_path = os.path.join(config_dir, "startup.ini")
                 ini_content = (
                     f"[Common]\n"
                     f"Login={self.login}\n"
@@ -71,24 +92,30 @@ class MT5Client:
                 with open(config_path, "w") as f:
                     f.write(ini_content)
 
-                # Performance Flags: /notest and /nosound to reduce CPU load during handshake
+                # Rapid-Fire Initialization: Include /login and ensure /portable is primary
                 logger.info(f"Launching terminal via subprocess (Cycle {cycle})")
-                subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}", "/notest", "/nosound"])
+                subprocess.Popen([
+                    terminal_path, "/portable",
+                    f"/config:{config_path}",
+                    f"/login:{self.login}",
+                    "/notest", "/nosound"
+                ])
 
-                # 2. Stabilization Window: Wait 45 seconds for bypassing splash screens
-                logger.info(f"Waiting 45 seconds for terminal stabilization...")
-                time.sleep(45)
+                # 2. Stabilization Window: Reduced to 15 seconds for 'Rapid-Fire'
+                logger.info(f"Waiting 15 seconds for terminal stabilization...")
+                time.sleep(15)
 
-                # 3. Credentials Enforcement: Explicitly pass credentials to initialize()
-                logger.info("Calling mt5.initialize() with Credentials Enforcement...")
+                # 3. Credentials Enforcement: Explicitly set data paths for cloud handshake
+                logger.info("Calling mt5.initialize() with Credentials & Path Enforcement...")
                 init_success = False
                 try:
                     init_success = mt5.initialize(
                         path=terminal_path,
+                        common_metadata_path=terminal_dir,
                         login=self.login,
                         password=self.password,
                         server=self.server,
-                        timeout=90000,
+                        timeout=120000, # Increased timeout to 120s
                         portable=True
                     )
                 except TypeError:
@@ -97,7 +124,7 @@ class MT5Client:
                         login=self.login,
                         password=self.password,
                         server=self.server,
-                        timeout=90000
+                        timeout=120000
                     )
 
                 if init_success:
@@ -123,9 +150,14 @@ class MT5Client:
                     # Second attempt: Without explicit credentials (read from startup.ini)
                     logger.info("Calling mt5.initialize() WITHOUT explicit credentials...")
                     try:
-                        init_success = mt5.initialize(path=terminal_path, timeout=90000, portable=True)
+                        init_success = mt5.initialize(
+                            path=terminal_path,
+                            common_metadata_path=terminal_dir,
+                            timeout=120000,
+                            portable=True
+                        )
                     except TypeError:
-                        init_success = mt5.initialize(path=terminal_path, timeout=90000)
+                        init_success = mt5.initialize(path=terminal_path, timeout=120000)
 
                     if init_success:
                         acc_info = mt5.account_info()

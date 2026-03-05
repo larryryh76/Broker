@@ -47,6 +47,23 @@ class MT5Client:
             except Exception as e:
                 logger.error(f"Failed to create dummy DLL: {e}")
 
+    def _inject_server_data(self, config_dir):
+        """EMERGENCY OVERRIDE: Binary Injection of Server Data to bypass sync hangs."""
+        server_path = os.path.join(config_dir, "servers.dat")
+        try:
+            # Create/overwrite with non-zero byte content
+            with open(server_path, "wb") as f:
+                f.write(b"\x00")
+
+            # Ensure not read-only
+            if hasattr(os, "chmod"):
+                os.chmod(server_path, 0o666)
+
+            size = os.path.getsize(server_path)
+            logger.info(f"Binary Injection: servers.dat created ({size} bytes).")
+        except Exception as e:
+            logger.error(f"Server data injection failed: {e}")
+
     def connect(self):
         if self._connected:
             return True
@@ -86,159 +103,105 @@ class MT5Client:
         self._set_registry_bypass()
         self._create_dummy_dll(terminal_dir)
 
+        # 1. Shell-Level Initialization & Injection
+        config_dir = os.path.join(terminal_dir, "config")
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+
+        # Binary Injection of Server Data
+        self._inject_server_data(config_dir)
+
+        # Surgical Fix: Configuration Injection
+        common_path = os.path.join(config_dir, "common.ini")
+        common_content = (
+            f"[Common]\n"
+            f"Login={self.login}\n"
+            f"ProxyEnable=0\n"
+            f"CertifyEnable=0\n"
+            f"NewsEnable=0\n"
+            f"ChartsEnable=0\n"
+            f"SignalsEnable=0\n"
+            f"MarketEnable=0\n"
+        )
+        with open(common_path, "w") as f:
+            f.write(common_content)
+
+        ini_content = (
+            f"[Common]\n"
+            f"Login={self.login}\n"
+            f"Password={self.password}\n"
+            f"Server={self.server}\n"
+            f"ExpertsEnable=1\n"
+            f"AllowLiveTrading=1\n"
+            f"AllowDllImport=1\n"
+            f"Enabled=1\n"
+            f"[Experts]\n"
+            f"AllowLiveTrading=1\n"
+            f"Enabled=1\n"
+            f"[Charts]\n"
+            f"Experts=1\n"
+        )
+        for ini_name in ["startup.ini", "accounts.ini"]:
+            path = os.path.join(config_dir, ini_name)
+            with open(path, "w") as f:
+                f.write(ini_content)
+
+        config_path = os.path.join(config_dir, "startup.ini")
+
         # Diagnostic Check: Verify directory population
         try:
             logger.info(f"Diagnostic - Terminal Root Contents: {os.listdir(terminal_dir)}")
-            for sub in ["bases", "config", "profiles"]:
-                sub_path = os.path.join(terminal_dir, sub)
-                if os.path.exists(sub_path):
-                    logger.info(f"Diagnostic - {sub} contents: {os.listdir(sub_path)}")
-                else:
-                    logger.warning(f"Diagnostic - {sub} folder missing!")
         except Exception as e:
             logger.error(f"Diagnostic listdir failed: {e}")
 
-        # 'Force-Connect' Protocol: 5 Aggressive Cycles
-        for cycle in range(1, 6):
-            logger.info(f"FORCE-CONNECT Cycle {cycle}/5 started...")
+        # Launch terminal ONCE for 'Stamina' Handshake
+        logger.info("Launching terminal for 'Stamina' Handshake...")
+        subprocess.Popen([
+            terminal_path, "/portable",
+            f"/config:{config_path}",
+            f"/login:{self.login}",
+            "/notest", "/nosound",
+            "/skipupdate", "/novisual"
+        ])
 
+        # 2. 'Stamina' Handshake Window (No Killing)
+        # Call initialize() every 10 seconds for 2 minutes
+        logger.info("Starting 'Stamina' Handshake loop (120s max)...")
+        for i in range(12):
+            logger.info(f"Handshake attempt {i+1}/12...")
             try:
-                # 1. Shell-Level Initialization: Manual launch with startup.ini and performance flags
-                config_dir = os.path.join(terminal_dir, "config")
-                if not os.path.exists(config_dir):
-                    os.makedirs(config_dir)
-
-                # Surgical Fix: Configuration Injection to bypass GUI deadlock
-                common_path = os.path.join(config_dir, "common.ini")
-                common_content = (
-                    f"[Common]\n"
-                    f"Login={self.login}\n"
-                    f"ProxyEnable=0\n"
-                    f"CertifyEnable=0\n"
-                    f"NewsEnable=0\n"
-                    f"ChartsEnable=0\n"
-                    f"SignalsEnable=0\n"
-                    f"MarketEnable=0\n"
-                )
-                with open(common_path, "w") as f:
-                    f.write(common_content)
-
-                # Inject credentials into both startup.ini and accounts.ini for redundancy
-                ini_content = (
-                    f"[Common]\n"
-                    f"Login={self.login}\n"
-                    f"Password={self.password}\n"
-                    f"Server={self.server}\n"
-                    f"ExpertsEnable=1\n"
-                    f"AllowLiveTrading=1\n"
-                    f"AllowDllImport=1\n"
-                    f"Enabled=1\n"
-                    f"[Experts]\n"
-                    f"AllowLiveTrading=1\n"
-                    f"Enabled=1\n"
-                    f"[Charts]\n"
-                    f"Experts=1\n"
-                )
-
-                for ini_name in ["startup.ini", "accounts.ini"]:
-                    path = os.path.join(config_dir, ini_name)
-                    with open(path, "w") as f:
-                        f.write(ini_content)
-
-                config_path = os.path.join(config_dir, "startup.ini")
-
-                # Rapid-Fire Initialization: DLL Bypass & Registry-Compatible flags
-                logger.info(f"Launching terminal via subprocess (Cycle {cycle})")
-                subprocess.Popen([
-                    terminal_path, "/portable",
-                    f"/config:{config_path}",
-                    f"/login:{self.login}",
-                    "/notest", "/nosound",
-                    "/skipupdate", "/novisual"
-                ])
-
-                # 2. Rapid-Fire Stabilization Window: 15 seconds
-                logger.info(f"Waiting 15 seconds for terminal stabilization...")
-                time.sleep(15)
-
-                # 3. Direct Memory Pipe: Remove explicit credentials from function call
-                logger.info("Calling mt5.initialize() via Direct Memory Pipe (startup.ini only)...")
                 init_success = False
                 try:
                     init_success = mt5.initialize(
                         path=terminal_path,
                         common_metadata_path=workspace,
-                        timeout=20000, # Fast-Track Handshake: 20s timeout
+                        timeout=20000,
                         portable=True
                     )
                 except TypeError:
-                    init_success = mt5.initialize(
-                        path=terminal_path,
-                        timeout=20000
-                    )
+                    init_success = mt5.initialize(path=terminal_path, timeout=20000)
 
                 if init_success:
-                    # 5. Verification: Confirm balance reading
-                    acc_info = mt5.account_info()
-                    if acc_info:
-                        logger.info(f"FORCE-CONNECT SUCCESS. Outcome Dominance Balance confirmed: ${acc_info.balance:.2f}")
-                        self._connected = True
-                        break
-                    else:
-                        logger.error("Initialize returned True but account_info() is None. Retrying...")
-                else:
-                    logger.warning("First attempt failed. Triggering 'Headless Force' second attempt...")
-                    # os.system taskkill for aggressive cleanup
-                    os.system('taskkill /f /im terminal64.exe')
-                    time.sleep(2)
-
-                    # Relaunch
-                    logger.info("Relaunching terminal for second attempt...")
-                    subprocess.Popen([
-                        terminal_path, "/portable",
-                        f"/config:{config_path}",
-                        f"/login:{self.login}",
-                        "/notest", "/nosound",
-                        "/skipupdate", "/novisual"
-                    ])
-                    time.sleep(15) # Consistent 15s for Rapid-Fire
-
-                    # Second attempt: Retry without specific flags if needed
-                    logger.info("Retrying mt5.initialize() WITHOUT explicit credentials...")
-                    try:
-                        init_success = mt5.initialize(
-                            path=terminal_path,
-                            common_metadata_path=workspace,
-                            timeout=20000,
-                            portable=True
-                        )
-                    except TypeError:
-                        init_success = mt5.initialize(path=terminal_path, timeout=20000)
-
-                    if init_success:
-                        acc_info = mt5.account_info()
-                        if acc_info:
-                            logger.info(f"HEADLESS-FORCE SUCCESS. Balance confirmed: ${acc_info.balance:.2f}")
+                    # 3. Account Force-Login
+                    logger.info("Initialize successful. Triggering Force-Login...")
+                    if mt5.login(login=self.login, password=self.password, server=self.server):
+                        # 4. Data Warmup
+                        logger.info("Force-Login SUCCESS. Performing Data Warmup...")
+                        rates = mt5.copy_rates_from_pos('EURUSD', mt5.TIMEFRAME_M1, 0, 10)
+                        if rates is not None and len(rates) > 0:
+                            acc_info = mt5.account_info()
+                            logger.info(f"STAMINA SUCCESS. Active Intelligence Balance: ${acc_info.balance:.2f}")
                             self._connected = True
                             break
+                        else:
+                            logger.warning("Warmup returned NO DATA. Retrying...")
+                    else:
+                        logger.error(f"Force-Login FAILED: {mt5.last_error()}")
 
             except Exception as e:
-                logger.error(f"Error in connect cycle {cycle}: {e}")
+                logger.error(f"Error in handshake {i+1}: {e}")
 
-            # 4. Loop-Back Correction: Failure Cleanup
-            logger.warning(f"Connection Cycle {cycle} failed. Triggering Loop-Back Correction...")
-            os.system('taskkill /f /im terminal64.exe')
-            time.sleep(2)
-
-            # Cycle 3 Rule: Physically delete bases if still failing
-            if cycle == 3:
-                bases_dir = os.path.join(terminal_dir, "bases")
-                if os.path.exists(bases_dir):
-                    logger.warning("Cycle 3 Cleanup: Removing bases folder...")
-                    try:
-                        shutil.rmtree(bases_dir, ignore_errors=True)
-                    except Exception as e:
-                        logger.error(f"Could not delete bases directory: {e}")
+            time.sleep(10)
 
         if self._connected:
             # Proceed with FBS-specific symbol mapping (once connected)

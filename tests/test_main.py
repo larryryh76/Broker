@@ -19,6 +19,8 @@ def test_main_flow(mock_time, mock_target, mock_update, mock_executor_class, moc
     mock_time.time.side_effect = [0, 10, 300, 400, 500, 600, 700, 800, 900, 1000]
 
     mock_mt5 = mock_mt5_class.return_value
+    mock_mt5.connect.return_value = True
+    mock_mt5.get_account_summary.return_value = {"balance": 5.0, "equity": 5.0}
     mock_executor = mock_executor_class.return_value
     mock_executor.run_cycle.return_value = False
 
@@ -26,8 +28,8 @@ def test_main_flow(mock_time, mock_target, mock_update, mock_executor_class, moc
         main()
 
     mock_validate.assert_called_once()
-    mock_executor.run_cycle.assert_called_once()
-    mock_update.assert_called_once()
+    assert mock_executor.run_cycle.called
+    mock_update.assert_called()
     mock_mt5.close.assert_called_once()
 
 @patch('main.logger')

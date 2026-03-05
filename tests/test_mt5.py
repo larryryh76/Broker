@@ -17,6 +17,8 @@ def mt5_client():
 def test_get_account_summary(mt5_client):
     client, mock_mt5 = mt5_client
     mock_mt5.initialize.return_value = True
+    mock_mt5.login.return_value = True
+    mock_mt5.copy_rates_from_pos.return_value = [1, 2, 3]
     mock_mt5.account_info.return_value = MagicMock(balance=100.0, equity=100.0, currency="USD")
 
     with patch('time.sleep'):
@@ -27,10 +29,15 @@ def test_get_account_summary(mt5_client):
 def test_get_candles(mt5_client):
     client, mock_mt5 = mt5_client
     mock_mt5.initialize.return_value = True
-    mock_mt5.account_info.return_value = MagicMock(balance=100.0)
-    mock_mt5.copy_rates_from_pos.return_value = [
-        {'time': 1600000000, 'open': 100, 'high': 101, 'low': 99, 'close': 100, 'tick_volume': 10}
+    mock_mt5.login.return_value = True
+    mock_mt5.copy_rates_from_pos.side_effect = [
+        [1, 2, 3], # Warmup (connect called inside get_candles)
+        [1, 2, 3], # Symbol mapping 1
+        [1, 2, 3], # Symbol mapping 2
+        [1, 2, 3], # Symbol mapping 3
+        [{'time': 1600000000, 'open': 100, 'high': 101, 'low': 99, 'close': 100, 'tick_volume': 10}] # Actual call
     ]
+    mock_mt5.account_info.return_value = MagicMock(balance=100.0)
 
     with patch('time.sleep'):
         candles = client.get_candles("XAUUSD")
@@ -40,6 +47,8 @@ def test_get_candles(mt5_client):
 def test_place_market_order(mt5_client):
     client, mock_mt5 = mt5_client
     mock_mt5.initialize.return_value = True
+    mock_mt5.login.return_value = True
+    mock_mt5.copy_rates_from_pos.return_value = [1, 2, 3]
     mock_mt5.account_info.return_value = MagicMock(balance=100.0)
     mock_mt5.symbol_info_tick.return_value = MagicMock(ask=100, bid=99)
     mock_mt5.order_send.return_value = MagicMock(retcode=0, order=123)

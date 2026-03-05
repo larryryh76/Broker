@@ -1,7 +1,17 @@
+import os
+import time
+import subprocess
+import shutil
+
 try:
     import MetaTrader5 as mt5
 except ImportError:
     mt5 = None
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 from config import MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, logger
 
@@ -13,14 +23,33 @@ class MT5Client:
         self._connected = False
         self.mt5 = mt5
 
+    def _set_registry_bypass(self):
+        """Inject EULA acceptance into the Windows Registry to skip GUI popups."""
+        if winreg is None:
+            return
+        try:
+            # Registry path for MT5
+            key_path = r"Software\MetaQuotes Software\MetaTrader 5"
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                winreg.SetValueEx(key, "AcceptedLicense", 0, winreg.REG_DWORD, 1)
+                logger.info("Registry Bypass: AcceptedLicense set to 1.")
+        except Exception as e:
+            logger.error(f"Registry bypass failed: {e}")
+
+    def _create_dummy_dll(self, terminal_dir):
+        """Create a dummy WebView2Loader.dll to prevent terminal hangs."""
+        dll_path = os.path.join(terminal_dir, "WebView2Loader.dll")
+        if not os.path.exists(dll_path):
+            try:
+                with open(dll_path, "wb") as f:
+                    f.write(b"")
+                logger.info(f"Created dummy DLL at: {dll_path}")
+            except Exception as e:
+                logger.error(f"Failed to create dummy DLL: {e}")
+
     def connect(self):
         if self._connected:
             return True
-
-        import time
-        import os
-        import subprocess
-        import shutil
 
         workspace = os.getcwd()
 
@@ -53,6 +82,22 @@ class MT5Client:
                 except Exception as e:
                     logger.error(f"Failed to clear {folder}: {e}")
 
+        # Surgical Fix 2: WebView Bypass & Registry Injection
+        self._set_registry_bypass()
+        self._create_dummy_dll(terminal_dir)
+
+        # Diagnostic Check: Verify directory population
+        try:
+            logger.info(f"Diagnostic - Terminal Root Contents: {os.listdir(terminal_dir)}")
+            for sub in ["bases", "config", "profiles"]:
+                sub_path = os.path.join(terminal_dir, sub)
+                if os.path.exists(sub_path):
+                    logger.info(f"Diagnostic - {sub} contents: {os.listdir(sub_path)}")
+                else:
+                    logger.warning(f"Diagnostic - {sub} folder missing!")
+        except Exception as e:
+            logger.error(f"Diagnostic listdir failed: {e}")
+
         # 'Force-Connect' Protocol: 5 Aggressive Cycles
         for cycle in range(1, 6):
             logger.info(f"FORCE-CONNECT Cycle {cycle}/5 started...")
@@ -78,7 +123,7 @@ class MT5Client:
                 with open(common_path, "w") as f:
                     f.write(common_content)
 
-                config_path = os.path.join(config_dir, "startup.ini")
+                # Inject credentials into both startup.ini and accounts.ini for redundancy
                 ini_content = (
                     f"[Common]\n"
                     f"Login={self.login}\n"
@@ -94,41 +139,41 @@ class MT5Client:
                     f"[Charts]\n"
                     f"Experts=1\n"
                 )
-                with open(config_path, "w") as f:
-                    f.write(ini_content)
 
-                # Rapid-Fire Initialization: Include /login and ensure /portable is primary
+                for ini_name in ["startup.ini", "accounts.ini"]:
+                    path = os.path.join(config_dir, ini_name)
+                    with open(path, "w") as f:
+                        f.write(ini_content)
+
+                config_path = os.path.join(config_dir, "startup.ini")
+
+                # Rapid-Fire Initialization: DLL Bypass & Registry-Compatible flags
                 logger.info(f"Launching terminal via subprocess (Cycle {cycle})")
                 subprocess.Popen([
                     terminal_path, "/portable",
                     f"/config:{config_path}",
                     f"/login:{self.login}",
-                    "/notest", "/nosound"
+                    "/notest", "/nosound",
+                    "/skipupdate", "/novisual"
                 ])
 
                 # 2. Rapid-Fire Stabilization Window: 15 seconds
                 logger.info(f"Waiting 15 seconds for terminal stabilization...")
                 time.sleep(15)
 
-                # 3. Credentials & Path Enforcement: Use Workspace for common metadata
-                logger.info("Calling mt5.initialize() with Credentials & Path Enforcement...")
+                # 3. Direct Memory Pipe: Remove explicit credentials from function call
+                logger.info("Calling mt5.initialize() via Direct Memory Pipe (startup.ini only)...")
                 init_success = False
                 try:
                     init_success = mt5.initialize(
                         path=terminal_path,
-                        common_metadata_path=workspace, # Enforce workspace-relative handshake
-                        login=self.login,
-                        password=self.password,
-                        server=self.server,
+                        common_metadata_path=workspace,
                         timeout=20000, # Fast-Track Handshake: 20s timeout
                         portable=True
                     )
                 except TypeError:
                     init_success = mt5.initialize(
                         path=terminal_path,
-                        login=self.login,
-                        password=self.password,
-                        server=self.server,
                         timeout=20000
                     )
 
@@ -153,12 +198,13 @@ class MT5Client:
                         terminal_path, "/portable",
                         f"/config:{config_path}",
                         f"/login:{self.login}",
-                        "/notest", "/nosound"
+                        "/notest", "/nosound",
+                        "/skipupdate", "/novisual"
                     ])
                     time.sleep(15) # Consistent 15s for Rapid-Fire
 
-                    # Second attempt: Without explicit credentials (read from startup.ini)
-                    logger.info("Calling mt5.initialize() WITHOUT explicit credentials...")
+                    # Second attempt: Retry without specific flags if needed
+                    logger.info("Retrying mt5.initialize() WITHOUT explicit credentials...")
                     try:
                         init_success = mt5.initialize(
                             path=terminal_path,

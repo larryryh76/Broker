@@ -8,6 +8,7 @@ def mt5_client():
          patch('mt5_client.MT5_PASSWORD', 'Iamolanrewaju1$'), \
          patch('mt5_client.MT5_SERVER', 'FBS-Real'), \
          patch('os.path.exists', return_value=True), \
+         patch('os.path.getsize', return_value=500), \
          patch('subprocess.Popen'), \
          patch('subprocess.run'), \
          patch('mt5_client.mt5') as mock_mt5:

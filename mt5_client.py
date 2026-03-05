@@ -47,22 +47,19 @@ class MT5Client:
             except Exception as e:
                 logger.error(f"Failed to create dummy DLL: {e}")
 
-    def _inject_server_data(self, config_dir):
-        """EMERGENCY OVERRIDE: Binary Injection of Server Data to bypass sync hangs."""
+    def _cleanup_invalid_server_data(self, config_dir):
+        """Refined Emergency Override: Remove servers.dat if it's a poison pill (too small)."""
         server_path = os.path.join(config_dir, "servers.dat")
-        try:
-            # Create/overwrite with non-zero byte content
-            with open(server_path, "wb") as f:
-                f.write(b"\x00")
-
-            # Ensure not read-only
-            if hasattr(os, "chmod"):
-                os.chmod(server_path, 0o666)
-
+        if os.path.exists(server_path):
             size = os.path.getsize(server_path)
-            logger.info(f"Binary Injection: servers.dat created ({size} bytes).")
-        except Exception as e:
-            logger.error(f"Server data injection failed: {e}")
+            if size < 100:
+                logger.warning(f"Poison Pill detected: servers.dat is only {size} bytes. Removing for fresh sync.")
+                try:
+                    os.remove(server_path)
+                except Exception as e:
+                    logger.error(f"Failed to remove poison pill: {e}")
+            else:
+                logger.info(f"servers.dat looks valid ({size} bytes). Proceeding.")
 
     def connect(self):
         if self._connected:
@@ -108,8 +105,8 @@ class MT5Client:
         if not os.path.exists(config_dir):
             os.makedirs(config_dir)
 
-        # Binary Injection of Server Data
-        self._inject_server_data(config_dir)
+        # Refined Server Data Cleanup
+        self._cleanup_invalid_server_data(config_dir)
 
         # Surgical Fix: Configuration Injection
         common_path = os.path.join(config_dir, "common.ini")
@@ -164,44 +161,63 @@ class MT5Client:
             "/skipupdate", "/novisual"
         ])
 
-        # 2. 'Stamina' Handshake Window (No Killing)
-        # Call initialize() every 10 seconds for 2 minutes
-        logger.info("Starting 'Stamina' Handshake loop (120s max)...")
-        for i in range(12):
-            logger.info(f"Handshake attempt {i+1}/12...")
+        # 2. 'Stamina' Handshake Window (Rapid-Fire, No Killing)
+        # Call initialize() every 5 seconds for ~100 seconds
+        logger.info("Starting 'Stamina' Handshake loop (100s Rapid-Fire)...")
+        for i in range(20):
+            logger.info(f"Handshake attempt {i+1}/20...")
             try:
                 init_success = False
                 try:
+                    # Dynamic Broker Resolution: Pass credentials during loop
                     init_success = mt5.initialize(
                         path=terminal_path,
                         common_metadata_path=workspace,
+                        login=self.login,
+                        password=self.password,
+                        server=self.server,
                         timeout=20000,
                         portable=True
                     )
                 except TypeError:
-                    init_success = mt5.initialize(path=terminal_path, timeout=20000)
+                    init_success = mt5.initialize(
+                        path=terminal_path,
+                        login=self.login,
+                        password=self.password,
+                        server=self.server,
+                        timeout=20000
+                    )
 
                 if init_success:
-                    # 3. Account Force-Login
+                    # 3. Account Force-Login (Immediate)
                     logger.info("Initialize successful. Triggering Force-Login...")
-                    if mt5.login(login=self.login, password=self.password, server=self.server):
-                        # 4. Data Warmup
-                        logger.info("Force-Login SUCCESS. Performing Data Warmup...")
-                        rates = mt5.copy_rates_from_pos('EURUSD', mt5.TIMEFRAME_M1, 0, 10)
-                        if rates is not None and len(rates) > 0:
-                            acc_info = mt5.account_info()
-                            logger.info(f"STAMINA SUCCESS. Active Intelligence Balance: ${acc_info.balance:.2f}")
-                            self._connected = True
-                            break
+                    login_success = mt5.login(login=self.login, password=self.password, server=self.server)
+                    logger.info(f"Force-Login Attempted. Result: {login_success} | Last Error: {mt5.last_error()}")
+
+                    if login_success:
+                        # 4. Market Sight Verification
+                        terminal = mt5.terminal_info()
+                        if terminal and terminal.connected:
+                            logger.info("Market Sight Achieved (connected=True). Performing Data Warmup...")
+
+                            # 5. Data Warmup
+                            rates = mt5.copy_rates_from_pos('EURUSD', mt5.TIMEFRAME_M1, 0, 10)
+                            if rates is not None and len(rates) > 0:
+                                acc_info = mt5.account_info()
+                                logger.info(f"STAMINA SUCCESS. Intelligence Singularity Balance: ${acc_info.balance:.2f}")
+                                self._connected = True
+                                break
+                            else:
+                                logger.warning("Warmup returned NO DATA (Syncing...). Continuing loop.")
                         else:
-                            logger.warning("Warmup returned NO DATA. Retrying...")
+                            logger.warning("Logged in but Market Sight not yet achieved. Continuing loop.")
                     else:
-                        logger.error(f"Force-Login FAILED: {mt5.last_error()}")
+                        logger.error(f"Force-Login FAILED. Retrying Handshake...")
 
             except Exception as e:
                 logger.error(f"Error in handshake {i+1}: {e}")
 
-            time.sleep(10)
+            time.sleep(5)
 
         if self._connected:
             # Proceed with FBS-specific symbol mapping (once connected)

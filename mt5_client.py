@@ -22,8 +22,9 @@ class MT5Client:
         import subprocess
         import shutil
 
+        workspace = os.getcwd()
+
         def find_terminal():
-            workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
             search_paths = [
                 os.path.join(workspace, "mt5_terminal", "terminal64.exe"),
                 "C:\\Program Files\\FBS MetaTrader 5\\terminal64.exe",
@@ -42,13 +43,13 @@ class MT5Client:
         terminal_path = os.path.abspath(terminal_path)
         terminal_dir = os.path.dirname(terminal_path)
 
-        # Surgical Fix: Physically delete bases and logs before Cycle 1 to skip sync
+        # Surgical Fix 1: Physically delete bases and logs BEFORE Cycle 1 to skip sync
         for folder in ["bases", "logs"]:
             folder_path = os.path.join(terminal_dir, folder)
             if os.path.exists(folder_path):
                 logger.info(f"Removing corrupted cache: {folder_path}")
                 try:
-                    shutil.rmtree(folder_path)
+                    shutil.rmtree(folder_path, ignore_errors=True)
                 except Exception as e:
                     logger.error(f"Failed to clear {folder}: {e}")
 
@@ -62,7 +63,7 @@ class MT5Client:
                 if not os.path.exists(config_dir):
                     os.makedirs(config_dir)
 
-                # Surgical Fix: Bypass 'New Account' Wizard and Certificate checks
+                # Surgical Fix 3: Bypass 'New Account' Wizard and Certificate checks via common.ini
                 common_path = os.path.join(config_dir, "common.ini")
                 common_content = (
                     f"[Common]\n"
@@ -101,17 +102,17 @@ class MT5Client:
                     "/notest", "/nosound"
                 ])
 
-                # 2. Stabilization Window: Reduced to 15 seconds for 'Rapid-Fire'
+                # 2. Rapid-Fire Stabilization Window: 15 seconds
                 logger.info(f"Waiting 15 seconds for terminal stabilization...")
                 time.sleep(15)
 
-                # 3. Credentials Enforcement: Explicitly set data paths for cloud handshake
+                # 3. Credentials & Path Enforcement: Use Workspace for common metadata
                 logger.info("Calling mt5.initialize() with Credentials & Path Enforcement...")
                 init_success = False
                 try:
                     init_success = mt5.initialize(
                         path=terminal_path,
-                        common_metadata_path=terminal_dir,
+                        common_metadata_path=workspace, # Enforce workspace-relative handshake
                         login=self.login,
                         password=self.password,
                         server=self.server,
@@ -144,15 +145,20 @@ class MT5Client:
 
                     # Relaunch
                     logger.info("Relaunching terminal for second attempt...")
-                    subprocess.Popen([terminal_path, "/portable", f"/config:{config_path}", "/notest", "/nosound"])
-                    time.sleep(45)
+                    subprocess.Popen([
+                        terminal_path, "/portable",
+                        f"/config:{config_path}",
+                        f"/login:{self.login}",
+                        "/notest", "/nosound"
+                    ])
+                    time.sleep(15) # Consistent 15s for Rapid-Fire
 
                     # Second attempt: Without explicit credentials (read from startup.ini)
                     logger.info("Calling mt5.initialize() WITHOUT explicit credentials...")
                     try:
                         init_success = mt5.initialize(
                             path=terminal_path,
-                            common_metadata_path=terminal_dir,
+                            common_metadata_path=workspace,
                             timeout=120000,
                             portable=True
                         )
@@ -174,13 +180,13 @@ class MT5Client:
             os.system('taskkill /f /im terminal64.exe')
             time.sleep(2)
 
-            # Cycle 3: Clear corrupted history data
+            # Cycle 3 Rule: Physically delete bases if still failing
             if cycle == 3:
                 bases_dir = os.path.join(terminal_dir, "bases")
                 if os.path.exists(bases_dir):
-                    logger.warning("Clearing 'bases' directory to resolve corrupted history hangs...")
+                    logger.warning("Cycle 3 Cleanup: Removing bases folder...")
                     try:
-                        shutil.rmtree(bases_dir)
+                        shutil.rmtree(bases_dir, ignore_errors=True)
                     except Exception as e:
                         logger.error(f"Could not delete bases directory: {e}")
 

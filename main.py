@@ -30,6 +30,16 @@ def main():
         # Initial Reconciliation
         reconcile_trades(mt5, db)
 
+        # Surgical Fix: 'Blind Entry' / Pipe Proof Window
+        # Bypass strategy scans for 60s to ensure IPC stability
+        logger.info("Pipe Proof Window Active (60s). Logging Account Info only.")
+        pipe_start = time.time()
+        while time.time() - pipe_start < 60:
+            acc = mt5.get_account_summary()
+            if acc:
+                logger.info(f"[PIPE PROOF] Balance: ${acc['balance']:.2f} | Equity: ${acc['equity']:.2f}")
+            time.sleep(10)
+
         # Core Execution Loop
         # Note: In GitHub Actions, we run for a limited time
         start_time = time.time()

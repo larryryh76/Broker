@@ -63,13 +63,17 @@ class MT5Client:
                 if not os.path.exists(config_dir):
                     os.makedirs(config_dir)
 
-                # Surgical Fix 3: Bypass 'New Account' Wizard and Certificate checks via common.ini
+                # Surgical Fix: Configuration Injection to bypass GUI deadlock
                 common_path = os.path.join(config_dir, "common.ini")
                 common_content = (
                     f"[Common]\n"
                     f"Login={self.login}\n"
                     f"ProxyEnable=0\n"
                     f"CertifyEnable=0\n"
+                    f"NewsEnable=0\n"
+                    f"ChartsEnable=0\n"
+                    f"SignalsEnable=0\n"
+                    f"MarketEnable=0\n"
                 )
                 with open(common_path, "w") as f:
                     f.write(common_content)
@@ -116,7 +120,7 @@ class MT5Client:
                         login=self.login,
                         password=self.password,
                         server=self.server,
-                        timeout=120000, # Increased timeout to 120s
+                        timeout=20000, # Fast-Track Handshake: 20s timeout
                         portable=True
                     )
                 except TypeError:
@@ -125,7 +129,7 @@ class MT5Client:
                         login=self.login,
                         password=self.password,
                         server=self.server,
-                        timeout=120000
+                        timeout=20000
                     )
 
                 if init_success:
@@ -159,11 +163,11 @@ class MT5Client:
                         init_success = mt5.initialize(
                             path=terminal_path,
                             common_metadata_path=workspace,
-                            timeout=120000,
+                            timeout=20000,
                             portable=True
                         )
                     except TypeError:
-                        init_success = mt5.initialize(path=terminal_path, timeout=120000)
+                        init_success = mt5.initialize(path=terminal_path, timeout=20000)
 
                     if init_success:
                         acc_info = mt5.account_info()

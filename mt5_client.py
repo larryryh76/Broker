@@ -54,11 +54,8 @@ class MT5Client:
             "[Common]\n"
             "Login=0\n"
             "ProxyEnable=0\n"
-            "CertifyEnable=0\n"
+            "CertInstall=0\n"
             "NewsEnable=0\n"
-            "ChartsEnable=0\n"
-            "SignalsEnable=0\n"
-            "MarketEnable=0\n"
         )
         try:
             with open(common_path, "w") as f:
@@ -92,7 +89,12 @@ class MT5Client:
         terminal_path = os.path.abspath(terminal_path)
         terminal_dir = os.path.dirname(terminal_path)
 
-        # Surgical Fix 1: Physically delete bases and logs BEFORE Cycle 1 to skip sync
+        # 1. Memory Cleanup: Wipe zombie processes (EMERGENCY RESET REQUIREMENT)
+        logger.info("Memory Cleanup: Terminating existing terminal instances...")
+        os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
+        time.sleep(2)
+
+        # Surgical Fix: Physically delete bases and logs BEFORE Cycle 1 to skip sync
         for folder in ["bases", "logs"]:
             folder_path = os.path.join(terminal_dir, folder)
             if os.path.exists(folder_path):
@@ -106,11 +108,6 @@ class MT5Client:
         self._set_registry_bypass()
         self._create_dummy_dll(terminal_dir)
 
-        # 1. Memory Cleanup: Wipe zombie processes
-        logger.info("Memory Cleanup: Terminating any existing MT5 instances...")
-        os.system(f'taskkill /f /im terminal64.exe /t >{os.devnull} 2>&1')
-        time.sleep(2)
-
         # 2. Configuration Injection
         config_dir = os.path.join(terminal_dir, "config")
         if not os.path.exists(config_dir):
@@ -118,93 +115,58 @@ class MT5Client:
 
         self._force_inject_common_config(config_dir)
 
-        ini_content = (
-            f"[Common]\n"
-            f"Login={self.login}\n"
-            f"Password={self.password}\n"
-            f"Server={self.server}\n"
-            f"ExpertsEnable=1\n"
-            f"AllowLiveTrading=1\n"
-            f"AllowDllImport=1\n"
-            f"Enabled=1\n"
-            f"[Experts]\n"
-            f"AllowLiveTrading=1\n"
-            f"Enabled=1\n"
-            f"[Charts]\n"
-            f"Experts=1\n"
-        )
-        for ini_name in ["startup.ini", "accounts.ini"]:
-            path = os.path.join(config_dir, ini_name)
-            with open(path, "w") as f:
-                f.write(ini_content)
-
-        config_path = os.path.join(config_dir, "startup.ini")
-
-        # Diagnostic Check: Verify directory population
-        try:
-            logger.info(f"Diagnostic - Terminal Root Contents: {os.listdir(terminal_dir)}")
-        except Exception as e:
-            logger.error(f"Diagnostic listdir failed: {e}")
-
-        # 2. Unified Pipe Launch Sequence (No Subprocess)
-        # Force the library to launch the terminal to avoid IPC deadlock
-        logger.info("Starting 'Unified Pipe' native launch...")
+        # 3. Synchronous Initialization: Native Omnipotence Launch (Unified Pipe)
+        # Force the library to launch the terminal natively to ensure absolute pipe control.
+        logger.info("Starting 'Unified Pipe' Synchronous native launch...")
 
         try:
+            # Synchronous Initialization with direct credentials
             init_success = False
-            # Native Omnipotence Launch: Exact command block for initialization
             try:
                 init_success = mt5.initialize(
                     path=terminal_path,
                     login=self.login,
                     password=self.password,
                     server=self.server,
-                    timeout=120000,
+                    timeout=60000,
                     portable=True
                 )
             except TypeError:
-                # Fallback if portable is not supported as keyword
                 init_success = mt5.initialize(
                     terminal_path,
                     login=self.login,
                     password=self.password,
                     server=self.server,
-                    timeout=120000
+                    timeout=60000
                 )
 
             if init_success:
-                # 3. Outcome Dominance Check: Verify Market Sight
+                # 4. Outcome Dominance Check
                 terminal = mt5.terminal_info()
-                logger.info(f"Unified Pipe Initialized. Terminal Info: {terminal}")
+                logger.info(f"Unified Pipe Successful. Terminal Info: {terminal}")
 
                 if terminal and terminal.connected:
-                    logger.info("Market Sight Achieved (connected=True). Performing Data Warmup...")
-
-                    # 4. Data Warmup & Profit Objective Verification
-                    rates = mt5.copy_rates_from_pos('EURUSD', mt5.TIMEFRAME_M1, 0, 10)
-                    if rates is not None and len(rates) > 0:
-                        acc_info = mt5.account_info()
-                        logger.info(f"UNIFIED PIPE SUCCESS. Intelligence Singularity Balance: ${acc_info.balance:.2f}")
+                    acc_info = mt5.account_info()
+                    if acc_info:
+                        logger.info(f"MARKET SIGHT ACHIEVED. Balance: ${acc_info.balance:.2f}. Proceeding.")
                         self._connected = True
                     else:
-                        logger.warning("Warmup returned NO DATA. Memory pipe may be high-latency.")
-                        # Still count as connected if terminal says so
-                        self._connected = True
+                        logger.error("Market Sight True but account_info is None.")
                 else:
-                    logger.error("Initialize succeeded but terminal.connected is False.")
-                    # Attempt one-time force login as fallback
+                    logger.warning("Initialize True but terminal.connected is False. Attempting Force-Login...")
                     if mt5.login(login=self.login, password=self.password, server=self.server):
-                         logger.info("Fallback Force-Login successful.")
-                         self._connected = True
+                        logger.info("Fallback Force-Login SUCCESS.")
+                        self._connected = True
+                    else:
+                        logger.error(f"Fallback Login FAILED: {mt5.last_error()}")
             else:
-                # Direct Error Extraction: Log exact C++ error from backend
-                logger.error(f"UNIFIED PIPE FAILURE. MT5 Last Error: {mt5.last_error()}")
+                logger.error(f"UNIFIED PIPE FAILURE. Exact C++ Error: {mt5.last_error()}")
 
         except Exception as e:
-            logger.error(f"Error during Unified Pipe handshake: {e}")
+            logger.error(f"Error during native omnipotence handshake: {e}")
 
         if self._connected:
-            # Proceed with FBS-specific symbol mapping (once connected)
+            # Proceed with FBS-specific symbol mapping
             try:
                 # FBS Account Type Detection & Symbol Mapping
                 acc_info = mt5.account_info()

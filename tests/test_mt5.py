@@ -32,10 +32,9 @@ def test_get_candles(mt5_client):
     mock_mt5.initialize.return_value = True
     mock_mt5.login.return_value = True
     mock_mt5.copy_rates_from_pos.side_effect = [
-        [1, 2, 3], # Warmup (connect called inside get_candles)
-        [1, 2, 3], # Symbol mapping 1
-        [1, 2, 3], # Symbol mapping 2
-        [1, 2, 3], # Symbol mapping 3
+        [{'time': 1600000000, 'open': 100, 'high': 101, 'low': 99, 'close': 100, 'tick_volume': 10}], # Symbol mapping 1
+        [{'time': 1600000000, 'open': 100, 'high': 101, 'low': 99, 'close': 100, 'tick_volume': 10}], # Symbol mapping 2
+        [{'time': 1600000000, 'open': 100, 'high': 101, 'low': 99, 'close': 100, 'tick_volume': 10}], # Symbol mapping 3
         [{'time': 1600000000, 'open': 100, 'high': 101, 'low': 99, 'close': 100, 'tick_volume': 10}] # Actual call
     ]
     mock_mt5.account_info.return_value = MagicMock(balance=100.0)

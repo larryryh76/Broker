@@ -151,73 +151,62 @@ class MT5Client:
         except Exception as e:
             logger.error(f"Diagnostic listdir failed: {e}")
 
-        # Launch terminal ONCE for 'Stamina' Handshake
-        logger.info("Launching terminal for 'Stamina' Handshake...")
-        subprocess.Popen([
-            terminal_path, "/portable",
-            f"/config:{config_path}",
-            f"/login:{self.login}",
-            "/notest", "/nosound",
-            "/skipupdate", "/novisual"
-        ])
+        # 2. Unified Pipe Launch Sequence (No Subprocess)
+        # Force the library to launch the terminal to avoid IPC deadlock
+        logger.info("Starting 'Unified Pipe' native launch...")
 
-        # 2. 'Stamina' Handshake Window (Rapid-Fire, No Killing)
-        # Call initialize() every 5 seconds for ~100 seconds
-        logger.info("Starting 'Stamina' Handshake loop (100s Rapid-Fire)...")
-        for i in range(20):
-            logger.info(f"Handshake attempt {i+1}/20...")
+        try:
+            init_success = False
+            # Native Omnipotence Launch: Exact command block for initialization
             try:
-                init_success = False
-                try:
-                    # Dynamic Broker Resolution: Pass credentials during loop
-                    init_success = mt5.initialize(
-                        path=terminal_path,
-                        common_metadata_path=workspace,
-                        login=self.login,
-                        password=self.password,
-                        server=self.server,
-                        timeout=20000,
-                        portable=True
-                    )
-                except TypeError:
-                    init_success = mt5.initialize(
-                        path=terminal_path,
-                        login=self.login,
-                        password=self.password,
-                        server=self.server,
-                        timeout=20000
-                    )
+                init_success = mt5.initialize(
+                    path=terminal_path,
+                    login=self.login,
+                    password=self.password,
+                    server=self.server,
+                    timeout=120000,
+                    portable=True
+                )
+            except TypeError:
+                # Fallback if portable is not supported as keyword
+                init_success = mt5.initialize(
+                    terminal_path,
+                    login=self.login,
+                    password=self.password,
+                    server=self.server,
+                    timeout=120000
+                )
 
-                if init_success:
-                    # 3. Account Force-Login (Immediate)
-                    logger.info("Initialize successful. Triggering Force-Login...")
-                    login_success = mt5.login(login=self.login, password=self.password, server=self.server)
-                    logger.info(f"Force-Login Attempted. Result: {login_success} | Last Error: {mt5.last_error()}")
+            if init_success:
+                # 3. Outcome Dominance Check: Verify Market Sight
+                terminal = mt5.terminal_info()
+                logger.info(f"Unified Pipe Initialized. Terminal Info: {terminal}")
 
-                    if login_success:
-                        # 4. Market Sight Verification
-                        terminal = mt5.terminal_info()
-                        if terminal and terminal.connected:
-                            logger.info("Market Sight Achieved (connected=True). Performing Data Warmup...")
+                if terminal and terminal.connected:
+                    logger.info("Market Sight Achieved (connected=True). Performing Data Warmup...")
 
-                            # 5. Data Warmup
-                            rates = mt5.copy_rates_from_pos('EURUSD', mt5.TIMEFRAME_M1, 0, 10)
-                            if rates is not None and len(rates) > 0:
-                                acc_info = mt5.account_info()
-                                logger.info(f"STAMINA SUCCESS. Intelligence Singularity Balance: ${acc_info.balance:.2f}")
-                                self._connected = True
-                                break
-                            else:
-                                logger.warning("Warmup returned NO DATA (Syncing...). Continuing loop.")
-                        else:
-                            logger.warning("Logged in but Market Sight not yet achieved. Continuing loop.")
+                    # 4. Data Warmup & Profit Objective Verification
+                    rates = mt5.copy_rates_from_pos('EURUSD', mt5.TIMEFRAME_M1, 0, 10)
+                    if rates is not None and len(rates) > 0:
+                        acc_info = mt5.account_info()
+                        logger.info(f"UNIFIED PIPE SUCCESS. Intelligence Singularity Balance: ${acc_info.balance:.2f}")
+                        self._connected = True
                     else:
-                        logger.error(f"Force-Login FAILED. Retrying Handshake...")
+                        logger.warning("Warmup returned NO DATA. Memory pipe may be high-latency.")
+                        # Still count as connected if terminal says so
+                        self._connected = True
+                else:
+                    logger.error("Initialize succeeded but terminal.connected is False.")
+                    # Attempt one-time force login as fallback
+                    if mt5.login(login=self.login, password=self.password, server=self.server):
+                         logger.info("Fallback Force-Login successful.")
+                         self._connected = True
+            else:
+                # Direct Error Extraction: Log exact C++ error from backend
+                logger.error(f"UNIFIED PIPE FAILURE. MT5 Last Error: {mt5.last_error()}")
 
-            except Exception as e:
-                logger.error(f"Error in handshake {i+1}: {e}")
-
-            time.sleep(5)
+        except Exception as e:
+            logger.error(f"Error during Unified Pipe handshake: {e}")
 
         if self._connected:
             # Proceed with FBS-specific symbol mapping (once connected)

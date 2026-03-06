@@ -54,8 +54,11 @@ class MT5Client:
             "[Common]\n"
             "Login=0\n"
             "ProxyEnable=0\n"
-            "CertInstall=0\n"
+            "CertifyEnable=0\n"
             "NewsEnable=0\n"
+            "ChartsEnable=0\n"
+            "SignalsEnable=0\n"
+            "MarketEnable=0\n"
         )
         try:
             with open(common_path, "w") as f:
@@ -105,7 +108,7 @@ class MT5Client:
 
         # 1. Memory Cleanup: Wipe zombie processes
         logger.info("Memory Cleanup: Terminating any existing MT5 instances...")
-        os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
+        os.system(f'taskkill /f /im terminal64.exe /t >{os.devnull} 2>&1')
         time.sleep(2)
 
         # 2. Configuration Injection

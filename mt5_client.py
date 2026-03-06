@@ -47,19 +47,22 @@ class MT5Client:
             except Exception as e:
                 logger.error(f"Failed to create dummy DLL: {e}")
 
-    def _cleanup_invalid_server_data(self, config_dir):
-        """Refined Emergency Override: Remove servers.dat if it's a poison pill (too small)."""
-        server_path = os.path.join(config_dir, "servers.dat")
-        if os.path.exists(server_path):
-            size = os.path.getsize(server_path)
-            if size < 100:
-                logger.warning(f"Poison Pill detected: servers.dat is only {size} bytes. Removing for fresh sync.")
-                try:
-                    os.remove(server_path)
-                except Exception as e:
-                    logger.error(f"Failed to remove poison pill: {e}")
-            else:
-                logger.info(f"servers.dat looks valid ({size} bytes). Proceeding.")
+    def _force_inject_common_config(self, config_dir):
+        """EMERGENCY RESET: Write common.ini to bypass 'First Run' popups."""
+        common_path = os.path.join(config_dir, "common.ini")
+        common_content = (
+            "[Common]\n"
+            "Login=0\n"
+            "ProxyEnable=0\n"
+            "CertInstall=0\n"
+            "NewsEnable=0\n"
+        )
+        try:
+            with open(common_path, "w") as f:
+                f.write(common_content)
+            logger.info("Emergency Reset: common.ini force-injected.")
+        except Exception as e:
+            logger.error(f"Config injection failed: {e}")
 
     def connect(self):
         if self._connected:
@@ -100,28 +103,17 @@ class MT5Client:
         self._set_registry_bypass()
         self._create_dummy_dll(terminal_dir)
 
-        # 1. Shell-Level Initialization & Injection
+        # 1. Memory Cleanup: Wipe zombie processes
+        logger.info("Memory Cleanup: Terminating any existing MT5 instances...")
+        os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
+        time.sleep(2)
+
+        # 2. Configuration Injection
         config_dir = os.path.join(terminal_dir, "config")
         if not os.path.exists(config_dir):
             os.makedirs(config_dir)
 
-        # Refined Server Data Cleanup
-        self._cleanup_invalid_server_data(config_dir)
-
-        # Surgical Fix: Configuration Injection
-        common_path = os.path.join(config_dir, "common.ini")
-        common_content = (
-            f"[Common]\n"
-            f"Login={self.login}\n"
-            f"ProxyEnable=0\n"
-            f"CertifyEnable=0\n"
-            f"NewsEnable=0\n"
-            f"ChartsEnable=0\n"
-            f"SignalsEnable=0\n"
-            f"MarketEnable=0\n"
-        )
-        with open(common_path, "w") as f:
-            f.write(common_content)
+        self._force_inject_common_config(config_dir)
 
         ini_content = (
             f"[Common]\n"

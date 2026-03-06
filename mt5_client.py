@@ -8,11 +8,6 @@ try:
 except ImportError:
     mt5 = None
 
-try:
-    import winreg
-except ImportError:
-    winreg = None
-
 from config import MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, logger
 
 class MT5Client:
@@ -22,47 +17,6 @@ class MT5Client:
         self.server = MT5_SERVER
         self._connected = False
         self.mt5 = mt5
-
-    def _set_registry_bypass(self):
-        """Inject EULA acceptance into the Windows Registry to skip GUI popups."""
-        if winreg is None:
-            return
-        try:
-            # Registry path for MT5
-            key_path = r"Software\MetaQuotes Software\MetaTrader 5"
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
-                winreg.SetValueEx(key, "AcceptedLicense", 0, winreg.REG_DWORD, 1)
-                logger.info("Registry Bypass: AcceptedLicense set to 1.")
-        except Exception as e:
-            logger.error(f"Registry bypass failed: {e}")
-
-    def _create_dummy_dll(self, terminal_dir):
-        """Create a dummy WebView2Loader.dll to prevent terminal hangs."""
-        dll_path = os.path.join(terminal_dir, "WebView2Loader.dll")
-        if not os.path.exists(dll_path):
-            try:
-                with open(dll_path, "wb") as f:
-                    f.write(b"")
-                logger.info(f"Created dummy DLL at: {dll_path}")
-            except Exception as e:
-                logger.error(f"Failed to create dummy DLL: {e}")
-
-    def _force_inject_common_config(self, config_dir):
-        """EMERGENCY RESET: Write common.ini to bypass 'First Run' popups."""
-        common_path = os.path.join(config_dir, "common.ini")
-        common_content = (
-            "[Common]\n"
-            "Login=0\n"
-            "ProxyEnable=0\n"
-            "CertInstall=0\n"
-            "NewsEnable=0\n"
-        )
-        try:
-            with open(common_path, "w") as f:
-                f.write(common_content)
-            logger.info("Emergency Reset: common.ini force-injected.")
-        except Exception as e:
-            logger.error(f"Config injection failed: {e}")
 
     def connect(self):
         if self._connected:
@@ -89,62 +43,51 @@ class MT5Client:
         terminal_path = os.path.abspath(terminal_path)
         terminal_dir = os.path.dirname(terminal_path)
 
-        # 1. Memory Cleanup: Wipe zombie processes (EMERGENCY RESET REQUIREMENT)
-        logger.info("Memory Cleanup: Terminating existing terminal instances...")
+        # 1. Clean slate
+        logger.info("Terminating existing terminal instances...")
         os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
         time.sleep(2)
 
-        # Anti-Freeze Protocol: Force-delete caches and MQL5 leftovers
-        for folder in ["bases", "logs", os.path.join("MQL5", "Experts"), os.path.join("MQL5", "Logs")]:
-            folder_path = os.path.join(terminal_dir, folder)
-            if os.path.exists(folder_path):
-                logger.info(f"Anti-Freeze: Removing {folder_path}")
-                try:
-                    shutil.rmtree(folder_path, ignore_errors=True)
-                except Exception as e:
-                    logger.error(f"Failed to clear {folder}: {e}")
+        # 2. Launch terminal
+        logger.info(f"Launching terminal normally: {terminal_path}")
+        subprocess.Popen([terminal_path, "/portable"])
 
-        # Surgical Fix 2: WebView Bypass & Registry Injection
-        self._set_registry_bypass()
-        self._create_dummy_dll(terminal_dir)
+        # 3. Initialization loop (Stable Architecture)
+        logger.info("Waiting 15 seconds for process initialization...")
+        time.sleep(15)
 
-        # 2. Configuration Injection
-        config_dir = os.path.join(terminal_dir, "config")
-        if not os.path.exists(config_dir):
-            os.makedirs(config_dir)
-
-        self._force_inject_common_config(config_dir)
-
-        # 3. Fast-Hook Initialization: Native Launch + Explicit Login
-        logger.info("Starting 'Fast-Hook' Synchronous native launch...")
-
-        try:
-            init_success = False
+        for attempt in range(1, 4):
+            logger.info(f"MT5 Initialization attempt {attempt}/3...")
             try:
-                init_success = mt5.initialize(path=terminal_path, portable=True)
-            except TypeError:
-                init_success = mt5.initialize(terminal_path)
+                init_success = False
+                try:
+                    init_success = mt5.initialize(
+                        path=terminal_path,
+                        login=self.login,
+                        password=self.password,
+                        server=self.server,
+                        portable=True,
+                        timeout=60000
+                    )
+                except TypeError:
+                    init_success = mt5.initialize(
+                        terminal_path,
+                        login=self.login,
+                        password=self.password,
+                        server=self.server,
+                        timeout=60000
+                    )
 
-            if init_success:
-                # 4. Explicit Login Chain
-                logger.info("Initialize successful. Triggering Fast-Hook Login...")
-                if mt5.login(login=int(self.login), password=self.password, server=self.server):
-                    terminal = mt5.terminal_info()
-                    logger.info(f"Fast-Hook Successful. Terminal Info: {terminal}")
-
-                    if terminal and terminal.connected:
-                        acc_info = mt5.account_info()
-                        logger.info(f"INTELLIGENCE SINGULARITY ACTIVE. Balance: ${acc_info.balance:.2f}")
-                        self._connected = True
-                    else:
-                        logger.error("Logged in but terminal.connected is False.")
+                if init_success:
+                    logger.info("MT5 initialized successfully.")
+                    self._connected = True
+                    break
                 else:
-                    logger.error(f"Fast-Hook Login FAILED: {mt5.last_error()}")
-            else:
-                logger.error(f"Fast-Hook Initialize FAILURE: {mt5.last_error()}")
-
-        except Exception as e:
-            logger.error(f"Error during Fast-Hook handshake: {e}")
+                    logger.error(f"MT5 initialization failed: {mt5.last_error()}")
+                    time.sleep(5)
+            except Exception as e:
+                logger.error(f"Error during initialization: {e}")
+                time.sleep(5)
 
         if self._connected:
             # Proceed with FBS-specific symbol mapping

@@ -9,10 +9,8 @@ jobs:
   trade:
     runs-on: windows-latest
     steps:
-      - name: Force-Kill Ghost Processes
-        shell: cmd
-        continue-on-error: true
-        run: taskkill /F /IM terminal64.exe /T /FI "STATUS eq RUNNING" 2>NUL & taskkill /F /IM setup.exe /T /FI "STATUS eq RUNNING" 2>NUL & exit 0
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Configure Git for Windows
         shell: bash
@@ -20,13 +18,21 @@ jobs:
           git config --global core.longpaths true
           git config --global core.fsmonitorwatchmanfolder true
 
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
       - name: Set up Python 3.12
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
+
+      - name: Setup Headless Display
+        uses: pyvista/setup-headless-display-action@v3
+        with:
+          with-mesa: true
+          mesa-version: '24.3.0'
+
+      - name: Force-Kill Ghost Processes
+        shell: cmd
+        continue-on-error: true
+        run: taskkill /F /IM terminal64.exe /T /FI "STATUS eq RUNNING" 2>NUL & taskkill /F /IM setup.exe /T /FI "STATUS eq RUNNING" 2>NUL & exit 0
 
       - name: Install Dependencies
         shell: cmd
@@ -60,9 +66,6 @@ jobs:
           if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
           New-Item -ItemType File -Force -Path "$dir\default.tpl"
           Write-Host "Created empty default.tpl at $dir"
-
-      - name: Setup Headless Display
-        uses: pyvista/setup-headless-display-action@v3
 
       - name: Run Trading Bot
         shell: cmd

@@ -94,11 +94,11 @@ class MT5Client:
         os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
         time.sleep(2)
 
-        # Surgical Fix: Physically delete bases and logs BEFORE Cycle 1 to skip sync
-        for folder in ["bases", "logs"]:
+        # Anti-Freeze Protocol: Force-delete caches and MQL5 leftovers
+        for folder in ["bases", "logs", os.path.join("MQL5", "Experts"), os.path.join("MQL5", "Logs")]:
             folder_path = os.path.join(terminal_dir, folder)
             if os.path.exists(folder_path):
-                logger.info(f"Removing corrupted cache: {folder_path}")
+                logger.info(f"Anti-Freeze: Removing {folder_path}")
                 try:
                     shutil.rmtree(folder_path, ignore_errors=True)
                 except Exception as e:
@@ -115,55 +115,36 @@ class MT5Client:
 
         self._force_inject_common_config(config_dir)
 
-        # 3. Synchronous Initialization: Native Omnipotence Launch (Unified Pipe)
-        # Force the library to launch the terminal natively to ensure absolute pipe control.
-        logger.info("Starting 'Unified Pipe' Synchronous native launch...")
+        # 3. Fast-Hook Initialization: Native Launch + Explicit Login
+        logger.info("Starting 'Fast-Hook' Synchronous native launch...")
 
         try:
-            # Synchronous Initialization with direct credentials
             init_success = False
             try:
-                init_success = mt5.initialize(
-                    path=terminal_path,
-                    login=self.login,
-                    password=self.password,
-                    server=self.server,
-                    timeout=60000,
-                    portable=True
-                )
+                init_success = mt5.initialize(path=terminal_path, portable=True)
             except TypeError:
-                init_success = mt5.initialize(
-                    terminal_path,
-                    login=self.login,
-                    password=self.password,
-                    server=self.server,
-                    timeout=60000
-                )
+                init_success = mt5.initialize(terminal_path)
 
             if init_success:
-                # 4. Outcome Dominance Check
-                terminal = mt5.terminal_info()
-                logger.info(f"Unified Pipe Successful. Terminal Info: {terminal}")
+                # 4. Explicit Login Chain
+                logger.info("Initialize successful. Triggering Fast-Hook Login...")
+                if mt5.login(login=int(self.login), password=self.password, server=self.server):
+                    terminal = mt5.terminal_info()
+                    logger.info(f"Fast-Hook Successful. Terminal Info: {terminal}")
 
-                if terminal and terminal.connected:
-                    acc_info = mt5.account_info()
-                    if acc_info:
-                        logger.info(f"MARKET SIGHT ACHIEVED. Balance: ${acc_info.balance:.2f}. Proceeding.")
+                    if terminal and terminal.connected:
+                        acc_info = mt5.account_info()
+                        logger.info(f"INTELLIGENCE SINGULARITY ACTIVE. Balance: ${acc_info.balance:.2f}")
                         self._connected = True
                     else:
-                        logger.error("Market Sight True but account_info is None.")
+                        logger.error("Logged in but terminal.connected is False.")
                 else:
-                    logger.warning("Initialize True but terminal.connected is False. Attempting Force-Login...")
-                    if mt5.login(login=self.login, password=self.password, server=self.server):
-                        logger.info("Fallback Force-Login SUCCESS.")
-                        self._connected = True
-                    else:
-                        logger.error(f"Fallback Login FAILED: {mt5.last_error()}")
+                    logger.error(f"Fast-Hook Login FAILED: {mt5.last_error()}")
             else:
-                logger.error(f"UNIFIED PIPE FAILURE. Exact C++ Error: {mt5.last_error()}")
+                logger.error(f"Fast-Hook Initialize FAILURE: {mt5.last_error()}")
 
         except Exception as e:
-            logger.error(f"Error during native omnipotence handshake: {e}")
+            logger.error(f"Error during Fast-Hook handshake: {e}")
 
         if self._connected:
             # Proceed with FBS-specific symbol mapping

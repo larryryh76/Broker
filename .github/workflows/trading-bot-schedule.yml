@@ -55,6 +55,9 @@ jobs:
           New-Item -ItemType File -Force -Path "$dir\default.tpl"
           Write-Host "Created empty default.tpl at $dir"
 
+      - name: Setup Headless Display
+        uses: pyvista/setup-headless-display-action@v3
+
       - name: Run Trading Bot
         shell: cmd
         env:

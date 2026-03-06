@@ -45,7 +45,7 @@ class MT5Client:
 
         # 1. Clean slate
         logger.info("Terminating existing terminal instances...")
-        os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
+        os.system(f'taskkill /f /im terminal64.exe /t >{os.devnull} 2>&1')
         time.sleep(2)
 
         # 2. Launch terminal

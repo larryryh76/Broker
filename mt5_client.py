@@ -47,33 +47,17 @@ class MT5Client:
         # 1. Terminate existing terminal instances to ensure clean start
         logger.info("Terminating existing terminal instances...")
         try:
-            # Use taskkill for reliability on Windows GHA. Using os.devnull to avoid 'NUL' file creation in Linux sandbox
             if os.name == 'nt':
                 os.system(f'taskkill /f /im terminal64.exe /t >{os.devnull} 2>&1')
             else:
-                # This is just for local testing in the sandbox; won't do much but won't crash
-                os.system(f'pkill -f terminal64.exe >{os.devnull} 2>&1')
+                os.system(f'pkill -f terminal64.exe >/dev/null 2>&1')
         except:
             pass
         time.sleep(2)
 
-        # 1.5 Forced Configuration Injection (Bypasses GUI popups & enables Algo Trading)
-        # This is critical for headless environments
-        try:
-            config_dir = os.path.join(terminal_dir, "config")
-            if not os.path.exists(config_dir):
-                os.makedirs(config_dir)
-
-            common_ini = os.path.join(config_dir, "common.ini")
-            with open(common_ini, "w") as f:
-                f.write("[Common]\nExpertsEnable=1\nExpertsDllImport=1\n")
-            logger.info(f"Forced Algo Trading configuration injected at {common_ini}")
-        except Exception as e:
-            logger.warning(f"Could not inject forced config: {e}")
-
-        # 2. Refactored Initialization: Let MetaTrader5 Python API launch the terminal
-        # This ensures they run in the same Windows session, avoiding IPC timeout (-10005)
-        logger.info(f"Initializing MT5 Terminal via: {terminal_path}")
+        # 2. Refactored Initialization Sequence
+        # Rule: Do NOT modify configuration before initialization to avoid recovery mode.
+        logger.info(f"Initializing MT5 Terminal (Portable Mode): {terminal_path}")
 
         max_retries = 5
         retry_delay = 10
@@ -81,24 +65,36 @@ class MT5Client:
         for attempt in range(1, max_retries + 1):
             logger.info(f"Startup Attempt {attempt}/{max_retries}...")
             try:
-                # Step A: mt5.initialize(path=...) launches the terminal and establishes IPC
-                # PASSING CREDENTIALS DIRECTLY TO BYPASS HANDSHAKE TIMEOUTS
-                init_success = mt5.initialize(
-                    path=terminal_path,
-                    login=self.login,
-                    password=self.password,
-                    server=self.server,
-                    portable=True,
-                    timeout=60000
-                )
+                # Step A: mt5.initialize() launches the terminal and establishes IPC bridge
+                if mt5.initialize(path=terminal_path, portable=True, timeout=60000):
 
-                if init_success:
                     # Step B: verify terminal_info()
                     term_info = mt5.terminal_info()
                     if term_info:
                         logger.info(f"Terminal Info verified. Connected: {term_info.connected}")
-                        self._connected = True
-                        break
+
+                        # Step C: login to broker server
+                        if mt5.login(login=self.login, password=self.password, server=self.server):
+                            logger.info("Logged in to broker successfully.")
+                            self._connected = True
+
+                            # Step D: Apply configuration changes ONLY after successful login
+                            # This bypasses GUI popups and enables Algo Trading without triggering recovery mode.
+                            try:
+                                config_dir = os.path.join(terminal_dir, "config")
+                                if not os.path.exists(config_dir):
+                                    os.makedirs(config_dir)
+
+                                common_ini = os.path.join(config_dir, "common.ini")
+                                with open(common_ini, "w") as f:
+                                    f.write("[Common]\nExpertsEnable=1\nExpertsDllImport=1\n")
+                                logger.info(f"Algo Trading configuration applied at {common_ini}")
+                            except Exception as e:
+                                logger.warning(f"Could not apply config after login: {e}")
+
+                            break
+                        else:
+                            logger.error(f"Login failed: {mt5.last_error()}")
                     else:
                         logger.error("Could not retrieve terminal_info()")
                 else:

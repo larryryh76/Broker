@@ -44,28 +44,17 @@ class MT5Client:
         terminal_path = os.path.abspath(terminal_path)
         terminal_dir = os.path.dirname(terminal_path)
 
-        # 1. Terminate existing terminal instances to ensure clean start
-        logger.info("Terminating existing terminal instances...")
-        try:
-            if os.name == 'nt':
-                os.system(f'taskkill /f /im terminal64.exe /t >{os.devnull} 2>&1')
-            else:
-                os.system(f'pkill -f terminal64.exe >/dev/null 2>&1')
-        except:
-            pass
-        time.sleep(2)
-
-        # 2. Refactored Initialization Sequence
-        # Rule: Do NOT modify configuration before initialization to avoid recovery mode.
-        logger.info(f"Initializing MT5 Terminal (Portable Mode): {terminal_path}")
+        # 1. No termination of existing processes (Assume MT5 is pre-launched by workflow)
+        logger.info(f"Connecting to MT5 Terminal (Portable Mode): {terminal_path}")
 
         max_retries = 5
         retry_delay = 10
 
         for attempt in range(1, max_retries + 1):
-            logger.info(f"Startup Attempt {attempt}/{max_retries}...")
+            logger.info(f"Connection Attempt {attempt}/{max_retries}...")
             try:
-                # Step A: mt5.initialize() launches the terminal and establishes IPC bridge
+                # Step A: mt5.initialize() connects to the terminal and establishes IPC bridge
+                # Passing the path ensures the library knows which instance to attach to.
                 if mt5.initialize(path=terminal_path, portable=True, timeout=60000):
 
                     # Step B: verify terminal_info()

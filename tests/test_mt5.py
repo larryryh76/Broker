@@ -4,9 +4,10 @@ from mt5_client import MT5Client
 
 @pytest.fixture
 def mt5_client():
-    with patch('mt5_client.MT5_LOGIN', 298682494), \
-         patch('mt5_client.MT5_PASSWORD', 'Iamolanrewaju1$'), \
-         patch('mt5_client.MT5_SERVER', 'FBS-Real'), \
+    # Using dummy values for tests to ensure no real credentials are hardcoded
+    with patch('mt5_client.MT5_LOGIN', 123456), \
+         patch('mt5_client.MT5_PASSWORD', 'test_password'), \
+         patch('mt5_client.MT5_SERVER', 'test_server'), \
          patch('os.path.exists', return_value=True), \
          patch('os.path.getsize', return_value=500), \
          patch('subprocess.Popen'), \

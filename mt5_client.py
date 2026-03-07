@@ -42,68 +42,73 @@ class MT5Client:
             return False
 
         terminal_path = os.path.abspath(terminal_path)
+        terminal_dir = os.path.dirname(terminal_path)
 
         # 1. Terminate existing terminal instances to ensure clean start
         logger.info("Terminating existing terminal instances...")
         try:
-            os.system('taskkill /f /im terminal64.exe /t 2>NUL')
+            # Use taskkill for reliability on Windows GHA. Using os.devnull to avoid 'NUL' file creation in Linux sandbox
+            if os.name == 'nt':
+                os.system(f'taskkill /f /im terminal64.exe /t >{os.devnull} 2>&1')
+            else:
+                # This is just for local testing in the sandbox; won't do much but won't crash
+                os.system(f'pkill -f terminal64.exe >{os.devnull} 2>&1')
         except:
             pass
         time.sleep(2)
 
-        # 2. Launch terminal in portable mode
-        logger.info(f"Launching MT5 Terminal: {terminal_path}")
+        # 1.5 Forced Configuration Injection (Bypasses GUI popups & enables Algo Trading)
+        # This is critical for headless environments
         try:
-            subprocess.Popen([terminal_path, "/portable"])
+            config_dir = os.path.join(terminal_dir, "config")
+            if not os.path.exists(config_dir):
+                os.makedirs(config_dir)
+
+            common_ini = os.path.join(config_dir, "common.ini")
+            with open(common_ini, "w") as f:
+                f.write("[Common]\nExpertsEnable=1\nExpertsDllImport=1\n")
+            logger.info(f"Forced Algo Trading configuration injected at {common_ini}")
         except Exception as e:
-            logger.error(f"Failed to launch terminal process: {e}")
-            return False
+            logger.warning(f"Could not inject forced config: {e}")
 
-        # 3. Robust Initialization Window (60s)
-        logger.info("Waiting 60 seconds for terminal GUI and IPC to stabilize...")
-        time.sleep(60)
+        # 2. Refactored Initialization: Let MetaTrader5 Python API launch the terminal
+        # This ensures they run in the same Windows session, avoiding IPC timeout (-10005)
+        logger.info(f"Initializing MT5 Terminal via: {terminal_path}")
 
-        # 4. Retry strategy for mt5.initialize()
         max_retries = 5
         retry_delay = 10
 
         for attempt in range(1, max_retries + 1):
-            logger.info(f"Establishing IPC bridge (Attempt {attempt}/{max_retries})...")
+            logger.info(f"Startup Attempt {attempt}/{max_retries}...")
             try:
-                init_success = False
-                # Use credentials for explicit login during initialization
-                try:
-                    init_success = mt5.initialize(
-                        path=terminal_path,
-                        login=self.login,
-                        password=self.password,
-                        server=self.server,
-                        portable=True,
-                        timeout=60000
-                    )
-                except TypeError:
-                    # Compatibility with older versions of library
-                    init_success = mt5.initialize(
-                        terminal_path,
-                        login=self.login,
-                        password=self.password,
-                        server=self.server,
-                        timeout=60000
-                    )
+                # Step A: mt5.initialize(path=...) launches the terminal and establishes IPC
+                # PASSING CREDENTIALS DIRECTLY TO BYPASS HANDSHAKE TIMEOUTS
+                init_success = mt5.initialize(
+                    path=terminal_path,
+                    login=self.login,
+                    password=self.password,
+                    server=self.server,
+                    portable=True,
+                    timeout=60000
+                )
 
                 if init_success:
-                    logger.info("IPC bridge established and MT5 logged in.")
-                    self._connected = True
-                    break
+                    # Step B: verify terminal_info()
+                    term_info = mt5.terminal_info()
+                    if term_info:
+                        logger.info(f"Terminal Info verified. Connected: {term_info.connected}")
+                        self._connected = True
+                        break
+                    else:
+                        logger.error("Could not retrieve terminal_info()")
                 else:
-                    error_msg = str(mt5.last_error())
-                    logger.warning(f"Initialization attempt failed: {error_msg}")
-                    if attempt < max_retries:
-                        time.sleep(retry_delay)
+                    logger.error(f"Initialization failed: {mt5.last_error()}")
             except Exception as e:
-                logger.error(f"Critical error during mt5.initialize(): {e}")
-                if attempt < max_retries:
-                    time.sleep(retry_delay)
+                logger.error(f"Critical error during connection: {e}")
+
+            if attempt < max_retries:
+                logger.info(f"Waiting {retry_delay}s before next attempt...")
+                time.sleep(retry_delay)
 
         if self._connected:
             # Perform symbol discovery and mapping
@@ -239,7 +244,7 @@ class MT5Client:
             logger.error(f"Order send failed completely. MT5 Error: {error_code}")
             return None
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Order send failed. Retcode: {result.retcode}, comment: {result.comment}")
+            logger.error(f"Order send failed. Retcode: {result.retcode} (Error {result.retcode}), comment: {result.comment}")
             return None
 
         return {"orderFillTransaction": {"id": str(result.order)}}

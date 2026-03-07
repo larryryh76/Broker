@@ -84,13 +84,6 @@ jobs:
           "@ | Out-File -Encoding ASCII $iniPath
           Write-Host "Injected terminal.ini configuration."
 
-      - name: Pre-Launch MT5 Terminal
-        shell: powershell
-        run: |
-          Start-Process "$env:GITHUB_WORKSPACE\mt5_terminal\terminal64.exe" -ArgumentList "/portable" -PassThru
-          Write-Host "MT5 Terminal pre-launched. Waiting 25s for stabilization..."
-          Start-Sleep -Seconds 25
-
       - name: Run Trading Bot
         shell: cmd
         env:

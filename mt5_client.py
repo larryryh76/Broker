@@ -44,83 +44,80 @@ class MT5Client:
         terminal_path = os.path.abspath(terminal_path)
         terminal_dir = os.path.dirname(terminal_path)
 
-        # 1. No termination of existing processes (Assume MT5 is pre-launched by workflow)
-        logger.info(f"Connecting to MT5 Terminal (Portable Mode): {terminal_path}")
+        # 1. Kill any zombies first (Unify Python and Terminal in same session)
+        logger.info("Cleaning up existing terminal processes...")
+        try:
+            if os.name == 'nt':
+                # Use STATUS eq RUNNING filter as requested for precision
+                os.system('taskkill /f /im terminal64.exe /t /fi "status eq running" >nul 2>&1')
+            else:
+                os.system(f'pkill -f terminal64.exe >/dev/null 2>&1')
+        except:
+            pass
+        time.sleep(5)
 
-        max_retries = 5
-        retry_delay = 10
+        # 2. Force-Initialize: Direct Launch with long timeout inside Python context
+        logger.info(f"Forcing MT5 Initialization via: {terminal_path}")
 
-        for attempt in range(1, max_retries + 1):
-            logger.info(f"Connection Attempt {attempt}/{max_retries}...")
-            try:
-                # Step A: mt5.initialize() connects to the terminal and establishes IPC bridge
-                # Passing the path ensures the library knows which instance to attach to.
-                if mt5.initialize(path=terminal_path, portable=True, timeout=60000):
+        # Note: Using the absolute path found by find_terminal.
+        # GHA Workspace path for FBS as requested: r"D:\a\Broker\Broker\mt5_terminal\terminal64.exe"
+        # However, find_terminal() dynamically handles this for better portability across runners.
 
-                    # Step B: verify terminal_info()
-                    term_info = mt5.terminal_info()
-                    if term_info:
-                        logger.info(f"Terminal Info verified. Connected: {term_info.connected}")
+        try:
+            # Pass credentials inside initialize to bypass handshake timeouts in headless env
+            if mt5.initialize(
+                path=terminal_path,
+                login=int(self.login),
+                password=self.password,
+                server=self.server,
+                portable=True,
+                timeout=120000
+            ):
+                logger.info("MONEY MACHINE CONNECTED. PROCEEDING TO $50 GOAL.")
+                self._connected = True
 
-                        # Step C: login to broker server
-                        if mt5.login(login=self.login, password=self.password, server=self.server):
-                            logger.info("Logged in to broker successfully.")
-                            self._connected = True
+                # 3. Direct configuration injection AFTER login to prevent Edge popups
+                try:
+                    config_dir = os.path.join(terminal_dir, "config")
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
 
-                            # Step D: Apply configuration changes ONLY after successful login
-                            # This bypasses GUI popups and enables Algo Trading without triggering recovery mode.
-                            try:
-                                config_dir = os.path.join(terminal_dir, "config")
-                                if not os.path.exists(config_dir):
-                                    os.makedirs(config_dir)
+                    common_ini = os.path.join(config_dir, "common.ini")
+                    # WebLogin=0 and NewsEnable=0 are key to stopping Edge hangs
+                    with open(common_ini, "w") as f:
+                        f.write("[Common]\nExpertsEnable=1\nExpertsDllImport=1\nWebLogin=0\nNewsEnable=0\n")
+                    logger.info(f"Headless Algo Trading (Edge-Blocked) configuration applied.")
+                except Exception as e:
+                    logger.warning(f"Could not apply config after login: {e}")
 
-                                common_ini = os.path.join(config_dir, "common.ini")
-                                with open(common_ini, "w") as f:
-                                    f.write("[Common]\nExpertsEnable=1\nExpertsDllImport=1\n")
-                                logger.info(f"Algo Trading configuration applied at {common_ini}")
-                            except Exception as e:
-                                logger.warning(f"Could not apply config after login: {e}")
-
-                            break
+                # 4. Perform symbol discovery and mapping
+                try:
+                    from config import INSTRUMENTS
+                    actual_instruments = []
+                    for sym in INSTRUMENTS:
+                        found_sym = None
+                        candidates = [sym, sym + "-mt5", sym + "m"]
+                        for candidate in candidates:
+                            if mt5.symbol_select(candidate, True):
+                                mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
+                                found_sym = candidate
+                                break
+                        if found_sym:
+                            actual_instruments.append(found_sym)
+                            logger.info(f"FBS Symbol mapped: {sym} -> {found_sym}")
                         else:
-                            logger.error(f"Login failed: {mt5.last_error()}")
-                    else:
-                        logger.error("Could not retrieve terminal_info()")
-                else:
-                    logger.error(f"Initialization failed: {mt5.last_error()}")
-            except Exception as e:
-                logger.error(f"Critical error during connection: {e}")
+                            logger.warning(f"FBS Symbol mapping failed for {sym}")
 
-            if attempt < max_retries:
-                logger.info(f"Waiting {retry_delay}s before next attempt...")
-                time.sleep(retry_delay)
+                    import config
+                    config.INSTRUMENTS = actual_instruments
+                except Exception as e:
+                    logger.error(f"Error during post-initialization symbol mapping: {e}")
 
-        if self._connected:
-            # Perform symbol discovery and mapping
-            try:
-                from config import INSTRUMENTS
-                actual_instruments = []
-                for sym in INSTRUMENTS:
-                    found_sym = None
-                    # FBS specific symbol mapping (common suffixes)
-                    candidates = [sym, sym + "-mt5", sym + "m"]
-                    for candidate in candidates:
-                        if mt5.symbol_select(candidate, True):
-                            mt5.copy_rates_from_pos(candidate, mt5.TIMEFRAME_M5, 0, 100)
-                            found_sym = candidate
-                            break
-                    if found_sym:
-                        actual_instruments.append(found_sym)
-                        logger.info(f"FBS Symbol mapped: {sym} -> {found_sym}")
-                    else:
-                        logger.warning(f"FBS Symbol mapping failed for {sym}")
-
-                import config
-                config.INSTRUMENTS = actual_instruments
                 return True
-            except Exception as e:
-                logger.error(f"Error during post-initialization symbol mapping: {e}")
-                return True # Connection itself is fine
+            else:
+                logger.error(f"Force Initialize failed, error code: {mt5.last_error()}")
+        except Exception as e:
+            logger.error(f"Critical error during connection: {e}")
 
         return False
 
@@ -130,8 +127,10 @@ class MT5Client:
         logger.info("MT5 connection closed.")
 
     def get_account_summary(self):
-        if not self.connect():
-            return None
+        # We handle connection at start of main loop, but keeping check for safety
+        if not self._connected:
+             if not self.connect(): return None
+
         account_info = mt5.account_info()
         if account_info is None:
             logger.error(f"Failed to get account info, error: {mt5.last_error()}")
@@ -145,8 +144,8 @@ class MT5Client:
     def get_candles(self, instrument, count=100, timeframe=None):
         if timeframe is None:
             timeframe = mt5.TIMEFRAME_M5 if mt5 else 16389 # 16389 is M5 in MT5
-        if not self.connect():
-            return None
+        if not self._connected:
+             if not self.connect(): return None
 
         rates = mt5.copy_rates_from_pos(instrument, timeframe, 0, count)
         if rates is None:
@@ -168,18 +167,18 @@ class MT5Client:
         return adapted_candles
 
     def symbol_info(self, instrument):
-        if not self.connect():
-            return None
+        if not self._connected:
+             if not self.connect(): return None
         return mt5.symbol_info(instrument)
 
     def symbol_info_tick(self, instrument):
-        if not self.connect():
-            return None
+        if not self._connected:
+             if not self.connect(): return None
         return mt5.symbol_info_tick(instrument)
 
     def check_trade_allowed(self):
-        if not self.connect():
-            return False
+        if not self._connected:
+             if not self.connect(): return False
         info = mt5.terminal_info()
         if info is None:
             return False
@@ -189,8 +188,8 @@ class MT5Client:
         return True
 
     def place_market_order(self, instrument, volume, stop_loss=None, take_profit=None):
-        if not self.connect():
-            return None
+        if not self._connected:
+             if not self.connect(): return None
 
         self.check_trade_allowed()
 
@@ -235,24 +234,24 @@ class MT5Client:
         return {"orderFillTransaction": {"id": str(result.order)}}
 
     def get_current_price(self, instrument):
-        if not self.connect():
-            return None
+        if not self._connected:
+             if not self.connect(): return None
         tick = mt5.symbol_info_tick(instrument)
         if tick is None:
             return None
         return (tick.bid + tick.ask) / 2
 
     def calculate_margin(self, instrument, order_type, volume, price):
-        if not self.connect():
-            return None
+        if not self._connected:
+             if not self.connect(): return None
         margin = mt5.order_calc_margin(order_type, instrument, volume, price)
         if margin is None:
             logger.error(f"Failed to calculate margin for {instrument}: {mt5.last_error()}")
         return margin
 
     def get_closed_trades(self, count=50):
-        if not self.connect():
-            return []
+        if not self._connected:
+             if not self.connect(): return []
 
         from datetime import datetime, timedelta
         from_date = datetime.now() - timedelta(days=7)
@@ -277,8 +276,8 @@ class MT5Client:
         return adapted_trades[-count:]
 
     def get_open_trades(self):
-        if not self.connect():
-            return []
+        if not self._connected:
+             if not self.connect(): return []
         positions = mt5.positions_get(magic=123456)
         if positions is None:
             return []
@@ -297,15 +296,15 @@ class MT5Client:
         return adapted_positions
 
     def positions_get(self, ticket=None):
-        if not self.connect():
-            return None
+        if not self._connected:
+             if not self.connect(): return None
         if ticket:
             return mt5.positions_get(ticket=ticket)
         return mt5.positions_get()
 
     def modify_position_sl(self, ticket, sl, tp):
-        if not self.connect():
-            return False
+        if not self._connected:
+             if not self.connect(): return False
 
         pos = mt5.positions_get(ticket=ticket)
         if not pos:
@@ -325,8 +324,8 @@ class MT5Client:
         return True
 
     def close_position(self, ticket):
-        if not self.connect():
-            return False
+        if not self._connected:
+             if not self.connect(): return False
 
         pos = mt5.positions_get(ticket=ticket)
         if not pos or len(pos) == 0:

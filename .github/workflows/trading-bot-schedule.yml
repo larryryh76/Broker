@@ -66,6 +66,31 @@ jobs:
           New-Item -ItemType File -Force -Path "$dir\default.tpl"
           Write-Host "Created empty default.tpl at $dir"
 
+          # Pre-seed MT5 configuration to bypass login dialogs
+          $cfgDir = "$env:GITHUB_WORKSPACE\mt5_terminal\config"
+          if (!(Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir }
+          $iniPath = "$cfgDir\terminal.ini"
+          @"
+          [Common]
+          Login=${{ secrets.MT5_LOGIN }}
+          Password=${{ secrets.MT5_PASSWORD }}
+          Server=${{ secrets.MT5_SERVER }}
+          KeepPrivate=1
+          EnableNews=0
+          CertInstall=1
+
+          [Charts]
+          MaxBars=5000
+          "@ | Out-File -Encoding ASCII $iniPath
+          Write-Host "Injected terminal.ini configuration."
+
+      - name: Pre-Launch MT5 Terminal
+        shell: powershell
+        run: |
+          Start-Process "$env:GITHUB_WORKSPACE\mt5_terminal\terminal64.exe" -ArgumentList "/portable" -PassThru
+          Write-Host "MT5 Terminal pre-launched. Waiting 25s for stabilization..."
+          Start-Sleep -Seconds 25
+
       - name: Run Trading Bot
         shell: cmd
         env:

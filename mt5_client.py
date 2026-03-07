@@ -25,6 +25,7 @@ class MT5Client:
         workspace = os.getcwd()
 
         def find_terminal():
+            # Prioritize repository path for GitHub Actions
             search_paths = [
                 os.path.join(workspace, "mt5_terminal", "terminal64.exe"),
                 "C:\\Program Files\\FBS MetaTrader 5\\terminal64.exe",
@@ -41,25 +42,36 @@ class MT5Client:
             return False
 
         terminal_path = os.path.abspath(terminal_path)
-        terminal_dir = os.path.dirname(terminal_path)
 
-        # 1. Clean slate
+        # 1. Terminate existing terminal instances to ensure clean start
         logger.info("Terminating existing terminal instances...")
-        os.system(f'taskkill /f /im terminal64.exe /t >{os.devnull} 2>&1')
+        try:
+            os.system('taskkill /f /im terminal64.exe /t 2>NUL')
+        except:
+            pass
         time.sleep(2)
 
-        # 2. Launch terminal
-        logger.info(f"Launching terminal normally: {terminal_path}")
-        subprocess.Popen([terminal_path, "/portable"])
+        # 2. Launch terminal in portable mode
+        logger.info(f"Launching MT5 Terminal: {terminal_path}")
+        try:
+            subprocess.Popen([terminal_path, "/portable"])
+        except Exception as e:
+            logger.error(f"Failed to launch terminal process: {e}")
+            return False
 
-        # 3. Initialization loop (Stable Architecture)
-        logger.info("Waiting 15 seconds for process initialization...")
-        time.sleep(15)
+        # 3. Robust Initialization Window (60s)
+        logger.info("Waiting 60 seconds for terminal GUI and IPC to stabilize...")
+        time.sleep(60)
 
-        for attempt in range(1, 4):
-            logger.info(f"MT5 Initialization attempt {attempt}/3...")
+        # 4. Retry strategy for mt5.initialize()
+        max_retries = 5
+        retry_delay = 10
+
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"Establishing IPC bridge (Attempt {attempt}/{max_retries})...")
             try:
                 init_success = False
+                # Use credentials for explicit login during initialization
                 try:
                     init_success = mt5.initialize(
                         path=terminal_path,
@@ -70,6 +82,7 @@ class MT5Client:
                         timeout=60000
                     )
                 except TypeError:
+                    # Compatibility with older versions of library
                     init_success = mt5.initialize(
                         terminal_path,
                         login=self.login,
@@ -79,29 +92,27 @@ class MT5Client:
                     )
 
                 if init_success:
-                    logger.info("MT5 initialized successfully.")
+                    logger.info("IPC bridge established and MT5 logged in.")
                     self._connected = True
                     break
                 else:
-                    logger.error(f"MT5 initialization failed: {mt5.last_error()}")
-                    time.sleep(5)
+                    error_msg = str(mt5.last_error())
+                    logger.warning(f"Initialization attempt failed: {error_msg}")
+                    if attempt < max_retries:
+                        time.sleep(retry_delay)
             except Exception as e:
-                logger.error(f"Error during initialization: {e}")
-                time.sleep(5)
+                logger.error(f"Critical error during mt5.initialize(): {e}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
 
         if self._connected:
-            # Proceed with FBS-specific symbol mapping
+            # Perform symbol discovery and mapping
             try:
-                # FBS Account Type Detection & Symbol Mapping
-                acc_info = mt5.account_info()
-                if acc_info:
-                    if "cent" in acc_info.server.lower() or "cent" in acc_info.company.lower():
-                        logger.info("FBS CENT Account detected. Adjusting specs.")
-
                 from config import INSTRUMENTS
                 actual_instruments = []
                 for sym in INSTRUMENTS:
                     found_sym = None
+                    # FBS specific symbol mapping (common suffixes)
                     candidates = [sym, sym + "-mt5", sym + "m"]
                     for candidate in candidates:
                         if mt5.symbol_select(candidate, True):
@@ -112,19 +123,20 @@ class MT5Client:
                         actual_instruments.append(found_sym)
                         logger.info(f"FBS Symbol mapped: {sym} -> {found_sym}")
                     else:
-                        logger.warning(f"FBS Symbol mapping failed for {sym}. Skipping.")
+                        logger.warning(f"FBS Symbol mapping failed for {sym}")
 
                 import config
                 config.INSTRUMENTS = actual_instruments
                 return True
             except Exception as e:
-                logger.error(f"Error during symbol mapping: {e}")
-                return True # Still connected
+                logger.error(f"Error during post-initialization symbol mapping: {e}")
+                return True # Connection itself is fine
 
         return False
 
     def close(self):
-        mt5.shutdown()
+        if self.mt5:
+            self.mt5.shutdown()
         logger.info("MT5 connection closed.")
 
     def get_account_summary(self):
@@ -154,7 +166,7 @@ class MT5Client:
         adapted_candles = []
         for rate in rates:
             adapted_candles.append({
-                "time": int(rate['time']), # MT5 returns unix timestamp
+                "time": int(rate['time']),
                 "mid": {
                     "o": str(rate['open']),
                     "h": str(rate['high']),
@@ -190,10 +202,8 @@ class MT5Client:
         if not self.connect():
             return None
 
-        # Check if trading is allowed before placing order
         self.check_trade_allowed()
 
-        # Determine side
         tick = mt5.symbol_info_tick(instrument)
         if not tick:
             logger.error(f"Could not get tick info for {instrument}")
@@ -219,7 +229,6 @@ class MT5Client:
 
         result = mt5.order_send(request)
 
-        # Fallback to FOK if IOC fails with AutoTrading error (10017) or filling error
         if result and result.retcode in [mt5.TRADE_RETCODE_REJECT, 10017, 10030]:
             logger.warning(f"IOC filling failed (Retcode {result.retcode}). Retrying with FOK filling...")
             request["type_filling"] = mt5.ORDER_FILLING_FOK
@@ -227,11 +236,10 @@ class MT5Client:
 
         if result is None:
             error_code = mt5.last_error()
-            numeric_code = error_code[0] if isinstance(error_code, (list, tuple)) else error_code
-            logger.error(f"Order send failed completely. MT5 Error Code: {numeric_code}")
+            logger.error(f"Order send failed completely. MT5 Error: {error_code}")
             return None
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Order send failed. MT5 Retcode: {result.retcode} (Error {result.retcode}), comment: {result.comment}")
+            logger.error(f"Order send failed. Retcode: {result.retcode}, comment: {result.comment}")
             return None
 
         return {"orderFillTransaction": {"id": str(result.order)}}
@@ -257,26 +265,21 @@ class MT5Client:
             return []
 
         from datetime import datetime, timedelta
-        # Fetch history for the last 7 days
         from_date = datetime.now() - timedelta(days=7)
         to_date = datetime.now()
 
-        # history_deals_get returns deals (actual executions)
-        # Filtering by MAGIC number (123456) to ignore historical manual trades or "Revenge" data
         deals = mt5.history_deals_get(from_date, to_date)
         if deals is None:
             return []
 
         adapted_trades = []
         for deal in deals:
-            # ONLY consider deals executed by this bot's magic number
             if deal.magic != 123456:
                 continue
 
-            # We want entry/exit deals that resulted in a closed position
-            if deal.entry == mt5.DEAL_ENTRY_OUT: # Exit deal
+            if deal.entry == mt5.DEAL_ENTRY_OUT:
                 adapted_trades.append({
-                    "id": str(deal.order), # Map to order ID we stored
+                    "id": str(deal.order),
                     "realizedPL": deal.profit,
                     "averageClosePrice": deal.price,
                     "closeTime": deal.time
@@ -286,31 +289,21 @@ class MT5Client:
     def get_open_trades(self):
         if not self.connect():
             return []
-        # Filter by Magic Number to ignore manual/historical trades (like BTC)
         positions = mt5.positions_get(magic=123456)
         if positions is None:
             return []
 
         adapted_positions = []
         for p in positions:
-            # Double check magic and filter by active instruments if needed
-            from config import INSTRUMENTS
-            monitored = False
-            for inst in INSTRUMENTS:
-                if inst in p.symbol:
-                    monitored = True
-                    break
-
-            if monitored:
-                adapted_positions.append({
-                    "symbol": p.symbol,
-                    "ticket": p.ticket,
-                    "profit": p.profit,
-                    "price_open": p.price_open,
-                    "type": p.type,
-                    "sl": p.sl,
-                    "tp": p.tp
-                })
+            adapted_positions.append({
+                "symbol": p.symbol,
+                "ticket": p.ticket,
+                "profit": p.profit,
+                "price_open": p.price_open,
+                "type": p.type,
+                "sl": p.sl,
+                "tp": p.tp
+            })
         return adapted_positions
 
     def positions_get(self, ticket=None):
@@ -336,13 +329,8 @@ class MT5Client:
         }
 
         result = mt5.order_send(request)
-        if result is None:
-            error_code = mt5.last_error()
-            numeric_code = error_code[0] if isinstance(error_code, (list, tuple)) else error_code
-            logger.error(f"Modify SL failed completely for {ticket}. MT5 Error Code: {numeric_code}")
-            return False
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Modify SL failed for {ticket}: Retcode {result.retcode}, comment: {result.comment}")
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"Modify SL failed for {ticket}.")
             return False
         return True
 
@@ -376,7 +364,7 @@ class MT5Client:
 
         result = mt5.order_send(request)
         if result and result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Close failed for {ticket}: Retcode {result.retcode}, comment: {result.comment}")
+            logger.error(f"Close failed for {ticket}")
             return False
 
         return True

@@ -23,11 +23,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Setup Headless Display
+      - name: Setup Headless Display (Mesa3D)
         uses: pyvista/setup-headless-display-action@v3
         with:
-          with-mesa: true
-          mesa-version: '24.3.0'
+          mesa3d-release: '24.3.0'
 
       - name: Force-Kill Ghost Processes
         shell: cmd

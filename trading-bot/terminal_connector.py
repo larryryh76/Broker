@@ -12,65 +12,77 @@ class TerminalConnector:
         self.login = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
-        self.config_path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "config", "terminal.ini"))
+        # Standardize path for Windows shell
+        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe")).replace("/", "\\")
+        self.config_path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "config", "terminal.ini")).replace("/", "\\")
 
     def wait_for_mt5(self):
-        print("Ensuring terminal process exists...")
+        print("Verifying terminal process existence...")
         for _ in range(30):
             for p in psutil.process_iter(['name']):
                 if "terminal64.exe" in p.info['name'].lower():
-                    print("Terminal process detected.")
+                    print("Process confirmed.")
                     return True
             time.sleep(1)
         return False
 
     def connect(self):
-        # 1. Clean Slate
-        if os.name == 'nt':
-            print("Cleaning up existing MT5 processes...")
-            os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
-            time.sleep(2)
+        # 1. Ensure only ONE terminal instance
+        print("Cleaning up existing MT5 processes...")
+        for p in psutil.process_iter(['name']):
+            if "terminal64.exe" in p.info['name'].lower():
+                try:
+                    p.kill()
+                    print(f"Killed existing process: {p.pid}")
+                except:
+                    pass
+        time.sleep(2)
 
-        # 2. Launch terminal correctly with portable and config flags
+        # 2. Ensure Data Directories Exist
+        dirs = ["config", "MQL5", "Profiles"]
+        for d in dirs:
+            os.makedirs(os.path.join(config.TERMINAL_DIR, d), exist_ok=True)
+
+        # 3. Launch MT5 using Windows start command for desktop context
         print(f"Launching MT5 Terminal: {self.path}")
         try:
-            subprocess.Popen([
-                self.path,
-                "/portable",
-                f"/config:{self.config_path}"
-            ])
+            # Using 'start' command as requested for GHA desktop session compatibility
+            subprocess.Popen(
+                f'start "" "{self.path}" /portable /config:"{self.config_path}"',
+                shell=True
+            )
 
-            # 3. Wait for MT5 process initialization
-            print("Waiting for MT5 to initialize...")
-            time.sleep(40)
+            # 4. Wait for MT5 full initialization (90 seconds as requested)
+            print("Waiting for MT5 full initialization (90s)...")
+            time.sleep(90)
 
             if not self.wait_for_mt5():
-                print("Error: Terminal process did not start.")
+                print("Error: terminal64.exe process not detected.")
                 return False
 
         except Exception as e:
-            print(f"Failed to launch terminal process: {e}")
+            print(f"Launch error: {e}")
             return False
 
-        # 4. Initialize MT5 with explicit path and retry logic
-        print(f"Establishing IPC bridge with path: {self.path}")
+        # 5. Initialize MT5 with explicit path and 10 retries
+        print(f"Attaching IPC bridge: {self.path}")
 
-        for attempt in range(1, 6):
-            print(f"Connection Attempt {attempt}/5...")
+        for attempt in range(1, 11):
+            print(f"Connection Attempt {attempt}/10...")
+            # Note: Initialize does NOT take login/pass/server if we pre-seeded terminal.ini and launched with /config
+            # but we use them as fallback if the terminal is already running.
             if mt5.initialize(path=self.path, portable=True):
-                # 5. Confirm connection using mt5.terminal_info()
                 info = mt5.terminal_info()
                 if info is not None and info.connected:
-                    print(f"MT5 connected successfully. Server: {self.server}")
+                    print("MT5 connection successful")
                     return True
                 else:
-                    print(f"MT5 initialized but not connected to server. Retrying...")
+                    print("MT5 initialized but server connection pending. Retrying...")
                     mt5.shutdown()
             else:
                 print(f"MT5 initialize failed: {mt5.last_error()}")
 
-            if attempt < 5:
+            if attempt < 10:
                 print("Waiting 10s before retry...")
                 time.sleep(10)
 
@@ -114,7 +126,7 @@ class TerminalConnector:
             "tp": float(tp),
             "deviation": 20,
             "magic": 123456,
-            "comment": "Money Machine Exec",
+            "comment": "Money Machine Bot",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
@@ -122,14 +134,14 @@ class TerminalConnector:
         result = mt5.order_send(request)
 
         if result and result.retcode in [mt5.TRADE_RETCODE_REJECT, 10030, 10031]:
-            print(f"IOC filling failed (Retcode {result.retcode}). Retrying with FOK...")
+            print(f"IOC failed. Retrying with FOK...")
             request["type_filling"] = mt5.ORDER_FILLING_FOK
             result = mt5.order_send(request)
 
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             return result
 
-        print(f"Order failed: {result.retcode if result else 'No result'} | Comment: {result.comment if result else ''}")
+        print(f"Order failed: {result.retcode if result else 'No result'}")
         return None
 
     def get_open_positions(self):
@@ -172,12 +184,9 @@ class TerminalConnector:
     def get_closed_deals(self):
         from_date = datetime.now() - timedelta(hours=24)
         deals = mt5.history_deals_get(from_date, datetime.now())
-        if deals is None:
-            return []
-
-        bot_deals = [d._asdict() for d in deals if d.magic == 123456]
-        return bot_deals
+        if deals is None: return []
+        return [d._asdict() for d in deals if d.magic == 123456]
 
     def disconnect(self):
         mt5.shutdown()
-        print("MT5 connection closed.")
+        print("MT5 disconnected.")

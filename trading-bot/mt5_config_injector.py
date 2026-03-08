@@ -3,13 +3,21 @@ import config
 
 def inject_headless_config():
     terminal_dir = config.TERMINAL_DIR
-    config_dir = os.path.join(terminal_dir, "config")
 
-    if not os.path.exists(config_dir):
-        try:
-            os.makedirs(config_dir)
-        except:
-            return
+    # Ensure MT5 data directories exist
+    dirs = [
+        "",
+        "config",
+        "MQL5",
+        "Profiles"
+    ]
+    for d in dirs:
+        path = os.path.join(terminal_dir, d)
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+            print(f"Created directory: {path}")
+
+    config_dir = os.path.join(terminal_dir, "config")
 
     # common.ini for Experts
     common_path = os.path.join(config_dir, "common.ini")

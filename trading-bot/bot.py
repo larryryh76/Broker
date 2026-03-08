@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 
 class TradingBot:
     def __init__(self):
-        # 1. Environment Prep
+        # 1. Environment Prep: Write configuration files BEFORE terminal launch
+        print("Pre-seeding MT5 configuration...")
         inject_headless_config()
 
         self.db = DBClient()
@@ -42,24 +43,30 @@ class TradingBot:
                 self.virtual_equity = config.INITIAL_CAPITAL + self.db.get_total_realized_profit()
                 self.log(f"STATE RESTORED: Day {self.current_day} | Virtual Equity: ${self.virtual_equity:.2f}")
         except Exception as e:
-            self.log(f"DB Warning: {e}")
+            self.log(f"DB Warning: Could not recover state: {e}")
 
-        # 2. Connection
-        if not self.connector.connect():
-            self.log("MT5 CONNECTION FAILURE. ABORTING.")
+        # 2. Connection Phase (Starts terminal process and attaches IPC bridge)
+        try:
+            if not self.connector.connect():
+                self.log("MT5 CONNECTION FAILURE. ABORTING CYCLE.")
+                return
+        except Exception as e:
+            self.log(f"CONNECTOR CRASH: {e}")
             return
 
         try:
             account = self.connector.get_account_info()
-            if not account: return
+            if not account:
+                self.log("Could not retrieve account info. Aborting.")
+                return
 
-            # Initial Reconciliation: Fetch closed deals from MT5 and update DB
+            # Initial Reconciliation
             self.reconcile_trades()
 
             # Re-calculate equity after reconciliation
             self.virtual_equity = config.INITIAL_CAPITAL + self.db.get_total_realized_profit()
 
-            # HARD RESET CHECK: If equity falls below $0.50 (90% loss)
+            # HARD RESET CHECK
             if self.virtual_equity < 0.50:
                 self.log("VIRTUAL ACCOUNT BLOWN - PERFORMING HARD RESET.")
                 self.db.clear_all_trades()
@@ -68,8 +75,9 @@ class TradingBot:
                 self.current_day = 1
 
             self.risk_manager = RiskManagement(account, self.virtual_equity)
+            self.log(f"ACCOUNT: {account['login']} | Balance ${account['balance']} | Virtual ${self.virtual_equity:.2f}")
 
-            # 3. Circuit Breaker
+            # 3. Circuit Breaker Evaluation
             initial_daily = latest.get("virtual_equity", self.virtual_equity) if latest else self.virtual_equity
             if self.risk_manager.check_circuit_breaker(initial_daily):
                 self.log("DAILY DRAWDOWN LIMIT HIT. OPERATION HALTED.")
@@ -94,13 +102,10 @@ class TradingBot:
             self.log("--- CYCLE COMPLETE ---")
 
     def reconcile_trades(self):
-        self.log("Reconciling trades with MT5 history...")
         open_logged_trades = self.db.get_open_logged_trades()
-        if not open_logged_trades:
-            return
+        if not open_logged_trades: return
 
         closed_deals = self.connector.get_closed_deals()
-        # Deals with entry=DEAL_ENTRY_OUT (1) are exit deals
         exit_deals = {str(d["order"]): d for d in closed_deals if d["entry"] == 1}
 
         for trade in open_logged_trades:
@@ -124,15 +129,19 @@ class TradingBot:
             profit = p["profit"]
             p_type = p["type"]
 
-            # $0.05 Safety Switch
             if profit > 0.05:
                 self.log(f"SAFETY SWITCH: Locking BE for {symbol}")
                 self.connector.modify_sl(ticket, p["price_open"], p["tp"])
 
-            # Signal Reversal Check
             df = self.connector.get_candles(symbol, config.DEFAULT_TIMEFRAME)
             if df is not None and not df.empty:
                 df = self.strategy.calculate_indicators(df)
+
+                # Check training status per run
+                if not self.ai_model.is_trained:
+                    self.log(f"AI Model not trained. Training on {symbol} data...")
+                    self.ai_model.train(df)
+
                 bull, bear = self.ai_model.predict(df)
                 signal, _ = self.strategy.generate_signal(df, bull, bear)
 
@@ -145,6 +154,12 @@ class TradingBot:
         if df is None or df.empty: return
 
         df = self.strategy.calculate_indicators(df)
+
+        # Ensure training
+        if not self.ai_model.is_trained:
+            self.log(f"Initializing AI Model on {symbol}...")
+            self.ai_model.train(df)
+
         bull, bear = self.ai_model.predict(df)
         signal, confidence = self.strategy.generate_signal(df, bull, bear)
 
@@ -155,7 +170,6 @@ class TradingBot:
             if len(current_pos) >= config.MAX_OPEN_POSITIONS:
                 return
 
-            # Stealth window
             delay = random.randint(30, 290)
             self.log(f"STEALTH: Executing in {delay}s...")
             time.sleep(delay)

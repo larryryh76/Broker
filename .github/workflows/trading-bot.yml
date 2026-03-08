@@ -1,0 +1,54 @@
+name: Money Machine Deployment
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  trade:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r trading-bot/requirements.txt
+
+      - name: Download MT5 Portable
+        shell: powershell
+        run: |
+          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal"
+          if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
+          $url = "https://download.mql5.com/cdn/web/fbs.markets.inc/mt5/fbs5setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$dir\setup.exe"
+          Start-Process -FilePath "$dir\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$dir" -Wait
+
+          # Inject Algo-Trading permissions
+          $cfgDir = "$dir\config"
+          if (!(Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir }
+          "[Common]`nExpertsEnable=1`nExpertsDllImport=1" | Out-File -Encoding ASCII "$cfgDir\common.ini"
+
+      - name: Run The Money Machine
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          cd trading-bot
+          python bot.py
+
+      - name: Archive Session Logs
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: session-logs
+          path: trading-bot/logs/

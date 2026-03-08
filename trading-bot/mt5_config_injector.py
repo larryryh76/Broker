@@ -1,6 +1,5 @@
 import os
 import config
-from config import logger
 
 def inject_headless_config():
     terminal_dir = config.TERMINAL_DIR
@@ -17,10 +16,16 @@ def inject_headless_config():
     with open(common_path, "w") as f:
         f.write("[Common]\nExpertsEnable=1\nExpertsDllImport=1\n")
 
-    # terminal.ini for login bypass
+    # terminal.ini for login bypass and settings
     terminal_ini = os.path.join(config_dir, "terminal.ini")
     with open(terminal_ini, "w") as f:
-        f.write(f"[Common]\nLogin={config.MT5_LOGIN}\nServer={config.MT5_SERVER}\nPassword={config.MT5_PASSWORD}\n")
-        f.write("KeepPrivate=1\nEnableNews=0\nCertInstall=1\n")
+        f.write("[Common]\n")
+        f.write(f"Login={config.MT5_LOGIN}\n")
+        f.write(f"Password={config.MT5_PASSWORD}\n")
+        f.write(f"Server={config.MT5_SERVER}\n")
+        f.write("EnableNews=0\n")
+        f.write("KeepPrivate=0\n")
+        f.write("\n[Charts]\n")
+        f.write("MaxBars=100000\n")
 
-    print(f"MT5 Headless config injected at {config_dir}")
+    print(f"MT5 Headless config injected at {terminal_ini}")

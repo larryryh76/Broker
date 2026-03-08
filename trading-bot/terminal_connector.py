@@ -4,6 +4,7 @@ import subprocess
 import MetaTrader5 as mt5
 import pandas as pd
 import config
+import psutil
 from datetime import datetime, timedelta
 
 class TerminalConnector:
@@ -12,49 +13,68 @@ class TerminalConnector:
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
         self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
+        self.config_path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "config", "terminal.ini"))
+
+    def wait_for_mt5(self):
+        print("Ensuring terminal process exists...")
+        for _ in range(30):
+            for p in psutil.process_iter(['name']):
+                if "terminal64.exe" in p.info['name'].lower():
+                    print("Terminal process detected.")
+                    return True
+            time.sleep(1)
+        return False
 
     def connect(self):
-        # 1. Deterministic Clean Slate
+        # 1. Clean Slate
         if os.name == 'nt':
             print("Cleaning up existing MT5 processes...")
             os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
             time.sleep(2)
 
-        # 2. Launch terminal process with the portable flag
-        print(f"Launching MT5 Terminal in portable mode: {self.path}")
+        # 2. Launch terminal correctly with portable and config flags
+        print(f"Launching MT5 Terminal: {self.path}")
         try:
-            subprocess.Popen([self.path, "/portable"])
-            # 3. Deterministic wait for terminal boot
-            print("Waiting 25 seconds for terminal process to initialize...")
-            time.sleep(25)
+            subprocess.Popen([
+                self.path,
+                "/portable",
+                f"/config:{self.config_path}"
+            ])
+
+            # 3. Wait for MT5 process initialization
+            print("Waiting for MT5 to initialize...")
+            time.sleep(40)
+
+            if not self.wait_for_mt5():
+                print("Error: Terminal process did not start.")
+                return False
+
         except Exception as e:
             print(f"Failed to launch terminal process: {e}")
             return False
 
-        # 4. Initialize MT5 using explicit path and portable mode
+        # 4. Initialize MT5 with explicit path and retry logic
         print(f"Establishing IPC bridge with path: {self.path}")
-        success = mt5.initialize(
-            path=self.path,
-            login=self.login,
-            password=self.password,
-            server=self.server,
-            portable=True,
-            timeout=60000
-        )
 
-        if success:
-            # 5. Confirm connection using mt5.terminal_info()
-            info = mt5.terminal_info()
-            if info is not None:
-                print(f"MONEY MACHINE CONNECTED. IPC BRIDGE ACTIVE. Server: {self.server}")
-                return True
+        for attempt in range(1, 6):
+            print(f"Connection Attempt {attempt}/5...")
+            if mt5.initialize(path=self.path, portable=True):
+                # 5. Confirm connection using mt5.terminal_info()
+                info = mt5.terminal_info()
+                if info is not None and info.connected:
+                    print(f"MT5 connected successfully. Server: {self.server}")
+                    return True
+                else:
+                    print(f"MT5 initialized but not connected to server. Retrying...")
+                    mt5.shutdown()
             else:
-                print("MT5 initialized but terminal info is unreachable.")
-                return False
-        else:
-            error = mt5.last_error()
-            print(f"MT5 Init failed: {error}")
-            return False
+                print(f"MT5 initialize failed: {mt5.last_error()}")
+
+            if attempt < 5:
+                print("Waiting 10s before retry...")
+                time.sleep(10)
+
+        return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]
@@ -150,13 +170,11 @@ class TerminalConnector:
         return mt5.order_send(request)
 
     def get_closed_deals(self):
-        # Fetch history for the last 24 hours to reconcile trades
         from_date = datetime.now() - timedelta(hours=24)
         deals = mt5.history_deals_get(from_date, datetime.now())
         if deals is None:
             return []
 
-        # Filter by magic number
         bot_deals = [d._asdict() for d in deals if d.magic == 123456]
         return bot_deals
 

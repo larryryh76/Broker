@@ -1,7 +1,0 @@
-pandas
-pandas-ta
-pymongo
-requests
-python-dotenv
-pytest
-MetaTrader5

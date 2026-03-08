@@ -30,6 +30,26 @@ class DBClient:
         trade_data["timestamp"] = datetime.now(timezone.utc)
         self.trades_collection.insert_one(trade_data)
 
+    def get_open_logged_trades(self):
+        if self.trades_collection is None:
+            return []
+        return list(self.trades_collection.find({"status": "OPEN"}))
+
+    def update_trade(self, order_id, update_data):
+        if self.trades_collection is None:
+            return
+        self.trades_collection.update_one({"order_id": int(order_id)}, {"$set": update_data})
+
+    def clear_all_trades(self):
+        if self.trades_collection is None:
+            return
+        self.trades_collection.delete_many({})
+
+    def clear_learning_state(self):
+        if self.state_collection is None:
+            return
+        self.state_collection.delete_many({})
+
     def get_total_realized_profit(self):
         if self.trades_collection is None:
             return 0.0

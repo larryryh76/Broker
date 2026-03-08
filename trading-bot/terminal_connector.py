@@ -4,66 +4,57 @@ import subprocess
 import MetaTrader5 as mt5
 import pandas as pd
 import config
+from datetime import datetime, timedelta
 
 class TerminalConnector:
     def __init__(self):
         self.login = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        self.path = os.path.join(config.TERMINAL_DIR, "terminal64.exe")
+        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
 
     def connect(self):
-        # 1. Clean slate: Kill any zombie processes
+        # 1. Deterministic Clean Slate
         if os.name == 'nt':
             print("Cleaning up existing MT5 processes...")
             os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
             time.sleep(2)
 
-        # 2. Pre-launch terminal process explicitly for GHA/Headless stability
-        # This ensures the terminal is running before the library attempts to attach.
-        if os.path.exists(self.path):
-            print(f"Pre-launching MT5 Terminal: {self.path}")
-            try:
-                subprocess.Popen([self.path, "/portable"])
-                print("Terminal process launched. Waiting 20 seconds for boot...")
-                time.sleep(20)
-            except Exception as e:
-                print(f"Failed to launch terminal process: {e}")
-        else:
-            print(f"Warning: Terminal executable not found at {self.path}. Assuming standard installation.")
+        # 2. Launch terminal process with the portable flag
+        print(f"Launching MT5 Terminal in portable mode: {self.path}")
+        try:
+            subprocess.Popen([self.path, "/portable"])
+            # 3. Deterministic wait for terminal boot
+            print("Waiting 25 seconds for terminal process to initialize...")
+            time.sleep(25)
+        except Exception as e:
+            print(f"Failed to launch terminal process: {e}")
+            return False
 
-        # 3. Robust initialization retry loop
-        max_attempts = 5
-        retry_delay = 10
+        # 4. Initialize MT5 using explicit path and portable mode
+        print(f"Establishing IPC bridge with path: {self.path}")
+        success = mt5.initialize(
+            path=self.path,
+            login=self.login,
+            password=self.password,
+            server=self.server,
+            portable=True,
+            timeout=60000
+        )
 
-        for attempt in range(1, max_attempts + 1):
-            print(f"MT5 Connection Attempt {attempt}/{max_attempts}...")
-
-            # Use credentials directly in initialize to bypass handshake timeouts
-            success = mt5.initialize(
-                path=self.path,
-                login=self.login,
-                password=self.password,
-                server=self.server,
-                portable=True,
-                timeout=60000
-            )
-
-            if success:
-                print("MONEY MACHINE CONNECTED. IPC BRIDGE ACTIVE.")
-                # Extra verification: check terminal info
-                info = mt5.terminal_info()
-                if info:
-                    print(f"Terminal connection verified. Connected: {info.connected}")
+        if success:
+            # 5. Confirm connection using mt5.terminal_info()
+            info = mt5.terminal_info()
+            if info is not None:
+                print(f"MONEY MACHINE CONNECTED. IPC BRIDGE ACTIVE. Server: {self.server}")
                 return True
             else:
-                error = mt5.last_error()
-                print(f"MT5 Init failed (Attempt {attempt}): {error}")
-                if attempt < max_attempts:
-                    print(f"Waiting {retry_delay}s before retry...")
-                    time.sleep(retry_delay)
-
-        return False
+                print("MT5 initialized but terminal info is unreachable.")
+                return False
+        else:
+            error = mt5.last_error()
+            print(f"MT5 Init failed: {error}")
+            return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]
@@ -110,7 +101,6 @@ class TerminalConnector:
 
         result = mt5.order_send(request)
 
-        # RETRY WITH FOK IF IOC FAILS
         if result and result.retcode in [mt5.TRADE_RETCODE_REJECT, 10030, 10031]:
             print(f"IOC filling failed (Retcode {result.retcode}). Retrying with FOK...")
             request["type_filling"] = mt5.ORDER_FILLING_FOK
@@ -159,6 +149,17 @@ class TerminalConnector:
         }
         return mt5.order_send(request)
 
+    def get_closed_deals(self):
+        # Fetch history for the last 24 hours to reconcile trades
+        from_date = datetime.now() - timedelta(hours=24)
+        deals = mt5.history_deals_get(from_date, datetime.now())
+        if deals is None:
+            return []
+
+        # Filter by magic number
+        bot_deals = [d._asdict() for d in deals if d.magic == 123456]
+        return bot_deals
+
     def disconnect(self):
         mt5.shutdown()
-        print("MT5 Disconnected.")
+        print("MT5 connection closed.")

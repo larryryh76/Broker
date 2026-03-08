@@ -7,11 +7,11 @@ import config
 class DBClient:
     def __init__(self):
         self.uri = os.getenv("MONGODB_URI")
-        self.client = MongoClient(self.uri) if self.uri else None
-        self.db = self.client["money_machine"] if self.client else None
-        self.state_collection = self.db["learning_state"] if self.db else None
-        self.trades_collection = self.db["trades"] if self.db else None
-        self.models_collection = self.db["models"] if self.db else None
+        self.client = MongoClient(self.uri) if self.uri is not None else None
+        self.db = self.client["money_machine"] if self.client is not None else None
+        self.state_collection = self.db["learning_state"] if self.db is not None else None
+        self.trades_collection = self.db["trades"] if self.db is not None else None
+        self.models_collection = self.db["models"] if self.db is not None else None
 
     def get_latest_state(self):
         if self.state_collection is None:
@@ -52,4 +52,4 @@ class DBClient:
         if self.models_collection is None:
             return None
         doc = self.models_collection.find_one({"name": model_name})
-        return doc["data"] if doc else None
+        return doc["data"] if doc is not None else None

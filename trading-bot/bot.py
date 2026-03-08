@@ -16,10 +16,10 @@ class TradingBot:
         # 1. Environment Prep
         inject_headless_config()
 
-        self.connector = TerminalConnector()
-        self.ai_model = AIModel()
-        self.strategy = Strategy()
         self.db = DBClient()
+        self.connector = TerminalConnector()
+        self.ai_model = AIModel(db_client=self.db)
+        self.strategy = Strategy()
         self.risk_manager = None
         self.current_day = 1
         self.virtual_equity = config.INITIAL_CAPITAL

@@ -1,7 +1,18 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Logger configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("TheMoneyMachine")
 
 # Broker Credentials
 MT5_LOGIN = int(os.getenv("MT5_LOGIN", "0"))

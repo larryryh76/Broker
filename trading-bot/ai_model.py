@@ -3,29 +3,43 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 import joblib
 import os
+import io
 import config
 
 class AIModel:
-    def __init__(self, model_name="forex_ai_model"):
+    def __init__(self, db_client=None, model_name="forex_ai_model"):
+        self.db = db_client
+        self.model_name = model_name
         self.model_path = os.path.join(config.MODEL_DIR, f"{model_name}.pkl")
         self.model = self._load_model()
 
     def _load_model(self):
+        # 1. Try loading from MongoDB first
+        if self.db:
+            model_bytes = self.db.load_model(self.model_name)
+            if model_bytes:
+                print(f"Loading AI Model from MongoDB: {self.model_name}")
+                return joblib.load(io.BytesIO(model_bytes))
+
+        # 2. Try loading from local file
         if os.path.exists(self.model_path):
+            print(f"Loading AI Model from Local: {self.model_path}")
             return joblib.load(self.model_path)
+
+        print("Initializing new AI Model")
         return RandomForestClassifier(n_estimators=100, random_state=42)
 
     def prepare_features(self, df):
-        # Assuming df has technical indicators already calculated
-        # We'll use a subset of columns as features
-        feature_cols = [col for col in df.columns if col not in ['time', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume', 'target']]
+        feature_cols = [col for col in df.columns if col not in ['time', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume', 'target', 'RSI', 'SMA_FAST', 'SMA_SLOW', 'BB_UPPER', 'BB_LOWER', 'ATR']]
+        # Use simple indicators if present
+        for col in ['RSI', 'SMA_FAST', 'SMA_SLOW', 'ATR']:
+            if col in df.columns: feature_cols.append(col)
+
         X = df[feature_cols].dropna()
         return X
 
     def train(self, df):
-        # Simple target: 1 if close price in next period is higher, else 0
         df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
-
         X = self.prepare_features(df)
         y = df['target'].loc[X.index]
 
@@ -34,17 +48,29 @@ class AIModel:
             return
 
         self.model.fit(X, y)
+
+        # Save locally
+        if not os.path.exists(config.MODEL_DIR): os.makedirs(config.MODEL_DIR)
         joblib.dump(self.model, self.model_path)
-        print(f"Model trained and saved to {self.model_path}")
+
+        # Save to MongoDB
+        if self.db:
+            buffer = io.BytesIO()
+            joblib.dump(self.model, buffer)
+            self.db.save_model(self.model_name, buffer.getvalue())
+            print(f"AI Model trained and synced to MongoDB.")
 
     def predict(self, df):
         X = self.prepare_features(df).tail(1)
         if X.empty:
-            return 0.5, 0.5 # Neutral
+            return 0.5, 0.5
 
-        probs = self.model.predict_proba(X)[0]
-        # Probs: [prob_of_0, prob_of_1]
-        bearish_prob = probs[0]
-        bullish_prob = probs[1]
-
-        return bullish_prob, bearish_prob
+        try:
+            probs = self.model.predict_proba(X)[0]
+            # Handle single class models
+            if len(probs) == 1:
+                val = self.model.predict(X)[0]
+                return (1.0, 0.0) if val == 1 else (0.0, 1.0)
+            return probs[1], probs[0]
+        except:
+            return 0.5, 0.5

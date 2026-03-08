@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 
 class TradingBot:
     def __init__(self):
-        # 1. Environment Prep
+        # 1. Environment Prep: Inject configuration before any connection attempts
+        print("Initializing headless environment configuration...")
         inject_headless_config()
 
         self.db = DBClient()
@@ -35,108 +36,112 @@ class TradingBot:
         self.log("--- SINGULARITY ACTIVE: THE MONEY MACHINE ---")
 
         # 1. State Recovery
-        latest = self.db.get_latest_state()
-        if latest:
-            self.current_day = latest.get("day_count", 1)
-            self.virtual_equity = config.INITIAL_CAPITAL + self.db.get_total_realized_profit()
-            self.log(f"STATE RESTORED: Day {self.current_day} | Virtual Equity: ${self.virtual_equity:.2f}")
+        try:
+            latest = self.db.get_latest_state()
+            if latest:
+                self.current_day = latest.get("day_count", 1)
+                self.virtual_equity = config.INITIAL_CAPITAL + self.db.get_total_realized_profit()
+                self.log(f"STATE RESTORED: Day {self.current_day} | Virtual Equity: ${self.virtual_equity:.2f}")
+        except Exception as e:
+            self.log(f"DB Warning: Could not recover state: {e}")
 
-        # 2. Connection
+        # 2. Connection Phase (Includes terminal startup and retries)
         if not self.connector.connect():
-            self.log("MT5 CONNECTION FAILURE. ABORTING.")
+            self.log("MT5 CONNECTION FAILURE. ABORTING EXECUTION.")
             return
 
         try:
             account = self.connector.get_account_info()
-            if not account: return
-
-            self.risk_manager = RiskManagement(account, self.virtual_equity)
-
-            # 3. Circuit Breaker
-            initial_daily = latest.get("virtual_equity", self.virtual_equity) if latest else self.virtual_equity
-            if self.risk_manager.check_circuit_breaker(initial_daily):
-                self.log("DAILY DRAWDOWN LIMIT HIT. OPERATION HALTED.")
+            if not account:
+                self.log("Could not retrieve account info. Aborting.")
                 return
 
-            # 4. Management & Reversal Check
+            self.risk_manager = RiskManagement(account, self.virtual_equity)
+            self.log(f"ACCOUNT INFO: Balance ${account['balance']} | Leverage {account['leverage']}")
+
+            # 3. Circuit Breaker Evaluation
+            initial_daily = latest.get("virtual_equity", self.virtual_equity) if latest else self.virtual_equity
+            if self.risk_manager.check_circuit_breaker(initial_daily):
+                self.log("DAILY DRAWDOWN LIMIT HIT. OPERATION SUSPENDED.")
+                return
+
+            # 4. Active Trade Management
             self.manage_trades()
 
-            # 5. Signal Scan & Execution
+            # 5. Opportunity Scan & Order Execution
             for sym in config.SYMBOLS:
                 self.process_symbol(sym)
 
-            # 6. State Snapshot
+            # 6. Cycle Summary & Persistence
             self.snapshot(account)
 
         except Exception as e:
-            self.log(f"CRITICAL SYSTEM ERROR: {e}")
+            self.log(f"CRITICAL ENGINE ERROR: {e}")
             import traceback
-            traceback.print_exc()
+            self.log(traceback.format_exc())
         finally:
             self.connector.disconnect()
             self.log("--- CYCLE COMPLETE ---")
 
     def manage_trades(self):
         positions = self.connector.get_open_positions()
+        self.log(f"MANAGE: Checking {len(positions)} open positions.")
         for p in positions:
             symbol = p["symbol"]
             ticket = p["ticket"]
             profit = p["profit"]
-            p_type = p["type"] # 0 for BUY, 1 for SELL
+            p_type = p["type"]
 
-            # A. $0.05 Safety Switch: Move to Breakeven
-            # Scales with account? No, fixed tiny offset for safety.
+            # A. $0.05 Safety Switch (Move SL to break-even)
             if profit > 0.05:
-                self.log(f"SAFETY SWITCH: Locking BE for {symbol}")
+                self.log(f"SAFETY SWITCH: Locking profit for {symbol} ({ticket})")
                 self.connector.modify_sl(ticket, p["price_open"], p["tp"])
 
-            # B. Signal Reversal Check
+            # B. Strategy Reversal Check
             df = self.connector.get_candles(symbol, config.DEFAULT_TIMEFRAME)
             if df is not None and not df.empty:
                 df = self.strategy.calculate_indicators(df)
                 bull, bear = self.ai_model.predict(df)
                 signal, _ = self.strategy.generate_signal(df, bull, bear)
 
-                # Close if signal is opposite
+                # Immediate exit on signal flip
                 if (p_type == 0 and signal == "SELL") or (p_type == 1 and signal == "BUY"):
-                    self.log(f"REVERSAL DETECTED: Closing {symbol} ({'BUY' if p_type==0 else 'SELL'}) due to {signal} signal.")
+                    self.log(f"REVERSAL DETECTED: Closing {symbol} due to {signal} signal.")
                     self.connector.close_position(ticket)
 
     def process_symbol(self, symbol):
         df = self.connector.get_candles(symbol, config.DEFAULT_TIMEFRAME)
-        if df is None or df.empty: return
+        if df is None or df.empty:
+            self.log(f"DATA: No candles for {symbol}")
+            return
 
         df = self.strategy.calculate_indicators(df)
 
-        # ML Prediction
-        if not os.path.exists(self.ai_model.model_path): self.ai_model.train(df)
+        # Continuous Adaptation: Retrain model if not present (handled inside AIModel)
         bull, bear = self.ai_model.predict(df)
 
         signal, confidence = self.strategy.generate_signal(df, bull, bear)
-        self.log(f"SCAN: {symbol} | Signal: {signal} (Confidence: {confidence:.1f})")
+        self.log(f"SCAN: {symbol} | Signal: {signal} | Conf: {confidence:.2f}")
 
-        # Stealth Execution & Filters
         if signal in ["BUY", "SELL"]:
-            # ONE Position per symbol limit
+            # Risk/Constraint Verification
             current_pos = self.connector.get_open_positions()
-            sym_pos = [p for p in current_pos if p["symbol"] == symbol]
-            if len(sym_pos) >= config.MAX_TRADES_PER_SYMBOL:
-                return
 
-            # GLOBAL Position limit
+            # Brief requirement: Max 3 simultaneous open positions
             if len(current_pos) >= config.MAX_OPEN_POSITIONS:
+                self.log(f"SKIP: Global limit reached ({config.MAX_OPEN_POSITIONS})")
                 return
 
-            # Stealth Delay: 30-290s
+            # Stealth Window Randomization
             delay = random.randint(30, 290)
-            self.log(f"STEALTH MODE: Waiting {delay}s before execution...")
+            self.log(f"STEALTH: Executing in {delay}s...")
             time.sleep(delay)
 
             lot = self.risk_manager.calculate_lot_size(self.current_day)
             entry = df.iloc[-1]['close']
             sl, tp = self.risk_manager.get_levels(signal, entry, df.iloc[-1]['ATR'])
 
-            self.log(f"EXECUTING {signal} {symbol} | {lot} lots @ {entry}")
+            self.log(f"ORDER: {signal} {symbol} | {lot} lots @ {entry}")
             res = self.connector.execute_order(symbol, signal, lot, sl, tp)
             if res:
                 self.db.log_trade({
@@ -148,10 +153,12 @@ class TradingBot:
         realized = self.db.get_total_realized_profit()
         self.virtual_equity = config.INITIAL_CAPITAL + realized
 
+        # Update geometric compounding progression
         for i, target in enumerate(config.TARGET_MULTIPLIER_SEQUENCE):
              if self.virtual_equity >= target:
                   self.current_day = i + 2
 
+        self.log(f"SNAPSHOT: Equity ${self.virtual_equity:.2f} | Day {self.current_day}")
         self.db.save_state({
             "day_count": self.current_day,
             "virtual_equity": self.virtual_equity,

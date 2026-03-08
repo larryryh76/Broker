@@ -1,5 +1,6 @@
 import os
 import time
+import subprocess
 import MetaTrader5 as mt5
 import pandas as pd
 import config
@@ -12,24 +13,57 @@ class TerminalConnector:
         self.path = os.path.join(config.TERMINAL_DIR, "terminal64.exe")
 
     def connect(self):
+        # 1. Clean slate: Kill any zombie processes
         if os.name == 'nt':
+            print("Cleaning up existing MT5 processes...")
             os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
+            time.sleep(2)
 
-        success = mt5.initialize(
-            path=self.path,
-            login=self.login,
-            password=self.password,
-            server=self.server,
-            portable=True,
-            timeout=120000
-        )
-
-        if success:
-            print("MONEY MACHINE CONNECTED. IPC BRIDGE ACTIVE.")
-            return True
+        # 2. Pre-launch terminal process explicitly for GHA/Headless stability
+        # This ensures the terminal is running before the library attempts to attach.
+        if os.path.exists(self.path):
+            print(f"Pre-launching MT5 Terminal: {self.path}")
+            try:
+                subprocess.Popen([self.path, "/portable"])
+                print("Terminal process launched. Waiting 20 seconds for boot...")
+                time.sleep(20)
+            except Exception as e:
+                print(f"Failed to launch terminal process: {e}")
         else:
-            print(f"MT5 Init failed: {mt5.last_error()}")
-            return False
+            print(f"Warning: Terminal executable not found at {self.path}. Assuming standard installation.")
+
+        # 3. Robust initialization retry loop
+        max_attempts = 5
+        retry_delay = 10
+
+        for attempt in range(1, max_attempts + 1):
+            print(f"MT5 Connection Attempt {attempt}/{max_attempts}...")
+
+            # Use credentials directly in initialize to bypass handshake timeouts
+            success = mt5.initialize(
+                path=self.path,
+                login=self.login,
+                password=self.password,
+                server=self.server,
+                portable=True,
+                timeout=60000
+            )
+
+            if success:
+                print("MONEY MACHINE CONNECTED. IPC BRIDGE ACTIVE.")
+                # Extra verification: check terminal info
+                info = mt5.terminal_info()
+                if info:
+                    print(f"Terminal connection verified. Connected: {info.connected}")
+                return True
+            else:
+                error = mt5.last_error()
+                print(f"MT5 Init failed (Attempt {attempt}): {error}")
+                if attempt < max_attempts:
+                    print(f"Waiting {retry_delay}s before retry...")
+                    time.sleep(retry_delay)
+
+        return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]
@@ -76,7 +110,7 @@ class TerminalConnector:
 
         result = mt5.order_send(request)
 
-        # RETRY WITH FOK IF IOC FAILS (Handling broker filling limits)
+        # RETRY WITH FOK IF IOC FAILS
         if result and result.retcode in [mt5.TRADE_RETCODE_REJECT, 10030, 10031]:
             print(f"IOC filling failed (Retcode {result.retcode}). Retrying with FOK...")
             request["type_filling"] = mt5.ORDER_FILLING_FOK
@@ -127,3 +161,4 @@ class TerminalConnector:
 
     def disconnect(self):
         mt5.shutdown()
+        print("MT5 Disconnected.")

@@ -24,8 +24,8 @@ SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]
 TIMEFRAMES = ["M5", "M15", "H1"]
 DEFAULT_TIMEFRAME = "M5"
 
-# Phase 1 Optimization: Strict one-position limit
-MAX_OPEN_POSITIONS = 1
+# Optimization: Max 3 simultaneous positions as per brief
+MAX_OPEN_POSITIONS = 3
 MAX_TRADES_PER_SYMBOL = 1
 
 # Strategy Parameters
@@ -39,7 +39,7 @@ SMA_SLOW = 50
 INITIAL_CAPITAL = 5.0
 DAILY_DRAWDOWN_LIMIT = 0.05  # 5% of balance
 COMPOUNDING_THRESHOLD = 50.0
-TARGET_MULTIPLIER_SEQUENCE = [50, 250, 1500, 10500, 84000, 756000, 7560000] # 10x scaling after initial flip
+TARGET_MULTIPLIER_SEQUENCE = [50, 250, 1500, 10500, 84000, 756000, 7560000]
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

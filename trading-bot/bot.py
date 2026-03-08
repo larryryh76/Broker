@@ -58,10 +58,10 @@ class TradingBot:
                 self.log("DAILY DRAWDOWN LIMIT HIT. OPERATION HALTED.")
                 return
 
-            # 4. Management (No-Loss Logic)
+            # 4. Management & Reversal Check
             self.manage_trades()
 
-            # 5. Execution Loop
+            # 5. Signal Scan & Execution
             for sym in config.SYMBOLS:
                 self.process_symbol(sym)
 
@@ -70,6 +70,8 @@ class TradingBot:
 
         except Exception as e:
             self.log(f"CRITICAL SYSTEM ERROR: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.connector.disconnect()
             self.log("--- CYCLE COMPLETE ---")
@@ -77,10 +79,28 @@ class TradingBot:
     def manage_trades(self):
         positions = self.connector.get_open_positions()
         for p in positions:
-            # $0.05 Safety Switch: Move to Breakeven
-            if p["profit"] > 0.05:
-                self.log(f"SAFETY SWITCH: Locking BE for {p['symbol']}")
-                self.connector.modify_sl(p["ticket"], p["price_open"], p["tp"])
+            symbol = p["symbol"]
+            ticket = p["ticket"]
+            profit = p["profit"]
+            p_type = p["type"] # 0 for BUY, 1 for SELL
+
+            # A. $0.05 Safety Switch: Move to Breakeven
+            # Scales with account? No, fixed tiny offset for safety.
+            if profit > 0.05:
+                self.log(f"SAFETY SWITCH: Locking BE for {symbol}")
+                self.connector.modify_sl(ticket, p["price_open"], p["tp"])
+
+            # B. Signal Reversal Check
+            df = self.connector.get_candles(symbol, config.DEFAULT_TIMEFRAME)
+            if df is not None and not df.empty:
+                df = self.strategy.calculate_indicators(df)
+                bull, bear = self.ai_model.predict(df)
+                signal, _ = self.strategy.generate_signal(df, bull, bear)
+
+                # Close if signal is opposite
+                if (p_type == 0 and signal == "SELL") or (p_type == 1 and signal == "BUY"):
+                    self.log(f"REVERSAL DETECTED: Closing {symbol} ({'BUY' if p_type==0 else 'SELL'}) due to {signal} signal.")
+                    self.connector.close_position(ticket)
 
     def process_symbol(self, symbol):
         df = self.connector.get_candles(symbol, config.DEFAULT_TIMEFRAME)
@@ -93,12 +113,18 @@ class TradingBot:
         bull, bear = self.ai_model.predict(df)
 
         signal, confidence = self.strategy.generate_signal(df, bull, bear)
-        self.log(f"SCAN: {symbol} | Signal: {signal} (C: {confidence})")
+        self.log(f"SCAN: {symbol} | Signal: {signal} (Confidence: {confidence:.1f})")
 
         # Stealth Execution & Filters
         if signal in ["BUY", "SELL"]:
-            # ONE Position Only Global Filter for Phase 1
-            if len(self.connector.get_open_positions()) >= config.MAX_OPEN_POSITIONS:
+            # ONE Position per symbol limit
+            current_pos = self.connector.get_open_positions()
+            sym_pos = [p for p in current_pos if p["symbol"] == symbol]
+            if len(sym_pos) >= config.MAX_TRADES_PER_SYMBOL:
+                return
+
+            # GLOBAL Position limit
+            if len(current_pos) >= config.MAX_OPEN_POSITIONS:
                 return
 
             # Stealth Delay: 30-290s
@@ -119,12 +145,9 @@ class TradingBot:
                 })
 
     def snapshot(self, account):
-        # Update realized profit from history (Reconciliation)
-        # Simplified: Virtual equity = Initial + Sum(DB trades)
         realized = self.db.get_total_realized_profit()
         self.virtual_equity = config.INITIAL_CAPITAL + realized
 
-        # Check sequence progression
         for i, target in enumerate(config.TARGET_MULTIPLIER_SEQUENCE):
              if self.virtual_equity >= target:
                   self.current_day = i + 2

@@ -12,12 +12,9 @@ class TerminalConnector:
         self.path = os.path.join(config.TERMINAL_DIR, "terminal64.exe")
 
     def connect(self):
-        # 1. Kill any zombie processes
         if os.name == 'nt':
             os.system('taskkill /f /im terminal64.exe /t >nul 2>&1')
 
-        # 2. Initialize with long timeout for GHA cloud boot
-        # PASSING CREDENTIALS DIRECTLY TO BYPASS HANDSHAKE TIMEOUTS
         success = mt5.initialize(
             path=self.path,
             login=self.login,
@@ -35,7 +32,6 @@ class TerminalConnector:
             return False
 
     def map_symbol(self, symbol):
-        # FBS specific symbol mapping
         candidates = [symbol, symbol + "m", symbol + "-mt5"]
         for candidate in candidates:
             if mt5.symbol_select(candidate, True):
@@ -79,9 +75,17 @@ class TerminalConnector:
         }
 
         result = mt5.order_send(request)
+
+        # RETRY WITH FOK IF IOC FAILS (Handling broker filling limits)
+        if result and result.retcode in [mt5.TRADE_RETCODE_REJECT, 10030, 10031]:
+            print(f"IOC filling failed (Retcode {result.retcode}). Retrying with FOK...")
+            request["type_filling"] = mt5.ORDER_FILLING_FOK
+            result = mt5.order_send(request)
+
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             return result
-        print(f"Order failed: {result.retcode if result else 'No result'}")
+
+        print(f"Order failed: {result.retcode if result else 'No result'} | Comment: {result.comment if result else ''}")
         return None
 
     def get_open_positions(self):

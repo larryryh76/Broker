@@ -16,18 +16,8 @@ class TerminalConnector:
         self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe")).replace("/", "\\")
         self.config_path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "config", "terminal.ini")).replace("/", "\\")
 
-    def wait_for_mt5(self):
-        print("Verifying terminal process existence...")
-        for _ in range(30):
-            for p in psutil.process_iter(['name']):
-                if "terminal64.exe" in p.info['name'].lower():
-                    print("Process confirmed.")
-                    return True
-            time.sleep(1)
-        return False
-
     def connect(self):
-        # 1. Ensure only ONE terminal instance
+        # 1. SECTION 1 & 6 — Proper MT5 Initialization & Only one terminal instance
         print("Cleaning up existing MT5 processes...")
         for p in psutil.process_iter(['name']):
             if "terminal64.exe" in p.info['name'].lower():
@@ -36,57 +26,61 @@ class TerminalConnector:
                     print(f"Killed existing process: {p.pid}")
                 except:
                     pass
-        time.sleep(2)
+        time.sleep(5)
 
-        # 2. Ensure Data Directories Exist
+        # Ensure Data Directories Exist (SECTION 3)
         dirs = ["config", "MQL5", "Profiles"]
         for d in dirs:
             os.makedirs(os.path.join(config.TERMINAL_DIR, d), exist_ok=True)
 
-        # 3. Launch MT5 using Windows start command for desktop context
+        # 2. Launch terminal with portable and skipupdate flags
         print(f"Launching MT5 Terminal: {self.path}")
         try:
-            # Using 'start' command as requested for GHA desktop session compatibility
+            # Using shell=False as recommended for direct launch
             subprocess.Popen(
-                f'start "" "{self.path}" /portable /config:"{self.config_path}"',
-                shell=True
+                [self.path, "/portable", "/skipupdate"],
+                shell=False
             )
-
-            # 4. Wait for MT5 full initialization (90 seconds as requested)
-            print("Waiting for MT5 full initialization (90s)...")
-            time.sleep(90)
-
-            if not self.wait_for_mt5():
-                print("Error: terminal64.exe process not detected.")
-                return False
-
+            print("Waiting 60 seconds for terminal startup...")
+            time.sleep(60)
         except Exception as e:
             print(f"Launch error: {e}")
             return False
 
-        # 5. Initialize MT5 with explicit path and 10 retries
-        print(f"Attaching IPC bridge: {self.path}")
+        # 3. SECTION 2 — Robust IPC Recovery (Retry system)
+        print(f"Initializing MT5 with credentials for path: {self.path}")
 
-        for attempt in range(1, 11):
-            print(f"Connection Attempt {attempt}/10...")
-            # Note: Initialize does NOT take login/pass/server if we pre-seeded terminal.ini and launched with /config
-            # but we use them as fallback if the terminal is already running.
-            if mt5.initialize(path=self.path, portable=True):
+        max_attempts = 5
+        retry_delay = 20
+
+        for attempt in range(1, max_attempts + 1):
+            print(f"MT5 Connection Attempt {attempt}/{max_attempts}...")
+            # SECTION 1 — Credentials in initialize() call
+            if mt5.initialize(
+                path=self.path,
+                login=int(self.login),
+                password=self.password,
+                server=self.server,
+                timeout=180000,
+                portable=True
+            ):
+                print("MT5 connection established")
+                # Confirm connection
                 info = mt5.terminal_info()
                 if info is not None and info.connected:
-                    print("MT5 connection successful")
+                    print("MONEY MACHINE CONNECTED. IPC BRIDGE ACTIVE.")
                     return True
                 else:
-                    print("MT5 initialized but server connection pending. Retrying...")
+                    print("MT5 initialized but server login pending. Retrying...")
                     mt5.shutdown()
             else:
-                print(f"MT5 initialize failed: {mt5.last_error()}")
+                print(f"MT5 initialization failed: {mt5.last_error()}")
 
-            if attempt < 10:
-                print("Waiting 10s before retry...")
-                time.sleep(10)
+            if attempt < max_attempts:
+                print(f"Retry {attempt}/5 - Waiting {retry_delay}s...")
+                time.sleep(retry_delay)
 
-        return False
+        raise RuntimeError("MT5 IPC bridge could not be established")
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]

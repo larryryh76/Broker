@@ -1,23 +1,26 @@
-name: Money Machine Deployment
+name: Money Machine Continuous
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
+  schedule:
+    - cron: "0 */5 * * *"
 
 jobs:
   trade:
-    runs-on: windows-latest
+    # Supports both Ghost Runner (Self-Hosted) and Standard GHA Runners
+    # Note: To use Ghost Runner, ensure 'self-hosted' label is available.
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' || contains(github.event.inputs.runner, 'self')) && 'self-hosted' || 'windows-latest' }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Configure Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.11"
 
-      - name: Setup Headless Display (Mesa3D)
+      - name: Install Pure Headless Display
         uses: pyvista/setup-headless-display-action@v3
         with:
           mesa3d-release: '24.3.0'
@@ -25,9 +28,9 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r trading-bot/requirements.txt
+          pip install MetaTrader5 psutil numpy pandas pandas-ta scikit-learn python-dotenv joblib pymongo requests
 
-      - name: Download MT5 Portable
+      - name: Prepare MT5 Environment
         shell: powershell
         run: |
           $dir = "$env:GITHUB_WORKSPACE\mt5_terminal"
@@ -36,24 +39,13 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile "$dir\setup.exe"
           Start-Process -FilePath "$dir\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$dir" -Wait
 
-          # Inject Algo-Trading permissions
-          $cfgDir = "$dir\config"
-          if (!(Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir }
-          "[Common]`nExpertsEnable=1`nExpertsDllImport=1" | Out-File -Encoding ASCII "$cfgDir\common.ini"
-
-      - name: Run The Money Machine
+      - name: Run Trading Engine (Watchdog)
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd trading-bot
-          python bot.py
-
-      - name: Archive Session Logs
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: session-logs
-          path: trading-bot/logs/
+          python watchdog.py

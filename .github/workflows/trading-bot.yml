@@ -63,6 +63,32 @@ jobs:
         run: |
           python -c "import MetaTrader5; import pandas; import numpy; import pandas_ta; print('Dependencies installed successfully')"
 
+      # SECTION 10 — Inject config and Start MT5 Terminal before Python
+      - name: Pre-seed MT5 Config and Start
+        shell: powershell
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+        run: |
+          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal"
+          $configDir = "$dir\config"
+          if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Force -Path $configDir }
+
+          # Inject common.ini
+          $commonIni = "[Common]`r`nExpertsEnable=1`r`nExpertsDllImport=1`r`nWebLogin=0`r`nNewsEnable=0"
+          Set-Content -Path "$configDir\common.ini" -Value $commonIni
+
+          # Inject terminal.ini
+          $terminalIni = "[Common]`r`nLogin=$env:MT5_LOGIN`r`nPassword=$env:MT5_PASSWORD`r`nServer=$env:MT5_SERVER`r`nKeepPrivate=0`r`nEnableNews=0`r`n`r`n[Charts]`r`nMaxBars=100000"
+          Set-Content -Path "$configDir\terminal.ini" -Value $terminalIni
+
+          $mt5Path = "$dir\terminal64.exe"
+          Write-Host "Starting MT5 from $mt5Path"
+          Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/skipupdate"
+          Write-Host "Waiting 60s for MT5 to stabilize..."
+          Start-Sleep -Seconds 60
+
       - name: Run Trading Cycle
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}

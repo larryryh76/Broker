@@ -1,71 +1,45 @@
 import os
 import time
-import subprocess
 import MetaTrader5 as mt5
 import pandas as pd
 import config
-import psutil
 from datetime import datetime, timedelta
 
 class TerminalConnector:
     def __init__(self):
-        self.login = config.MT5_LOGIN
+        self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Standardize path for Windows shell
-        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe")).replace("/", "\\")
-        self.config_path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "config", "terminal.ini")).replace("/", "\\")
+        # Use robust path from config
+        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
 
     def connect(self):
-        # 1. Kill any existing MT5
-        for p in psutil.process_iter(['name']):
-            if "terminal64.exe" in p.info['name'].lower():
-                try:
-                    p.kill()
-                except:
-                    pass
-        time.sleep(5)
+        print(f"Connecting to MT5 library using terminal at: {self.path}")
 
-        # 2. SECTION 4 — MT5 Initialization (Launch before Python initializes)
-        print(f"Launching MT5 Terminal: {self.path}")
-        try:
-            subprocess.Popen(
-                [self.path, "/portable", "/skipupdate"],
-                shell=False
-            )
-            print("Waiting 60 seconds for terminal startup...")
-            time.sleep(60)
-        except Exception as e:
-            print(f"Launch error: {e}")
+        # SECTION 4 — MT5 Initialization
+        # Since MT5 is launched by GHA workflow, we just attach.
+        # timeout is in milliseconds. 120000 ms = 120 seconds.
+        if not mt5.initialize(path=self.path, timeout=120000, portable=True):
+            print(f"mt5.initialize() failed, error code = {mt5.last_error()}")
             return False
 
-        # 3. SECTION 9 — Reliability Improvements (Retry 3 times)
-        for attempt in range(1, 4):
-            print(f"MT5 Initialization Attempt {attempt}/3...")
-            # SECTION 4 — initialize with path
-            if mt5.initialize(path=self.path, portable=True):
-                print("MT5 library initialized.")
+        print("MT5 library initialized successfully. Attempting login...")
 
-                # SECTION 5 — Login Automatically
-                print("Logging in to broker...")
-                if mt5.login(
-                    login=int(self.login),
-                    password=self.password,
-                    server=self.server
-                ):
-                    print("Login successful.")
-                    return True
-                else:
-                    print(f"Login failed: {mt5.last_error()}")
-                    mt5.shutdown()
-            else:
-                print(f"Initialize failed: {mt5.last_error()}")
+        # SECTION 5 — Login Automatically (Separate from initialize as requested)
+        authorized = mt5.login(
+            login=int(self.login_id),
+            password=self.password,
+            server=self.server
+        )
 
-            if attempt < 3:
-                print("Waiting 20s before retry...")
-                time.sleep(20)
-
-        return False
+        if authorized:
+            print(f"Logged in successfully to {self.server} (Account: {self.login_id})")
+            return True
+        else:
+            print(f"Failed to login, error code = {mt5.last_error()}")
+            # It's good practice to shutdown if we can't login
+            mt5.shutdown()
+            return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]

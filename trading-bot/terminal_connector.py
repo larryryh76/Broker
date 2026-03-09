@@ -10,25 +10,24 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Explicit path as requested for GHA environment
+        # Exact path for GHA environment (STEP 6)
         self.path = r"D:\a\Broker\Broker\mt5_terminal\terminal64.exe"
 
     def connect(self):
-        # STEP 2 — Add a retry connection function
+        # SUPREME AUTHORITY LAYER: Connection Retry
         for attempt in range(5):
-            print(f"MT5 connection attempt {attempt+1}/5")
+            print(f"MT5 Virtual GUI connection attempt {attempt+1}/5")
 
-            # STEP 1 — Define MT5 terminal path
-            # initialize with explicit path and timeout (120000ms = 120s)
+            # STEP 6: Initialize MT5 using the explicit terminal path
             if mt5.initialize(
                 path=self.path,
                 portable=True,
                 timeout=120000
             ):
-                print("MT5 IPC connection established")
+                print("MT5 IPC connection established within Virtual GUI session")
 
-                # STEP 4 — Perform login separately
-                print(f"Attempting separate login to {self.server}...")
+                # Perform login separately after successful initialization
+                print(f"Authorizing account {self.login_id} on {self.server}...")
                 authorized = mt5.login(
                     login=int(self.login_id),
                     password=self.password,
@@ -36,16 +35,13 @@ class TerminalConnector:
                 )
 
                 if authorized:
-                    print(f"MT5 login successful for account {self.login_id}")
+                    print(f"MT5 session fully authorized")
                     return True
                 else:
-                    print(f"MT5 login failed: {mt5.last_error()}")
+                    print(f"MT5 authorization failed: {mt5.last_error()}")
                     mt5.shutdown()
-                    # If login failed, we might want to retry initialize?
-                    # Usually login failure is not fixed by retry unless it's a connection issue.
-                    # But the requirement is to retry "connection" until IPC pipe available.
             else:
-                print("initialize failed:", mt5.last_error())
+                print("IPC initialization failed (Headless/GUI mismatch):", mt5.last_error())
 
             time.sleep(15)
 
@@ -94,7 +90,7 @@ class TerminalConnector:
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
 
-        # SECTION 9 — Retry trade execution
+        # Retry trade execution if needed
         for i in range(3):
             result = mt5.order_send(request)
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
@@ -149,4 +145,4 @@ class TerminalConnector:
 
     def disconnect(self):
         mt5.shutdown()
-        print("MT5 shutdown complete.")
+        print("MT5 session closed.")

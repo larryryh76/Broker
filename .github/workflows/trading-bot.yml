@@ -1,4 +1,4 @@
-name: Money Machine Trading Cycle
+name: Money Machine Virtual GUI Trading Cycle
 
 on:
   workflow_dispatch:
@@ -13,21 +13,32 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # SECTION 1 — Ensure Python Setup Happens First
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # STEP 1: Set up Virtual GUI Environment
+      - name: Set Virtual Monitor Resolution
+        uses: miniers/setup-screen-resolution@v1
         with:
-          python-version: "3.12"
-
-      # SECTION 2 — Upgrade pip
-      - name: Upgrade pip
-        run: |
-          python -m pip install --upgrade pip
+          width: 1920
+          height: 1080
 
       - name: Setup Headless Display (Mesa3D)
         uses: pyvista/setup-headless-display-action@v3
         with:
           mesa3d-release: '24.3.0'
+
+      # Install VNC for GUI IPC satisfaction
+      - name: Install Virtual Desktop Dependencies
+        run: |
+          choco install tightvnc -y
+
+      # Environment Setup
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade pip
+        run: |
+          python -m pip install --upgrade pip
 
       - name: Cache MT5 Terminal
         id: cache-mt5
@@ -47,24 +58,16 @@ jobs:
           Start-Process -FilePath "$dir\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$dir" -Wait
           Write-Host "MT5 Terminal installed to $dir"
 
-      # SECTION 3 — Install Dependencies Explicitly
       - name: Install trading bot dependencies
         run: |
-          pip install MetaTrader5
-          pip install psutil
-          pip install numpy
-          pip install pandas
-          pip install pandas-ta
-          pip install scikit-learn
-          pip install python-dotenv joblib pymongo requests
+          pip install MetaTrader5 psutil numpy pandas pandas-ta scikit-learn python-dotenv joblib pymongo requests
 
-      # SECTION 4 — Verify Installation
       - name: Verify dependencies
         run: |
-          python -c "import MetaTrader5; import pandas; import numpy; import pandas_ta; print('Dependencies installed successfully')"
+          python -c "import MetaTrader5; import pandas; import numpy; import pandas_ta; print('Dependencies ready')"
 
-      # SECTION 10 — Inject config and Start MT5 Terminal before Python
-      - name: Pre-seed MT5 Config and Start
+      # STEP 2 & 3: Start MT5 inside the Virtual GUI session
+      - name: Pre-seed MT5 Config and Start GUI
         shell: powershell
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
@@ -75,21 +78,24 @@ jobs:
           $configDir = "$dir\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Force -Path $configDir }
 
-          # Inject common.ini
-          $commonIni = "[Common]`r`nExpertsEnable=1`r`nExpertsDllImport=1`r`nWebLogin=0`r`nNewsEnable=0"
-          Set-Content -Path "$configDir\common.ini" -Value $commonIni
-
-          # Inject terminal.ini
+          # Supreme Authority: Inject terminal.ini credentials
           $terminalIni = "[Common]`r`nLogin=$env:MT5_LOGIN`r`nPassword=$env:MT5_PASSWORD`r`nServer=$env:MT5_SERVER`r`nKeepPrivate=0`r`nEnableNews=0`r`n`r`n[Charts]`r`nMaxBars=100000"
           Set-Content -Path "$configDir\terminal.ini" -Value $terminalIni
 
+          # Inject common.ini for Experts
+          $commonIni = "[Common]`r`nExpertsEnable=1`r`nExpertsDllImport=1`r`nWebLogin=0`r`nNewsEnable=0"
+          Set-Content -Path "$configDir\common.ini" -Value $commonIni
+
           $mt5Path = "$dir\terminal64.exe"
-          Write-Host "Starting MT5 from $mt5Path"
-          Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/skipupdate"
-          # STEP 5 — Increase terminal startup wait (Wait 120 seconds)
-          Write-Host "Waiting 120s for MT5 to stabilize..."
+          Write-Host "Launching MT5 inside Virtual Desktop: $mt5Path"
+          # Launch inside virtual session
+          start "$mt5Path" "/portable" "/skipupdate"
+
+          # STEP 4: Wait for the GUI session to stabilize
+          Write-Host "Waiting 120s for MT5 GUI stabilization..."
           Start-Sleep -Seconds 120
 
+      # STEP 5: Run the Python trading bot inside the same session
       - name: Run Trading Cycle
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
@@ -104,7 +110,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cycle-artifacts-${{ github.run_id }}
+          name: gui-cycle-artifacts-${{ github.run_id }}
           path: |
             trading-bot/logs/
             trading-bot/trades/

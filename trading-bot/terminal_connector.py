@@ -17,26 +17,18 @@ class TerminalConnector:
         self.config_path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "config", "terminal.ini")).replace("/", "\\")
 
     def connect(self):
-        # 1. SECTION 1 & 6 — Proper MT5 Initialization & Only one terminal instance
-        print("Cleaning up existing MT5 processes...")
+        # 1. Kill any existing MT5
         for p in psutil.process_iter(['name']):
             if "terminal64.exe" in p.info['name'].lower():
                 try:
                     p.kill()
-                    print(f"Killed existing process: {p.pid}")
                 except:
                     pass
         time.sleep(5)
 
-        # Ensure Data Directories Exist (SECTION 3)
-        dirs = ["config", "MQL5", "Profiles"]
-        for d in dirs:
-            os.makedirs(os.path.join(config.TERMINAL_DIR, d), exist_ok=True)
-
-        # 2. Launch terminal with portable and skipupdate flags
+        # 2. SECTION 4 — MT5 Initialization (Launch before Python initializes)
         print(f"Launching MT5 Terminal: {self.path}")
         try:
-            # Using shell=False as recommended for direct launch
             subprocess.Popen(
                 [self.path, "/portable", "/skipupdate"],
                 shell=False
@@ -47,40 +39,33 @@ class TerminalConnector:
             print(f"Launch error: {e}")
             return False
 
-        # 3. SECTION 2 — Robust IPC Recovery (Retry system)
-        print(f"Initializing MT5 with credentials for path: {self.path}")
+        # 3. SECTION 9 — Reliability Improvements (Retry 3 times)
+        for attempt in range(1, 4):
+            print(f"MT5 Initialization Attempt {attempt}/3...")
+            # SECTION 4 — initialize with path
+            if mt5.initialize(path=self.path, portable=True):
+                print("MT5 library initialized.")
 
-        max_attempts = 5
-        retry_delay = 20
-
-        for attempt in range(1, max_attempts + 1):
-            print(f"MT5 Connection Attempt {attempt}/{max_attempts}...")
-            # SECTION 1 — Credentials in initialize() call
-            if mt5.initialize(
-                path=self.path,
-                login=int(self.login),
-                password=self.password,
-                server=self.server,
-                timeout=180000,
-                portable=True
-            ):
-                print("MT5 connection established")
-                # Confirm connection
-                info = mt5.terminal_info()
-                if info is not None and info.connected:
-                    print("MONEY MACHINE CONNECTED. IPC BRIDGE ACTIVE.")
+                # SECTION 5 — Login Automatically
+                print("Logging in to broker...")
+                if mt5.login(
+                    login=int(self.login),
+                    password=self.password,
+                    server=self.server
+                ):
+                    print("Login successful.")
                     return True
                 else:
-                    print("MT5 initialized but server login pending. Retrying...")
+                    print(f"Login failed: {mt5.last_error()}")
                     mt5.shutdown()
             else:
-                print(f"MT5 initialization failed: {mt5.last_error()}")
+                print(f"Initialize failed: {mt5.last_error()}")
 
-            if attempt < max_attempts:
-                print(f"Retry {attempt}/5 - Waiting {retry_delay}s...")
-                time.sleep(retry_delay)
+            if attempt < 3:
+                print("Waiting 20s before retry...")
+                time.sleep(20)
 
-        raise RuntimeError("MT5 IPC bridge could not be established")
+        return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]
@@ -125,17 +110,14 @@ class TerminalConnector:
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
 
-        result = mt5.order_send(request)
-
-        if result and result.retcode in [mt5.TRADE_RETCODE_REJECT, 10030, 10031]:
-            print(f"IOC failed. Retrying with FOK...")
-            request["type_filling"] = mt5.ORDER_FILLING_FOK
+        # SECTION 9 — Retry trade execution
+        for i in range(3):
             result = mt5.order_send(request)
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                return result
+            print(f"Execution failed (Attempt {i+1}/3): {result.comment if result else 'No result'}")
+            time.sleep(2)
 
-        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-            return result
-
-        print(f"Order failed: {result.retcode if result else 'No result'}")
         return None
 
     def get_open_positions(self):
@@ -183,4 +165,4 @@ class TerminalConnector:
 
     def disconnect(self):
         mt5.shutdown()
-        print("MT5 disconnected.")
+        print("MT5 shutdown complete.")

@@ -1,4 +1,4 @@
-name: Money Machine Virtual GUI Trading Cycle
+name: Money Machine Trading Cycle
 
 on:
   workflow_dispatch:
@@ -12,13 +12,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      # STEP 1: Set up Virtual GUI Environment
-      - name: Set Virtual Monitor Resolution
-        uses: miniers/setup-screen-resolution@v1
-        with:
-          width: 1920
-          height: 1080
 
       - name: Setup Headless Display (Mesa3D)
         uses: pyvista/setup-headless-display-action@v3
@@ -66,8 +59,8 @@ jobs:
         run: |
           python -c "import MetaTrader5; import pandas; import numpy; import pandas_ta; print('Dependencies ready')"
 
-      # STEP 2 & 3: Start MT5 inside the Virtual GUI session
-      - name: Pre-seed MT5 Config and Start GUI
+      # STEP 2 & 3: Start MT5 and Verify process
+      - name: Pre-seed MT5 Config and Launch
         shell: powershell
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
@@ -87,15 +80,20 @@ jobs:
           Set-Content -Path "$configDir\common.ini" -Value $commonIni
 
           $mt5Path = "$dir\terminal64.exe"
-          Write-Host "Launching MT5 inside Virtual Desktop: $mt5Path"
-          # Launch inside virtual session
-          start "$mt5Path" "/portable" "/skipupdate"
+          Write-Host "Launching MT5: $mt5Path"
+          # Launch terminal with explicit path and portable flag
+          Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/skipupdate"
 
-          # STEP 4: Wait for the GUI session to stabilize
+          # Wait for the terminal GUI session to stabilize
           Write-Host "Waiting 120s for MT5 GUI stabilization..."
           Start-Sleep -Seconds 120
 
-      # STEP 5: Run the Python trading bot inside the same session
+      - name: Check MT5 process
+        shell: powershell
+        run: |
+          Get-Process terminal64 -ErrorAction SilentlyContinue
+
+      # STEP 5: Run the Python trading bot
       - name: Run Trading Cycle
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
@@ -110,7 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gui-cycle-artifacts-${{ github.run_id }}
+          name: cycle-artifacts-${{ github.run_id }}
           path: |
             trading-bot/logs/
             trading-bot/trades/

@@ -15,9 +15,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure Python
+        # SECTION 1 — Upgrade Python Version (3.12)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Setup Headless Display (Mesa3D)
         uses: pyvista/setup-headless-display-action@v3
@@ -44,9 +45,15 @@ jobs:
           Write-Host "MT5 Terminal installed to $dir"
 
       - name: Install Dependencies
+        # SECTION 3 & 4 — Install From requirements.txt with Fallback
         run: |
           python -m pip install --upgrade pip
-          pip install MetaTrader5 psutil numpy pandas pandas-ta scikit-learn python-dotenv joblib pymongo
+          pip install -r trading-bot/requirements.txt || pip install pandas_ta
+
+      - name: Verify Installation
+        # SECTION 5 — Verify Installation
+        run: |
+          python -c "import MetaTrader5; import pandas; import numpy; import pandas_ta; print('Dependencies installed successfully')"
 
       - name: Run Trading Cycle
         env:

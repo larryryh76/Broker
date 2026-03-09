@@ -1,9 +1,10 @@
-MetaTrader5
-pandas
-numpy
-pandas-ta
-scikit-learn
+MetaTrader5==5.0.5640
+psutil==5.9.8
+numpy==2.2.6
+pandas==2.2.2
+pandas-ta==0.4.71b0
+scikit-learn==1.5.1
 python-dotenv
 joblib
 pymongo
-psutil
+requests

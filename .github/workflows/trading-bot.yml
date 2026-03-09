@@ -86,8 +86,9 @@ jobs:
           $mt5Path = "$dir\terminal64.exe"
           Write-Host "Starting MT5 from $mt5Path"
           Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/skipupdate"
-          Write-Host "Waiting 60s for MT5 to stabilize..."
-          Start-Sleep -Seconds 60
+          # STEP 5 — Increase terminal startup wait (Wait 120 seconds)
+          Write-Host "Waiting 120s for MT5 to stabilize..."
+          Start-Sleep -Seconds 120
 
       - name: Run Trading Cycle
         env:

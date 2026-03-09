@@ -10,36 +10,46 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Use robust path from config
-        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
+        # Explicit path as requested for GHA environment
+        self.path = r"D:\a\Broker\Broker\mt5_terminal\terminal64.exe"
 
     def connect(self):
-        print(f"Connecting to MT5 library using terminal at: {self.path}")
+        # STEP 2 — Add a retry connection function
+        for attempt in range(5):
+            print(f"MT5 connection attempt {attempt+1}/5")
 
-        # SECTION 4 — MT5 Initialization
-        # Since MT5 is launched by GHA workflow, we just attach.
-        # timeout is in milliseconds. 120000 ms = 120 seconds.
-        if not mt5.initialize(path=self.path, timeout=120000, portable=True):
-            print(f"mt5.initialize() failed, error code = {mt5.last_error()}")
-            return False
+            # STEP 1 — Define MT5 terminal path
+            # initialize with explicit path and timeout (120000ms = 120s)
+            if mt5.initialize(
+                path=self.path,
+                portable=True,
+                timeout=120000
+            ):
+                print("MT5 IPC connection established")
 
-        print("MT5 library initialized successfully. Attempting login...")
+                # STEP 4 — Perform login separately
+                print(f"Attempting separate login to {self.server}...")
+                authorized = mt5.login(
+                    login=int(self.login_id),
+                    password=self.password,
+                    server=self.server
+                )
 
-        # SECTION 5 — Login Automatically (Separate from initialize as requested)
-        authorized = mt5.login(
-            login=int(self.login_id),
-            password=self.password,
-            server=self.server
-        )
+                if authorized:
+                    print(f"MT5 login successful for account {self.login_id}")
+                    return True
+                else:
+                    print(f"MT5 login failed: {mt5.last_error()}")
+                    mt5.shutdown()
+                    # If login failed, we might want to retry initialize?
+                    # Usually login failure is not fixed by retry unless it's a connection issue.
+                    # But the requirement is to retry "connection" until IPC pipe available.
+            else:
+                print("initialize failed:", mt5.last_error())
 
-        if authorized:
-            print(f"Logged in successfully to {self.server} (Account: {self.login_id})")
-            return True
-        else:
-            print(f"Failed to login, error code = {mt5.last_error()}")
-            # It's good practice to shutdown if we can't login
-            mt5.shutdown()
-            return False
+            time.sleep(15)
+
+        return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]

@@ -33,13 +33,17 @@ RUN dpkg --add-architecture i386 && \
 # Install native Linux Python dependencies
 COPY trading-bot/requirements_linux.txt /app/requirements_linux.txt
 RUN pip3 install --no-cache-dir -r /app/requirements_linux.txt && \
-    pip3 install --no-cache-dir https://github.com/twopirllc/pandas-ta/archive/refs/heads/main.zip
+    pip3 install --no-cache-dir https://github.com/twopirllc/pandas-ta/archive/refs/heads/master.zip
 
 # Download MT5 and Windows Python Embedded (to avoid full installer)
 WORKDIR /app
 RUN wget https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe -O /app/mt5setup.exe && \
     wget https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip -O /app/python_win.zip && \
     unzip /app/python_win.zip -d /app/python_win
+
+# Fix Windows Embedded Python to allow imports from site-packages
+# This is required for pip-installed packages like MetaTrader5 and mt5linux
+RUN sed -i 's/#import site/import site/' /app/python_win/python310._pth
 
 # Install MetaTrader 5 via Wine (Silent Installation)
 # We do this at build time to pre-warm the image

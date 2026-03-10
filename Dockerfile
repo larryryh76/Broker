@@ -3,18 +3,21 @@ FROM ubuntu:22.04
 
 # Avoid prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
+ENV GIT_TERMINAL_PROMPT=0
 
 # Install dependencies for Wine, Xvfb, and native Python
 RUN apt-get update && apt-get install -y \
     software-properties-common \
+    git \
     wget \
+    curl \
     gnupg2 \
     ca-certificates \
-    git \
     xvfb \
     python3 \
     python3-pip \
     libvulkan1 \
+    cabextract \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 

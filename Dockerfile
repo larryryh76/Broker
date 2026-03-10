@@ -4,13 +4,15 @@ FROM ubuntu:22.04
 # Avoid prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies for Wine, Xvfb, and Python installer
+# Install dependencies for Wine, Xvfb, and native Python
 RUN apt-get update && apt-get install -y \
     software-properties-common \
     wget \
     gnupg2 \
     ca-certificates \
     xvfb \
+    python3 \
+    python3-pip \
     libvulkan1 \
     unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -24,28 +26,32 @@ RUN dpkg --add-architecture i386 && \
     apt-get install -y --install-recommends winehq-stable && \
     rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for Wine and Xvfb
+# Install native Linux Python dependencies
+COPY trading-bot/requirements.txt /app/requirements.txt
+RUN pip3 install --no-cache-dir mt5linux pandas numpy pandas-ta scikit-learn python-dotenv joblib pymongo requests
+
+# Download MT5 and Windows Python Embedded (to avoid full installer)
+WORKDIR /app
+RUN wget https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe -O /app/mt5setup.exe && \
+    wget https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip -O /app/python_win.zip && \
+    unzip /app/python_win.zip -d /app/python_win
+
+# Install MetaTrader 5 via Wine (Silent Installation)
+# We do this at build time to pre-warm the image
 ENV DISPLAY=:99
 ENV WINEPREFIX=/root/.wine
 ENV WINEDEBUG=-all
+RUN Xvfb :99 -screen 0 1024x768x16 & \
+    export DISPLAY=:99 && \
+    wineboot --init && \
+    wine /app/mt5setup.exe /auto /quit && \
+    sleep 30
 
-# Initialize Wine prefix and download Windows Python & MT5
-WORKDIR /app
-RUN wineboot --init && \
-    wget https://www.python.org/ftp/python/3.12.1/python-3.12.1-amd64.exe -O /app/python-3.12.1-amd64.exe && \
-    wget https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe -O /app/mt5setup.exe
-
-# Install Windows Python via Wine (Silent Installation)
-RUN xvfb-run -a wine /app/python-3.12.1-amd64.exe /quiet InstallAllUsers=1 PrependPath=1
-
-# Install MetaTrader 5 via Wine (Silent Installation)
-# This pre-installs MT5 into the Docker image to avoid installation on every run
-RUN xvfb-run -a wine /app/mt5setup.exe /auto /quit
-
-# Copy requirements and install via Wine-based Python
-COPY trading-bot/requirements.txt /app/requirements.txt
-RUN xvfb-run -a wine python -m pip install --upgrade pip && \
-    xvfb-run -a wine python -m pip install -r /app/requirements.txt
+# Install the actual MetaTrader5 library into the Windows "embedded" python
+# Note: Embedded python needs a bit of trickery to run pip
+RUN wget https://bootstrap.pypa.io/get-pip.py -O /app/get-pip.py && \
+    xvfb-run -a wine /app/python_win/python.exe /app/get-pip.py && \
+    xvfb-run -a wine /app/python_win/python.exe -m pip install MetaTrader5
 
 # Copy the rest of the code
 COPY . /app

@@ -1,6 +1,8 @@
 import os
 import time
-import MetaTrader5 as mt5
+# Use mt5linux as a bridge for Linux-native execution
+from mt5linux import MetaTrader5
+mt5 = MetaTrader5()
 import pandas as pd
 import config
 from datetime import datetime, timedelta

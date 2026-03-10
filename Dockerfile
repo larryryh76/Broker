@@ -33,7 +33,7 @@ RUN dpkg --add-architecture i386 && \
 # Install native Linux Python dependencies
 COPY trading-bot/requirements_linux.txt /app/requirements_linux.txt
 RUN pip3 install --no-cache-dir -r /app/requirements_linux.txt && \
-    pip3 install --no-cache-dir git+https://github.com/twopirllc/pandas-ta.git
+    pip3 install --no-cache-dir https://github.com/twopirllc/pandas-ta/archive/refs/heads/main.zip
 
 # Download MT5 and Windows Python Embedded (to avoid full installer)
 WORKDIR /app

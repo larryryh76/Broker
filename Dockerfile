@@ -45,16 +45,10 @@ RUN wget https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup
 # This is required for pip-installed packages like MetaTrader5 and mt5linux
 RUN sed -i 's/#import site/import site/' /app/python_win/python310._pth
 
-# Install MetaTrader 5 via Wine (Silent Installation)
-# We do this at build time to pre-warm the image
+# Set environment variables for Wine and Xvfb
 ENV DISPLAY=:99
 ENV WINEPREFIX=/root/.wine
 ENV WINEDEBUG=-all
-RUN Xvfb :99 -screen 0 1024x768x16 & \
-    export DISPLAY=:99 && \
-    wineboot --init && \
-    wine /app/mt5setup.exe /auto /quit && \
-    sleep 30
 
 # Install MetaTrader5 and mt5linux bridge on the Windows (Wine) side
 RUN wget https://bootstrap.pypa.io/get-pip.py -O /app/get-pip.py && \

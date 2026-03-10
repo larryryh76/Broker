@@ -2,7 +2,8 @@ import os
 import config
 
 def inject_headless_config():
-    terminal_dir = config.TERMINAL_DIR
+    # Use the Wine filesystem path for configuration injection since the script runs natively on Linux
+    terminal_dir = "/root/.wine/drive_c/Program Files/MetaTrader 5"
     config_dir = os.path.join(terminal_dir, "config")
 
     if not os.path.exists(config_dir):

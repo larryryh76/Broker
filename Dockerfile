@@ -27,8 +27,8 @@ RUN dpkg --add-architecture i386 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install native Linux Python dependencies
-COPY trading-bot/requirements.txt /app/requirements.txt
-RUN pip3 install --no-cache-dir mt5linux pandas numpy pandas-ta scikit-learn python-dotenv joblib pymongo requests
+COPY trading-bot/requirements_linux.txt /app/requirements_linux.txt
+RUN pip3 install --no-cache-dir -r /app/requirements_linux.txt
 
 # Download MT5 and Windows Python Embedded (to avoid full installer)
 WORKDIR /app
@@ -47,11 +47,10 @@ RUN Xvfb :99 -screen 0 1024x768x16 & \
     wine /app/mt5setup.exe /auto /quit && \
     sleep 30
 
-# Install the actual MetaTrader5 library into the Windows "embedded" python
-# Note: Embedded python needs a bit of trickery to run pip
+# Install MetaTrader5 and mt5linux bridge on the Windows (Wine) side
 RUN wget https://bootstrap.pypa.io/get-pip.py -O /app/get-pip.py && \
     xvfb-run -a wine /app/python_win/python.exe /app/get-pip.py && \
-    xvfb-run -a wine /app/python_win/python.exe -m pip install MetaTrader5
+    xvfb-run -a wine /app/python_win/python.exe -m pip install MetaTrader5 mt5linux
 
 # Copy the rest of the code
 COPY . /app

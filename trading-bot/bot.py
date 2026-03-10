@@ -37,6 +37,11 @@ class TradingBot:
         # SECTION 6 — Single Trading Cycle Structure
         self.log("--- STARTING SINGLE TRADING CYCLE ---")
 
+        # STEALTH EXECUTION: Randomize entry within the window (30-290s)
+        delay = random.randint(30, 290)
+        self.log(f"Stealth Delay Activated: Waiting {delay} seconds before execution...")
+        time.sleep(delay)
+
         # 1. State Recovery
         latest = self.db.get_latest_state()
         if latest:

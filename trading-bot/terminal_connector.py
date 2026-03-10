@@ -10,21 +10,21 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Exact path for GHA environment (STEP 6)
-        self.path = r"D:\a\Broker\Broker\mt5_terminal\terminal64.exe"
+        # Windows-style path as expected by the MetaTrader5 library running under Wine
+        self.path = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
     def connect(self):
         # SUPREME AUTHORITY LAYER: Connection Retry
         for attempt in range(5):
-            print(f"MT5 Virtual GUI connection attempt {attempt+1}/5")
+            print(f"MT5 Wine/GUI connection attempt {attempt+1}/5")
 
-            # STEP 6: Initialize MT5 using the explicit terminal path
+            # Initialize MT5 using the Windows path within the Wine environment
             if mt5.initialize(
                 path=self.path,
                 portable=True,
                 timeout=120000
             ):
-                print("MT5 IPC connection established within Virtual GUI session")
+                print("MT5 IPC connection established within Linux Wine session")
 
                 # Perform login separately after successful initialization
                 print(f"Authorizing account {self.login_id} on {self.server}...")
@@ -41,7 +41,7 @@ class TerminalConnector:
                     print(f"MT5 authorization failed: {mt5.last_error()}")
                     mt5.shutdown()
             else:
-                print("IPC initialization failed (Headless/GUI mismatch):", mt5.last_error())
+                print("IPC initialization failed (Linux/Wine mismatch):", mt5.last_error())
 
             time.sleep(15)
 

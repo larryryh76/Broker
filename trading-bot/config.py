@@ -46,4 +46,5 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 MODEL_DIR = os.path.join(BASE_DIR, "models")
 DATA_DIR = os.path.join(BASE_DIR, "data")
-TERMINAL_DIR = os.path.join(os.path.dirname(BASE_DIR), "mt5_terminal")
+# For Wine environment, we point to the actual MT5 installation folder
+TERMINAL_DIR = r"C:\Program Files\MetaTrader 5"

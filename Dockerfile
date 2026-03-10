@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     gnupg2 \
     ca-certificates \
+    git \
     xvfb \
     python3 \
     python3-pip \
@@ -28,7 +29,8 @@ RUN dpkg --add-architecture i386 && \
 
 # Install native Linux Python dependencies
 COPY trading-bot/requirements_linux.txt /app/requirements_linux.txt
-RUN pip3 install --no-cache-dir -r /app/requirements_linux.txt
+RUN pip3 install --no-cache-dir -r /app/requirements_linux.txt && \
+    pip3 install --no-cache-dir git+https://github.com/twopirllc/pandas-ta.git
 
 # Download MT5 and Windows Python Embedded (to avoid full installer)
 WORKDIR /app

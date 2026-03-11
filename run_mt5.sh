@@ -1,9 +1,6 @@
 #!/bin/bash
-
-# Start Xvfb virtual display
-echo "Starting Xvfb..."
-Xvfb :99 -screen 0 1024x768x16 &
 export DISPLAY=:99
+Xvfb :99 -screen 0 1024x768x16 &
 sleep 5
 
 # Initialize Wine prefix if it doesn't exist
@@ -11,6 +8,19 @@ if [ ! -d "$WINEPREFIX" ]; then
     echo "Initializing Wine prefix..."
     wineboot --init
     sleep 10
+fi
+
+# Pre-inject MT5 configuration (enable Algo Trading, seeded login)
+# This must happen BEFORE MT5 launches
+echo "Injecting MT5 headless configuration..."
+python3 /app/trading-bot/mt5_config_injector.py
+
+# Install MetaTrader 5 if not already present in the Wine prefix
+TERMINAL_PATH="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+if [ ! -f "$TERMINAL_PATH" ]; then
+    echo "Installing MetaTrader 5..."
+    wine /app/mt5setup.exe /auto /quit
+    sleep 45
 fi
 
 # Install pip and MT5 bridge dependencies inside Wine at runtime
@@ -21,25 +31,14 @@ if [ ! -f "/app/python_win/Scripts/pip.exe" ]; then
     wine /app/python_win/python.exe -m pip install MetaTrader5 mt5linux
 fi
 
-# Install MT5 if not already present in the Wine prefix
-TERMINAL_PATH="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
-if [ ! -f "$TERMINAL_PATH" ]; then
-    echo "Installing MetaTrader 5..."
-    wine /app/mt5setup.exe /auto /quit
-    # Wait for installation to complete
-    sleep 45
-fi
-
 # Launch MetaTrader 5 in the background via Wine
 echo "Launching MetaTrader 5..."
 wine "$TERMINAL_PATH" /portable /skipupdate &
-# Allow MT5 to fully initialize
 sleep 60
 
 # Launch the mt5linux bridge server inside Wine
 echo "Starting MT5 Bridge Server..."
 wine /app/python_win/python.exe /app/mt5_bridge.py &
-# Allow bridge to connect to MT5
 sleep 20
 
 # Run the Python trading bot using native Linux Python

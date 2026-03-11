@@ -42,7 +42,6 @@ RUN wget https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup
     unzip /app/python_win.zip -d /app/python_win
 
 # Fix Windows Embedded Python to allow imports from site-packages
-# This is required for pip-installed packages like MetaTrader5 and mt5linux
 RUN sed -i 's/#import site/import site/' /app/python_win/python310._pth
 
 # Set environment variables for Wine and Xvfb
@@ -50,14 +49,9 @@ ENV DISPLAY=:99
 ENV WINEPREFIX=/root/.wine
 ENV WINEDEBUG=-all
 
-# Install MetaTrader5 and mt5linux bridge on the Windows (Wine) side
-RUN wget https://bootstrap.pypa.io/get-pip.py -O /app/get-pip.py && \
-    xvfb-run -a wine /app/python_win/python.exe /app/get-pip.py && \
-    xvfb-run -a wine /app/python_win/python.exe -m pip install MetaTrader5 mt5linux
-
 # Copy the rest of the code
 COPY . /app
-RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/run_mt5.sh
 
-# Set the entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Set the entrypoint to the new startup script
+ENTRYPOINT ["/app/run_mt5.sh"]

@@ -4,7 +4,6 @@ from ai_model import AIModel
 from risk_management import RiskManagement
 from strategy import Strategy
 from db_client import DBClient
-from mt5_config_injector import inject_headless_config
 import time
 import os
 import random
@@ -17,7 +16,7 @@ class TradingBot:
         for d in ["logs", "trades", "signals"]:
             os.makedirs(os.path.join(config.BASE_DIR, d), exist_ok=True)
 
-        inject_headless_config()
+        # Config injection is now handled by the shell startup script
         self.db = DBClient()
         self.connector = TerminalConnector()
         self.ai_model = AIModel(db_client=self.db)
@@ -72,6 +71,12 @@ class TradingBot:
 
             self.risk_manager = RiskManagement(account, self.virtual_equity)
 
+            # Safety Circuit Breaker Evaluation (SECTION 9)
+            daily_start = latest.get("daily_start_equity", self.virtual_equity) if latest else self.virtual_equity
+            if self.risk_manager.check_circuit_breaker(daily_start):
+                self.log("SAFETY CIRCUIT BREAKER ACTIVE: 5% Daily Drawdown reached. Halting cycle.", category="engine")
+                return
+
             # 3. Market Analysis & Signal Generation
             self.manage_trades()
 
@@ -79,7 +84,7 @@ class TradingBot:
                 self.process_symbol(sym)
 
             # 4. Snapshot
-            self.snapshot(account)
+            self.snapshot(account, latest)
 
         except Exception as e:
             self.log(f"CYCLE ERROR: {e}")
@@ -152,13 +157,21 @@ class TradingBot:
                     "status": "OPEN", "order_id": res.order, "confidence": confidence
                 })
 
-    def snapshot(self, account):
+    def snapshot(self, account, latest_state):
         realized = self.db.get_total_realized_profit()
         self.virtual_equity = config.INITIAL_CAPITAL + realized
         for i, target in enumerate(config.TARGET_MULTIPLIER_SEQUENCE):
              if self.virtual_equity >= target: self.current_day = i + 2
+
+        # If it's a new day, update the daily start equity
+        daily_start = self.virtual_equity
+        if latest_state and latest_state.get("day_count") == self.current_day:
+            daily_start = latest_state.get("daily_start_equity", self.virtual_equity)
+
         self.db.save_state({
-            "day_count": self.current_day, "virtual_equity": self.virtual_equity,
+            "day_count": self.current_day,
+            "virtual_equity": self.virtual_equity,
+            "daily_start_equity": daily_start,
             "broker_balance": account["balance"]
         })
 

@@ -45,6 +45,6 @@ jobs:
             -e MT5_PASSWORD="${MT5_PASSWORD}" \
             -e MT5_SERVER="${MT5_SERVER}" \
             -e MONGODB_URI="${MONGODB_URI}" \
-            -v $(pwd)/wine_prefix:/root/.wine \
-            -v $(pwd)/mt5_terminal:/root/.mt5 \
+            -v $(pwd)/wine_prefix:/app/.wine \
+            -v $(pwd)/mt5_terminal:/app/.mt5 \
             mt5-trading-bot:latest

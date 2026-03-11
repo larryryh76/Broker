@@ -30,7 +30,7 @@ RUN dpkg --add-architecture i386 && \
 
 # Optimize Wine Environment (Production Settings)
 ENV DISPLAY=:99
-ENV WINEPREFIX=/root/.wine
+ENV WINEPREFIX=/app/.wine
 ENV WINEDEBUG=-all
 ENV WINEARCH=win64
 ENV WINEDLLOVERRIDES="mscoree,mshtml="

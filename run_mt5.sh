@@ -1,6 +1,9 @@
 #!/bin/bash
 export DISPLAY=:99
-export WINEPREFIX=/root/.wine
+export WINEPREFIX=/app/.wine
+
+# Ensure writable prefix
+mkdir -p $WINEPREFIX
 
 # Start Xvfb virtual display
 echo "Starting Xvfb..."

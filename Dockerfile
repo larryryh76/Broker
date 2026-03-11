@@ -5,30 +5,31 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV GIT_TERMINAL_PROMPT=0
 
-# Install dependencies for Wine, Xvfb, and native Python
-RUN apt-get update && apt-get install -y \
+# Enable 32-bit architecture and install Wine dependencies
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y \
     software-properties-common \
     git \
     wget \
     curl \
     gnupg2 \
     ca-certificates \
+    wine64 \
+    wine32 \
+    winbind \
     xvfb \
+    cabextract \
+    unzip \
+    fonts-wine \
     python3 \
     python3-pip \
     libvulkan1 \
-    cabextract \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Add WineHQ repository and install Wine
-RUN dpkg --add-architecture i386 && \
-    mkdir -pm 755 /etc/apt/keyrings && \
-    wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key && \
-    wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/jammy/winehq-jammy.sources && \
-    apt-get update && \
-    apt-get install -y --install-recommends winehq-stable && \
-    rm -rf /var/lib/apt/lists/*
+# Initialize Wine prefix during build
+ENV WINEPREFIX=/root/.wine
+RUN wineboot --init && sleep 10
 
 # Install native Linux Python dependencies
 COPY trading-bot/requirements_linux.txt /app/requirements_linux.txt

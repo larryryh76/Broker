@@ -34,7 +34,7 @@ WORKDIR /app
 
 # Optimize Wine Environment (Production Settings)
 ENV DISPLAY=:99
-ENV WINEPREFIX=/tmp/wine
+ENV WINEPREFIX=/home/botuser/.wine
 ENV WINEDEBUG=-all
 ENV WINEARCH=win64
 ENV WINEDLLOVERRIDES="mscoree,mshtml="

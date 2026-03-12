@@ -1,9 +1,9 @@
-name: Money Machine Linux Container Trading Cycle
+name: Autonomous AI Trading Machine
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 */4 * * *" # Every 4 hours for research & trade
 
 jobs:
   trade:
@@ -16,32 +16,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # SECTION 10 — Persistent Wine Environment Cache
-      - name: Cache Wine and MT5 Data
-        id: cache-wine
+      # Persistent Cache for Wine & Models
+      - name: Cache Persistent Data
+        id: cache-persistent
         uses: actions/cache@v4
         with:
           path: |
             wine_prefix/
             mt5_terminal/
-          key: wine-mt5-persistent-v2-${{ runner.os }}
+            trading-bot/models/
+          key: ai-machine-persistent-v1-${{ runner.os }}
 
-      - name: Build Docker Image
+      - name: Build Machine Image
         run: |
-          docker build -t mt5-trading-bot .
+          docker build -t ai-trading-machine .
 
-      - name: Run Trading Cycle in Linux Container
+      - name: Run Autonomous Cycle
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          # Create local directories for mounting if they don't exist
-          mkdir -p wine_prefix mt5_terminal
-          # Fix ownership for the container user (UID 1000 is common for non-root)
-          # We use 777 to guarantee writability regardless of container UID mapping
-          chmod -R 777 wine_prefix mt5_terminal
+          mkdir -p wine_prefix mt5_terminal trading-bot/models
+          chmod -R 777 wine_prefix mt5_terminal trading-bot/models
 
           docker run --rm \
             -e MT5_LOGIN="${MT5_LOGIN}" \
@@ -50,4 +48,15 @@ jobs:
             -e MONGODB_URI="${MONGODB_URI}" \
             -v $(pwd)/wine_prefix:/app/.wine \
             -v $(pwd)/mt5_terminal:/app/.mt5 \
-            mt5-trading-bot:latest
+            -v $(pwd)/trading-bot/models:/app/trading-bot/models \
+            ai-trading-machine:latest
+
+      - name: Upload Research Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: machine-results-${{ github.run_id }}
+          path: |
+            trading-bot/logs/
+            trading-bot/trades/
+            trading-bot/data/

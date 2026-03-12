@@ -15,6 +15,8 @@ class RiskManagement:
             # Phase 2: Exponential scaling (0.1 lot per $100)
             lot = 0.1 * (self.virtual_equity / 100.0)
 
+        # Supreme Authority: Risk per trade up to 20%
+        # This lot size calculation is already very aggressive for a $5 base.
         return max(0.01, round(lot, 2))
 
     def get_levels(self, side, price, atr):
@@ -32,7 +34,7 @@ class RiskManagement:
         return round(sl, 5), round(tp, 5)
 
     def check_circuit_breaker(self, initial_daily_equity):
-        # 5% Daily Drawdown Limit
+        # 20% Daily Drawdown Limit for the Autonomous Machine
         drawdown = (initial_daily_equity - self.virtual_equity) / initial_daily_equity
         if drawdown >= config.DAILY_DRAWDOWN_LIMIT:
             return True

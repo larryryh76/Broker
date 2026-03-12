@@ -34,7 +34,7 @@ WORKDIR /app
 
 # Optimize Wine Environment (Production Settings)
 ENV DISPLAY=:99
-ENV WINEPREFIX=/app/.wine
+ENV WINEPREFIX=/tmp/wine
 ENV WINEDEBUG=-all
 ENV WINEARCH=win64
 ENV WINEDLLOVERRIDES="mscoree,mshtml="
@@ -49,8 +49,16 @@ RUN wget https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup
     wget https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip -O /app/python_win.zip && \
     unzip /app/python_win.zip -d /app/python_win
 
-# Fix Windows Embedded Python
+# Fix Windows Embedded Python to allow imports from site-packages
 RUN sed -i 's/#import site/import site/' /app/python_win/python310._pth
+
+# Pre-install bridge dependencies into Wine Python (using temporary prefix)
+RUN Xvfb :99 -screen 0 1024x768x16 & export DISPLAY=:99 && \
+    WINEPREFIX=/tmp/wine_build wineboot --init && \
+    wget https://bootstrap.pypa.io/get-pip.py -O /app/get-pip.py && \
+    wine /app/python_win/python.exe /app/get-pip.py && \
+    wine /app/python_win/python.exe -m pip install MetaTrader5 mt5linux pywin32 && \
+    rm -rf /tmp/wine_build /app/get-pip.py
 
 # Copy the rest of the code
 COPY . /app

@@ -12,21 +12,16 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Windows-style path as expected by the MetaTrader5 library running under Wine
-        self.path = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
     def connect(self):
         # SUPREME AUTHORITY LAYER: Connection Retry
+        # For mt5linux, we use default connection parameters (localhost:18812)
         for attempt in range(5):
-            print(f"MT5 Wine/GUI connection attempt {attempt+1}/5")
+            print(f"MT5 Linux Bridge connection attempt {attempt+1}/5")
 
-            # Initialize MT5 using the Windows path within the Wine environment
-            if mt5.initialize(
-                path=self.path,
-                portable=True,
-                timeout=120000
-            ):
-                print("MT5 IPC connection established within Linux Wine session")
+            # Initialize MT5 via the bridge
+            if mt5.initialize():
+                print("MT5 IPC connection established via Linux Bridge")
 
                 # Perform login separately after successful initialization
                 print(f"Authorizing account {self.login_id} on {self.server}...")
@@ -43,7 +38,7 @@ class TerminalConnector:
                     print(f"MT5 authorization failed: {mt5.last_error()}")
                     mt5.shutdown()
             else:
-                print("IPC initialization failed (Linux/Wine mismatch):", mt5.last_error())
+                print("Bridge connection failed:", mt5.last_error())
 
             time.sleep(15)
 

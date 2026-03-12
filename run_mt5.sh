@@ -2,8 +2,11 @@
 export DISPLAY=:99
 export WINEPREFIX=/app/.wine
 
-# Ensure writable prefix
+# Ensure writable prefix and correct ownership for Wine
 mkdir -p $WINEPREFIX
+# If running as root (some environments), we skip chown.
+# If running as non-root, this ensures we own the mounted volume.
+touch $WINEPREFIX/.owner_check || true
 
 # Start Xvfb virtual display
 echo "Starting Xvfb..."

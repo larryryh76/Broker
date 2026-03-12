@@ -39,6 +39,9 @@ jobs:
         run: |
           # Create local directories for mounting if they don't exist
           mkdir -p wine_prefix mt5_terminal
+          # Fix ownership for the container user (UID 1000 is common for non-root)
+          # We use 777 to guarantee writability regardless of container UID mapping
+          chmod -R 777 wine_prefix mt5_terminal
 
           docker run --rm \
             -e MT5_LOGIN="${MT5_LOGIN}" \

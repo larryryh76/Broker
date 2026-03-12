@@ -28,6 +28,10 @@ RUN dpkg --add-architecture i386 && \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a dedicated non-root user for Wine
+RUN useradd -m botuser
+WORKDIR /app
+
 # Optimize Wine Environment (Production Settings)
 ENV DISPLAY=:99
 ENV WINEPREFIX=/app/.wine
@@ -41,7 +45,6 @@ RUN pip3 install --no-cache-dir -r /app/requirements_linux.txt && \
     pip3 install --no-cache-dir pandas-ta-classic
 
 # Download MT5 and Windows Python Embedded
-WORKDIR /app
 RUN wget https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe -O /app/mt5setup.exe && \
     wget https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip -O /app/python_win.zip && \
     unzip /app/python_win.zip -d /app/python_win
@@ -51,7 +54,9 @@ RUN sed -i 's/#import site/import site/' /app/python_win/python310._pth
 
 # Copy the rest of the code
 COPY . /app
-RUN chmod +x /app/run_mt5.sh
+RUN chmod +x /app/run_mt5.sh && chown -R botuser:botuser /app
+
+USER botuser
 
 # Set the entrypoint to the startup script
 ENTRYPOINT ["/app/run_mt5.sh"]

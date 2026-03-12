@@ -1,41 +1,33 @@
 #!/bin/bash
-export DISPLAY=:99
+
+# SECTION 11 — INFRASTRUCTURE STABILIZATION FIXES
 export WINEPREFIX=/app/.wine
+export WINEARCH=win64
+export DISPLAY=:99
 
-# Ensure writable prefix and correct ownership for Wine
-mkdir -p $WINEPREFIX
-# If running as root (some environments), we skip chown.
-# If running as non-root, this ensures we own the mounted volume.
-touch $WINEPREFIX/.owner_check || true
+# 1. Fix Xvfb display permissions
+echo "Setting up Xvfb permissions..."
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
 
-# Start Xvfb virtual display
+# 2. Start Xvfb virtual display
 echo "Starting Xvfb..."
 Xvfb :99 -screen 0 1024x768x16 &
 sleep 5
 
-# Initialize Wine prefix if it's completely empty (not just dir exists)
-if [ -z "$(ls -A $WINEPREFIX 2>/dev/null)" ]; then
-    echo "Initializing new Wine prefix..."
-    wineboot --init
-    sleep 10
-fi
+# 3. Recreate Wine prefix to solve ownership/corruption errors
+echo "Recreating Wine prefix..."
+rm -rf $WINEPREFIX
+wineboot --init
+# Ensure full permissions for the non-root botuser
+chmod -R 777 $WINEPREFIX
+sleep 10
 
-# Pre-inject MT5 configuration
+# 4. Pre-inject MT5 configuration
 echo "Injecting MT5 headless configuration..."
 python3 /app/trading-bot/mt5_config_injector.py
 
-# Detect persistent MT5 installation
-TERMINAL_PATH="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
-
-if [ ! -f "$TERMINAL_PATH" ]; then
-    echo "First-time setup: Installing MetaTrader 5..."
-    wine /app/mt5setup.exe /auto /quit
-    sleep 60
-else
-    echo "Persistent MT5 detected at $TERMINAL_PATH"
-fi
-
-# Install pip and MT5 bridge if missing in persistent Python
+# 5. Runtime dependencies and MT5 Setup
 if [ ! -f "/app/python_win/Scripts/pip.exe" ]; then
     echo "Configuring Windows Python Bridge..."
     wget https://bootstrap.pypa.io/get-pip.py -O /app/get-pip.py
@@ -43,16 +35,26 @@ if [ ! -f "/app/python_win/Scripts/pip.exe" ]; then
     wine /app/python_win/python.exe -m pip install MetaTrader5 mt5linux
 fi
 
-# Launch MetaTrader 5
+# Ensure terminal exists (from persistent cache or fresh install)
+# Note: User requested wine /app/mt5_terminal/terminal64.exe /portable &
+TERMINAL_PATH="/app/mt5_terminal/terminal64.exe"
+if [ ! -f "$TERMINAL_PATH" ]; then
+    echo "Installing MetaTrader 5..."
+    wine /app/mt5setup.exe /auto /quit
+    sleep 60
+fi
+
+# 6. Launch MT5 before bridge server
 echo "Launching MetaTrader 5..."
 wine "$TERMINAL_PATH" /portable /skipupdate &
-sleep 45
+# Allow MT5 to fully stabilize
+sleep 60
 
-# Launch the mt5linux bridge server
+# 7. Launch the mt5linux bridge server
 echo "Starting MT5 Bridge Server..."
 wine /app/python_win/python.exe /app/mt5_bridge.py &
 
-# ROBUST HANDSHAKING: Wait for port 18812 to be ready
+# 8. ROBUST HANDSHAKING: Wait for port 18812 to be ready
 echo "Waiting for bridge server to respond on port 18812..."
 MAX_RETRIES=30
 COUNT=0
@@ -66,6 +68,6 @@ while ! nc -z localhost 18812; do
 done
 echo "Bridge server is READY."
 
-# Run the Python trading bot
-echo "Starting Trading Bot Engine..."
+# 9. Run the Python autonomous trading machine
+echo "Starting Autonomous AI Machine Engine..."
 python3 /app/trading-bot/bot.py

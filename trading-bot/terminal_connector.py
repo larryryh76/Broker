@@ -1,8 +1,6 @@
 import os
 import time
-# Use mt5linux as a bridge for Linux-native execution
-from mt5linux import MetaTrader5
-mt5 = MetaTrader5()
+import MetaTrader5 as mt5
 import pandas as pd
 import config
 from datetime import datetime, timedelta
@@ -12,37 +10,32 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
+        # Standard local path for GHA foundation
+        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
 
     def connect(self):
-        # SUPREME AUTHORITY LAYER: Connection Retry
-        # For mt5linux, we use default connection parameters (localhost:18812)
-        for attempt in range(5):
-            print(f"MT5 Linux Bridge connection attempt {attempt+1}/5")
+        print(f"Connecting to MT5 at {self.path}...")
 
-            # Initialize MT5 via the bridge
-            if mt5.initialize():
-                print("MT5 IPC connection established via Linux Bridge")
+        # Initialize MT5 directly (native foundation)
+        if not mt5.initialize(path=self.path, timeout=120000, portable=True):
+            print(f"mt5.initialize() failed, error code = {mt5.last_error()}")
+            return False
 
-                # Perform login separately after successful initialization
-                print(f"Authorizing account {self.login_id} on {self.server}...")
-                authorized = mt5.login(
-                    login=int(self.login_id),
-                    password=self.password,
-                    server=self.server
-                )
+        print("MT5 library initialized. Attempting login...")
 
-                if authorized:
-                    print(f"MT5 session fully authorized")
-                    return True
-                else:
-                    print(f"MT5 authorization failed: {mt5.last_error()}")
-                    mt5.shutdown()
-            else:
-                print("Bridge connection failed:", mt5.last_error())
+        authorized = mt5.login(
+            login=int(self.login_id),
+            password=self.password,
+            server=self.server
+        )
 
-            time.sleep(15)
-
-        return False
+        if authorized:
+            print(f"Logged in successfully to {self.server} (Account: {self.login_id})")
+            return True
+        else:
+            print(f"Failed to login, error code = {mt5.last_error()}")
+            mt5.shutdown()
+            return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]
@@ -82,20 +75,13 @@ class TerminalConnector:
             "tp": float(tp),
             "deviation": 20,
             "magic": 123456,
-            "comment": "Money Machine Bot",
+            "comment": "Foundation Bot",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
 
-        # Retry trade execution if needed
-        for i in range(3):
-            result = mt5.order_send(request)
-            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                return result
-            print(f"Execution failed (Attempt {i+1}/3): {result.comment if result else 'No result'}")
-            time.sleep(2)
-
-        return None
+        result = mt5.order_send(request)
+        return result
 
     def get_open_positions(self):
         positions = mt5.positions_get(magic=123456)
@@ -128,7 +114,7 @@ class TerminalConnector:
             "price": float(price),
             "deviation": 20,
             "magic": 123456,
-            "comment": "Money Machine Close",
+            "comment": "Foundation Close",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
@@ -142,4 +128,4 @@ class TerminalConnector:
 
     def disconnect(self):
         mt5.shutdown()
-        print("MT5 session closed.")
+        print("MT5 foundation shutdown.")

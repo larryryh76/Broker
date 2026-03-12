@@ -1,62 +1,85 @@
-name: Autonomous AI Trading Machine
+name: Foundation MT5 Snapshot Cycle
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */4 * * *" # Every 4 hours for research & trade
+    - cron: "*/15 * * * *" # Trigger every 15 minutes
 
 jobs:
-  trade:
-    runs-on: ubuntu-latest
+  foundation-cycle:
+    runs-on: windows-latest # Stable native foundation
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      # Persistent Cache for Wine & Models
-      - name: Cache Persistent Data
-        id: cache-persistent
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install MetaTrader5 pandas pymongo python-dotenv
+
+      - name: Setup Headless Display (Mesa3D)
+        uses: pyvista/setup-headless-display-action@v3
+        with:
+          mesa3d-release: '24.3.0'
+
+      - name: Cache MT5 Terminal
+        id: cache-mt5
         uses: actions/cache@v4
         with:
-          path: |
-            wine_prefix/
-            mt5_terminal/
-            trading-bot/models/
-          key: ai-machine-persistent-v1-${{ runner.os }}
+          path: mt5_terminal
+          key: mt5-terminal-v2
 
-      - name: Build Machine Image
+      - name: Download and Install MT5 (if not cached)
+        if: steps.cache-mt5.outputs.cache-hit != 'true'
+        shell: powershell
         run: |
-          docker build -t ai-trading-machine .
+          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal"
+          if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
+          # Using FBS installer as a standard broker-native stable base
+          $url = "https://download.mql5.com/cdn/web/fbs.markets.inc/mt5/fbs5setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$dir\setup.exe"
+          Start-Process -FilePath "$dir\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$dir" -Wait
+          Write-Host "MT5 Terminal installed to $dir"
 
-      - name: Run Autonomous Cycle
+      - name: Pre-seed Headless Config
+        shell: powershell
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+        run: |
+          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal\config"
+          if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
+
+          # Inject common.ini for Experts/Algo-trading
+          $commonIni = "[Common]`r`nExpertsEnable=1`r`nExpertsDllImport=1`r`nWebLogin=0`r`nNewsEnable=0"
+          Set-Content -Path "$dir\common.ini" -Value $commonIni
+
+          # Inject terminal.ini for login bypass
+          $terminalIni = "[Common]`r`nLogin=$env:MT5_LOGIN`r`nPassword=$env:MT5_PASSWORD`r`nServer=$env:MT5_SERVER`r`nKeepPrivate=0`r`nEnableNews=0`r`n`r`n[Charts]`r`nMaxBars=100000"
+          Set-Content -Path "$dir\terminal.ini" -Value $terminalIni
+
+      - name: Run Foundation Cycle
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          mkdir -p wine_prefix mt5_terminal trading-bot/models
-          chmod -R 777 wine_prefix mt5_terminal trading-bot/models
+          cd trading-bot
+          python bot.py
 
-          docker run --rm \
-            -e MT5_LOGIN="${MT5_LOGIN}" \
-            -e MT5_PASSWORD="${MT5_PASSWORD}" \
-            -e MT5_SERVER="${MT5_SERVER}" \
-            -e MONGODB_URI="${MONGODB_URI}" \
-            -v $(pwd)/wine_prefix:/home/botuser/.wine \
-            -v $(pwd)/mt5_terminal:/app/mt5_terminal \
-            -v $(pwd)/trading-bot/models:/app/trading-bot/models \
-            ai-trading-machine:latest
-
-      - name: Upload Research Artifacts
+      - name: Upload Logs and Snapshots
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: machine-results-${{ github.run_id }}
+          name: foundation-artifacts-${{ github.run_id }}
           path: |
             trading-bot/logs/
-            trading-bot/trades/
-            trading-bot/data/
+            trading-bot/snapshots/

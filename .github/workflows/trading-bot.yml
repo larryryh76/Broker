@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install MetaTrader5 pandas pymongo python-dotenv
+          pip install MetaTrader5 pandas pymongo python-dotenv psutil
 
       - name: Setup Headless Display (Mesa3D)
         uses: pyvista/setup-headless-display-action@v3
@@ -33,7 +33,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: mt5_terminal
-          key: mt5-terminal-v2
+          key: mt5-terminal-v4
 
       - name: Download and Install MT5 (if not cached)
         if: steps.cache-mt5.outputs.cache-hit != 'true'
@@ -65,6 +65,18 @@ jobs:
           $terminalIni = "[Common]`r`nLogin=$env:MT5_LOGIN`r`nPassword=$env:MT5_PASSWORD`r`nServer=$env:MT5_SERVER`r`nKeepPrivate=0`r`nEnableNews=0`r`n`r`n[Charts]`r`nMaxBars=100000"
           Set-Content -Path "$dir\terminal.ini" -Value $terminalIni
 
+      # SECTION 10 — Start MT5 Terminal before Python (to avoid IPC timeout)
+      - name: Start MT5 Terminal
+        shell: powershell
+        run: |
+          $mt5Path = "$env:GITHUB_WORKSPACE\mt5_terminal\terminal64.exe"
+          Write-Host "Starting MT5 from $mt5Path"
+          # Launch in portable mode with config pre-seeded
+          Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/skipupdate"
+          # Wait longer for stabilizer (120s)
+          Write-Host "Waiting 120s for MT5 to stabilize..."
+          Start-Sleep -Seconds 120
+
       - name: Run Foundation Cycle
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
@@ -74,6 +86,14 @@ jobs:
         run: |
           cd trading-bot
           python bot.py
+
+      # SECTION 11 — Kill MT5 process (to release file locks for caching)
+      - name: Cleanup MT5 Process
+        if: always()
+        shell: powershell
+        run: |
+          Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force
+          Write-Host "MT5 Terminal process terminated."
 
       - name: Upload Logs and Snapshots
         uses: actions/upload-artifact@v4

@@ -14,15 +14,37 @@ class TerminalConnector:
         self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
 
     def connect(self):
-        print(f"Connecting to MT5 at {self.path}...")
+        print(f"Connecting to MT5 library using terminal at: {self.path}")
 
-        # Initialize MT5 directly (native foundation)
-        if not mt5.initialize(path=self.path, timeout=120000, portable=True):
-            print(f"mt5.initialize() failed, error code = {mt5.last_error()}")
+        # SUPREME AUTHORITY LAYER: Robust IPC Handshake Loop
+        # Sometimes mt5.initialize fails with timeout even if path is correct.
+        # We retry 5 times with increasing wait.
+        connected = False
+        for attempt in range(1, 6):
+            print(f"MT5 Initialization attempt {attempt}/5...")
+            # SECTION 4 — MT5 Initialization
+            # Since MT5 is launched by GHA workflow, we attach to it.
+            # 120000 ms = 120 seconds timeout for the library wait.
+            if mt5.initialize(path=self.path, timeout=120000, portable=True):
+                print("MT5 library initialized successfully.")
+                connected = True
+                break
+
+            error = mt5.last_error()
+            print(f"mt5.initialize() failed (Attempt {attempt}): {error}")
+
+            if attempt < 5:
+                wait_time = 15 * attempt
+                print(f"Waiting {wait_time}s before next attempt...")
+                time.sleep(wait_time)
+
+        if not connected:
+            print("CRITICAL: Failed to establish IPC connection after 5 attempts.")
             return False
 
-        print("MT5 library initialized. Attempting login...")
+        print("Attempting login...")
 
+        # SECTION 5 — Login Automatically (Separate from initialize)
         authorized = mt5.login(
             login=int(self.login_id),
             password=self.password,
@@ -127,5 +149,6 @@ class TerminalConnector:
         return [d._asdict() for d in deals if d.magic == 123456]
 
     def disconnect(self):
+        # SECTION 7 — Safe Shutdown
         mt5.shutdown()
         print("MT5 foundation shutdown.")

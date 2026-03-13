@@ -2,9 +2,9 @@ import os
 import config
 
 def inject_headless_config():
-    # Use the Wine filesystem path for configuration injection since the script runs natively on Linux
-    terminal_dir = "/home/botuser/.wine/drive_c/Program Files/MetaTrader 5"
-    config_dir = os.path.join(terminal_dir, "config")
+    # SECTION 3 — Headless Login Configuration (Native Foundation)
+    # Target the repository-local config folder
+    config_dir = os.path.join(config.TERMINAL_DIR, "config")
 
     if not os.path.exists(config_dir):
         try:
@@ -12,7 +12,7 @@ def inject_headless_config():
         except:
             return
 
-    # common.ini for Experts
+    # common.ini for Experts/Algo-trading
     common_path = os.path.join(config_dir, "common.ini")
     with open(common_path, "w") as f:
         f.write("[Common]\nExpertsEnable=1\nExpertsDllImport=1\nWebLogin=0\nNewsEnable=0\n")

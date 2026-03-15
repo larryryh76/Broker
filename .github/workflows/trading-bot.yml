@@ -58,6 +58,18 @@ jobs:
           $terminalIni = "[Common]`r`nLogin=$env:MT5_LOGIN`r`nPassword=$env:MT5_PASSWORD`r`nServer=$env:MT5_SERVER`r`nKeepPrivate=0`r`nEnableNews=0`r`n`r`n[Charts]`r`nMaxBars=100000"
           Set-Content -Path "$dir\terminal.ini" -Value $terminalIni
 
+      # SECTION 10 — Start MT5 Terminal before Python (to avoid IPC timeout)
+      - name: Start MT5 Terminal
+        shell: powershell
+        run: |
+          $mt5Path = "$env:GITHUB_WORKSPACE\mt5_terminal\terminal64.exe"
+          Write-Host "Starting MT5 from $mt5Path"
+          # Launch in portable mode with config pre-seeded
+          Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/skipupdate"
+          # Wait longer for stabilizer (120s)
+          Write-Host "Waiting 120s for MT5 to stabilize..."
+          Start-Sleep -Seconds 120
+
       - name: Run Foundation Cycle
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}

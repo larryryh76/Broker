@@ -1,6 +1,6 @@
 import os
 import time
-import MetaTrader5 as mt5
+from mt5linux import MetaTrader5
 import pandas as pd
 import config
 from datetime import datetime, timedelta
@@ -10,63 +10,55 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Standard local path for GHA foundation
-        self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
+        # Bridge configuration for Docker-based mt5linux
+        self.mt5 = MetaTrader5(host='localhost', port=8001)
 
     def connect(self):
-        print("Connecting to already running MT5 terminal instance...")
+        print("Connecting to mt5linux bridge at localhost:8001...")
 
-        # SUPREME AUTHORITY LAYER: Attach to running terminal
         connected = False
         for attempt in range(1, 6):
-            print(f"MT5 Initialization attempt {attempt}/5...")
-            # SECTION 4 — MT5 Initialization (Attach only)
-            if mt5.initialize():
-                print("MT5 library initialized/attached successfully.")
+            print(f"Bridge connection attempt {attempt}/5...")
+            if self.mt5.initialize():
+                print("Connected to mt5linux bridge successfully.")
                 connected = True
                 break
 
-            error = mt5.last_error()
-            print(f"mt5.initialize() failed (Attempt {attempt}): {error}")
-
+            print(f"Failed to connect to bridge (Attempt {attempt})")
             if attempt < 5:
-                wait_time = 15 * attempt
-                print(f"Waiting {wait_time}s before next attempt...")
-                time.sleep(wait_time)
+                time.sleep(10)
 
         if not connected:
-            print("CRITICAL: Failed to establish IPC connection after 5 attempts.")
+            print("CRITICAL: Failed to connect to bridge after 5 attempts.")
             return False
 
-        print("Attempting login...")
-
-        # SECTION 5 — Login Automatically (Separate from initialize)
-        authorized = mt5.login(
+        print("Attempting login via bridge...")
+        authorized = self.mt5.login(
             login=int(self.login_id),
             password=self.password,
             server=self.server
         )
 
         if authorized:
-            print(f"Logged in successfully to {self.server} (Account: {self.login_id})")
+            print(f"Logged in successfully via bridge to {self.server}")
             return True
         else:
-            print(f"Failed to login, error code = {mt5.last_error()}")
-            mt5.shutdown()
+            print("Failed to login via bridge.")
+            self.mt5.shutdown()
             return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]
         for candidate in candidates:
-            if mt5.symbol_select(candidate, True):
+            if self.mt5.symbol_select(candidate, True):
                 return candidate
         return symbol
 
     def get_candles(self, symbol, timeframe, count=1000):
         symbol = self.map_symbol(symbol)
-        tf_map = {"M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
+        tf_map = {"M5": self.mt5.TIMEFRAME_M5, "M15": self.mt5.TIMEFRAME_M15, "H1": self.mt5.TIMEFRAME_H1}
 
-        rates = mt5.copy_rates_from_pos(symbol, tf_map.get(timeframe, mt5.TIMEFRAME_M5), 0, count)
+        rates = self.mt5.copy_rates_from_pos(symbol, tf_map.get(timeframe, self.mt5.TIMEFRAME_M5), 0, count)
         if rates is None:
             return None
 
@@ -75,16 +67,16 @@ class TerminalConnector:
         return df
 
     def get_account_info(self):
-        info = mt5.account_info()
+        info = self.mt5.account_info()
         return info._asdict() if info else None
 
     def execute_order(self, symbol, side, lot, sl, tp):
         symbol = self.map_symbol(symbol)
-        order_type = mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL
-        price = mt5.symbol_info_tick(symbol).ask if side == "BUY" else mt5.symbol_info_tick(symbol).bid
+        order_type = self.mt5.ORDER_TYPE_BUY if side == "BUY" else self.mt5.ORDER_TYPE_SELL
+        price = self.mt5.symbol_info_tick(symbol).ask if side == "BUY" else self.mt5.symbol_info_tick(symbol).bid
 
         request = {
-            "action": mt5.TRADE_ACTION_DEAL,
+            "action": self.mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
             "volume": float(lot),
             "type": order_type,
@@ -94,37 +86,37 @@ class TerminalConnector:
             "deviation": 20,
             "magic": 123456,
             "comment": "Foundation Bot",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_time": self.mt5.ORDER_TIME_GTC,
+            "type_filling": self.mt5.ORDER_FILLING_IOC,
         }
 
-        result = mt5.order_send(request)
+        result = self.mt5.order_send(request)
         return result
 
     def get_open_positions(self):
-        positions = mt5.positions_get(magic=123456)
+        positions = self.mt5.positions_get(magic=123456)
         return [p._asdict() for p in positions] if positions else []
 
     def modify_sl(self, ticket, new_sl, tp):
         request = {
-            "action": mt5.TRADE_ACTION_SLTP,
+            "action": self.mt5.TRADE_ACTION_SLTP,
             "position": ticket,
             "sl": float(new_sl),
             "tp": float(tp)
         }
-        return mt5.order_send(request)
+        return self.mt5.order_send(request)
 
     def close_position(self, ticket):
-        pos = mt5.positions_get(ticket=ticket)
+        pos = self.mt5.positions_get(ticket=ticket)
         if not pos: return False
         p = pos[0]
         symbol = p.symbol
         lot = p.volume
-        order_type = mt5.ORDER_TYPE_SELL if p.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
-        price = mt5.symbol_info_tick(symbol).bid if order_type == mt5.ORDER_TYPE_SELL else mt5.symbol_info_tick(symbol).ask
+        order_type = self.mt5.ORDER_TYPE_SELL if p.type == self.mt5.POSITION_TYPE_BUY else self.mt5.ORDER_TYPE_BUY
+        price = self.mt5.symbol_info_tick(symbol).bid if order_type == self.mt5.ORDER_TYPE_SELL else self.mt5.symbol_info_tick(symbol).ask
 
         request = {
-            "action": mt5.TRADE_ACTION_DEAL,
+            "action": self.mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
             "volume": float(lot),
             "type": order_type,
@@ -133,18 +125,18 @@ class TerminalConnector:
             "deviation": 20,
             "magic": 123456,
             "comment": "Foundation Close",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_time": self.mt5.ORDER_TIME_GTC,
+            "type_filling": self.mt5.ORDER_FILLING_IOC,
         }
-        return mt5.order_send(request)
+        return self.mt5.order_send(request)
 
     def get_closed_deals(self):
         from_date = datetime.now() - timedelta(hours=24)
-        deals = mt5.history_deals_get(from_date, datetime.now())
+        deals = self.mt5.history_deals_get(from_date, datetime.now())
         if deals is None: return []
         return [d._asdict() for d in deals if d.magic == 123456]
 
     def disconnect(self):
         # SECTION 7 — Safe Shutdown
-        mt5.shutdown()
+        self.mt5.shutdown()
         print("MT5 foundation shutdown.")

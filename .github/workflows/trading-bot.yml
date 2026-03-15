@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      # SECTION 12 — Docker-based MT5 Environment
+      # SECTION 12 — Custom MT5 Headless Environment
       mt5:
-        image: gjsm/mt5:latest
+        image: ghcr.io/${{ github.repository_owner }}/mt5-headless:latest
         ports:
           - 8001:8001
         env:

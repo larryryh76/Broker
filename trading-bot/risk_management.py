@@ -9,8 +9,8 @@ class RiskManagement:
         # Hyper-Compounding Logic
         # Targets: $5 -> $50 (Day 1) -> $250 (Day 2) -> $1500 (Day 3)
         if self.virtual_equity < config.COMPOUNDING_THRESHOLD:
-            # Phase 1: Micro-lot scaling (0.01 lot per $5)
-            lot = 0.01 * max(1, int(self.virtual_equity / 5.0))
+            # Phase 1: Micro-lot enforcement (0.01 lot until $50 as per brief)
+            lot = 0.01
         else:
             # Phase 2: Exponential scaling (0.1 lot per $100)
             lot = 0.1 * (self.virtual_equity / 100.0)

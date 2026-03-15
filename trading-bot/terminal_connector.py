@@ -14,23 +14,15 @@ class TerminalConnector:
         self.path = os.path.abspath(os.path.join(config.TERMINAL_DIR, "terminal64.exe"))
 
     def connect(self):
-        print(f"Connecting to MT5 library using terminal at: {self.path}")
+        print("Connecting to already running MT5 terminal instance...")
 
-        # SUPREME AUTHORITY LAYER: Robust IPC Handshake Loop
-        # MT5 Unified Initialization: launch and login in one call.
+        # SUPREME AUTHORITY LAYER: Attach to running terminal
         connected = False
         for attempt in range(1, 6):
-            print(f"MT5 Unified Initialization attempt {attempt}/5...")
-            # 120000 ms = 120 seconds timeout for the library wait.
-            if mt5.initialize(
-                path=self.path,
-                login=int(self.login_id),
-                password=self.password,
-                server=self.server,
-                timeout=120000,
-                portable=True
-            ):
-                print(f"MT5 initialized and logged in successfully to {self.server} (Account: {self.login_id})")
+            print(f"MT5 Initialization attempt {attempt}/5...")
+            # SECTION 4 — MT5 Initialization (Attach only)
+            if mt5.initialize():
+                print("MT5 library initialized/attached successfully.")
                 connected = True
                 break
 
@@ -46,7 +38,22 @@ class TerminalConnector:
             print("CRITICAL: Failed to establish IPC connection after 5 attempts.")
             return False
 
-        return True
+        print("Attempting login...")
+
+        # SECTION 5 — Login Automatically (Separate from initialize)
+        authorized = mt5.login(
+            login=int(self.login_id),
+            password=self.password,
+            server=self.server
+        )
+
+        if authorized:
+            print(f"Logged in successfully to {self.server} (Account: {self.login_id})")
+            return True
+        else:
+            print(f"Failed to login, error code = {mt5.last_error()}")
+            mt5.shutdown()
+            return False
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]

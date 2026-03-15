@@ -80,14 +80,6 @@ jobs:
           cd trading-bot
           python bot.py
 
-      # SECTION 11 — Kill MT5 process (to release file locks for caching)
-      - name: Cleanup MT5 Process
-        if: always()
-        shell: powershell
-        run: |
-          Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force
-          Write-Host "MT5 Terminal process terminated."
-
       - name: Upload Logs and Snapshots
         uses: actions/upload-artifact@v4
         if: always()
@@ -96,3 +88,11 @@ jobs:
           path: |
             trading-bot/logs/
             trading-bot/snapshots/
+
+      # SECTION 11 — Kill MT5 process (to release file locks for caching)
+      - name: Cleanup MT5 Process
+        if: always()
+        shell: powershell
+        run: |
+          Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force
+          Write-Host "MT5 Terminal process terminated."

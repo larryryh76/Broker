@@ -1,4 +1,4 @@
-MetaTrader5==5.0.5640
+mt5linux
 psutil==5.9.8
 numpy==2.2.6
 pandas==2.2.2

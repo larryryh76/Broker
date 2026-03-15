@@ -1,13 +1,24 @@
-name: Foundation MT5 Snapshot Cycle
+name: Foundation MT5 Snapshot Cycle (Docker/mt5linux)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *" # Trigger every 15 minutes
+    - cron: "*/15 * * * *"
 
 jobs:
   foundation-cycle:
-    runs-on: windows-latest # Stable native foundation
+    runs-on: ubuntu-latest
+
+    services:
+      # SECTION 12 — Docker-based MT5 Environment
+      mt5:
+        image: gjsm/mt5:latest
+        ports:
+          - 8001:8001
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
     steps:
       - name: Checkout Code
@@ -21,54 +32,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install MetaTrader5 pandas numpy python-dotenv pymongo psutil scikit-learn joblib requests
+          pip install -r trading-bot/requirements.txt
           python -m pip list
 
-      - name: Setup Headless Display (Mesa3D)
-        uses: pyvista/setup-headless-display-action@v3
-        with:
-          mesa3d-release: '24.3.0'
-
-      - name: Download and Install MT5
-        shell: powershell
+      - name: Wait for MT5 Bridge
         run: |
-          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal"
-          if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
-          # Using FBS installer as a standard broker-native stable base
-          $url = "https://download.mql5.com/cdn/web/fbs.markets.inc/mt5/fbs5setup.exe"
-          Invoke-WebRequest -Uri $url -OutFile "$dir\setup.exe"
-          Start-Process -FilePath "$dir\setup.exe" -ArgumentList "/auto", "/quit", "/portable", "/path:$dir" -Wait
-          Write-Host "MT5 Terminal installed to $dir"
-
-      - name: Pre-seed Headless Config
-        shell: powershell
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
-        run: |
-          $dir = "$env:GITHUB_WORKSPACE\mt5_terminal\config"
-          if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir }
-
-          # Inject common.ini for Experts/Algo-trading
-          $commonIni = "[Common]`r`nExpertsEnable=1`r`nExpertsDllImport=1`r`nWebLogin=0`r`nNewsEnable=0"
-          Set-Content -Path "$dir\common.ini" -Value $commonIni
-
-          # Inject terminal.ini for login bypass
-          $terminalIni = "[Common]`r`nLogin=$env:MT5_LOGIN`r`nPassword=$env:MT5_PASSWORD`r`nServer=$env:MT5_SERVER`r`nKeepPrivate=0`r`nEnableNews=0`r`n`r`n[Charts]`r`nMaxBars=100000"
-          Set-Content -Path "$dir\terminal.ini" -Value $terminalIni
-
-      # SECTION 10 — Start MT5 Terminal before Python (to avoid IPC timeout)
-      - name: Start MT5 Terminal
-        shell: powershell
-        run: |
-          $mt5Path = "$env:GITHUB_WORKSPACE\mt5_terminal\terminal64.exe"
-          Write-Host "Starting MT5 from $mt5Path"
-          # Launch in portable mode with config pre-seeded
-          Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/skipupdate"
-          # Wait longer for stabilizer (120s)
-          Write-Host "Waiting 120s for MT5 to stabilize..."
-          Start-Sleep -Seconds 120
+          echo "Waiting for MT5 bridge (RPyC) to initialize..."
+          for i in {1..30}; do
+            if nc -z localhost 8001; then
+              echo "Bridge port 8001 is open!"
+              exit 0
+            fi
+            echo "Waiting..."
+            sleep 10
+          done
+          echo "Bridge failed to start."
+          exit 1
 
       - name: Run Foundation Cycle
         env:
@@ -88,11 +67,3 @@ jobs:
           path: |
             trading-bot/logs/
             trading-bot/snapshots/
-
-      # SECTION 11 — Kill MT5 process (to release file locks for caching)
-      - name: Cleanup MT5 Process
-        if: always()
-        shell: powershell
-        run: |
-          Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force
-          Write-Host "MT5 Terminal process terminated."

@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install MetaTrader5 pandas numpy pandas_ta python-dotenv pymongo psutil scikit-learn joblib requests
+          pip install MetaTrader5 pandas numpy python-dotenv pymongo psutil scikit-learn joblib requests
           python -m pip list
 
       - name: Setup Headless Display (Mesa3D)

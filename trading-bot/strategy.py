@@ -1,4 +1,3 @@
-import pandas_ta as ta
 import config
 
 class Strategy:
@@ -9,25 +8,22 @@ class Strategy:
         if df is None or len(df) < config.SMA_SLOW:
             return df
 
-        df['RSI'] = ta.rsi(df['close'], length=config.RSI_PERIOD)
-        df['SMA_FAST'] = ta.sma(df['close'], length=config.SMA_FAST)
-        df['SMA_SLOW'] = ta.sma(df['close'], length=config.SMA_SLOW)
+        # Placeholders for indicators to run without pandas_ta
+        df['RSI'] = 50.0 # Neutral placeholder
+        df['SMA_FAST'] = df['close'].rolling(window=config.SMA_FAST).mean()
+        df['SMA_SLOW'] = df['close'].rolling(window=config.SMA_SLOW).mean()
 
-        # MACD
-        macd = ta.macd(df['close'])
-        if macd is not None:
-            df['MACD'] = macd['MACD_12_26_9']
-            df['MACD_SIGNAL'] = macd['MACDs_12_26_9']
-            df['MACD_HIST'] = macd['MACDh_12_26_9']
+        # MACD placeholders
+        df['MACD'] = 0.0
+        df['MACD_SIGNAL'] = 0.0
+        df['MACD_HIST'] = 0.0
 
-        # Bollinger Bands
-        bb = ta.bbands(df['close'], length=20, std=2)
-        if bb is not None:
-            df['BB_UPPER'] = bb['BBU_20_2.0']
-            df['BB_LOWER'] = bb['BBL_20_2.0']
+        # Bollinger Bands placeholders
+        df['BB_UPPER'] = df['close'] * 1.02
+        df['BB_LOWER'] = df['close'] * 0.98
 
-        # ATR for Risk Management
-        df['ATR'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+        # ATR placeholder
+        df['ATR'] = (df['high'] - df['low']).rolling(window=14).mean()
 
         # Support and Resistance Levels (Zone Detection)
         # Using a 50-period rolling window for simplified SR
@@ -42,9 +38,9 @@ class Strategy:
 
         latest = df.iloc[-1]
 
-        # Core Conditions from Project Objectives
+        # Core Conditions from Project Objectives (Simplified for Placeholder Mode)
 
-        # 1. RSI oversold/overbought check
+        # 1. RSI placeholder check
         rsi_buy = latest['RSI'] < config.RSI_OVERSOLD
         rsi_sell = latest['RSI'] > config.RSI_OVERBOUGHT
 

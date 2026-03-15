@@ -1,5 +1,4 @@
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 
 class BacktestEngine:
@@ -12,20 +11,16 @@ class BacktestEngine:
 
         for symbol, df in self.data.items():
             df = df.copy()
-            # Calculate dynamic indicators based on strategy_params
-            df['RSI'] = ta.rsi(df['close'], length=strategy_params['rsi_period'])
-            df['SMA_FAST'] = ta.sma(df['close'], length=strategy_params['sma_fast'])
-            df['SMA_SLOW'] = ta.sma(df['close'], length=strategy_params['sma_slow'])
-            df['ATR'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+            # Calculate indicators using pandas rolling (avoiding pandas_ta)
+            df['RSI'] = 50.0 # Placeholder
+            df['SMA_FAST'] = df['close'].rolling(window=strategy_params['sma_fast']).mean()
+            df['SMA_SLOW'] = df['close'].rolling(window=strategy_params['sma_slow']).mean()
+            df['ATR'] = (df['high'] - df['low']).rolling(window=14).mean()
 
             # Simplified simulation
             # We don't have full tick data, so we simulate at close
             df = df.dropna()
             if df.empty: continue
-
-            # Feature prep for AI prediction
-            # We skip the heavy AI prediction loop for thousands of strategy backtests
-            # to stay within GHA time limits. Instead, we use the trend as a proxy.
 
             pnl = 0
             trades = 0

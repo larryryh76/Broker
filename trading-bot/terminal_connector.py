@@ -17,16 +17,20 @@ class TerminalConnector:
         print(f"Connecting to MT5 library using terminal at: {self.path}")
 
         # SUPREME AUTHORITY LAYER: Robust IPC Handshake Loop
-        # Sometimes mt5.initialize fails with timeout even if path is correct.
-        # We retry 5 times with increasing wait.
+        # MT5 Unified Initialization: launch and login in one call.
         connected = False
         for attempt in range(1, 6):
-            print(f"MT5 Initialization attempt {attempt}/5...")
-            # SECTION 4 — MT5 Initialization
-            # Since MT5 is launched by GHA workflow, we attach to it.
+            print(f"MT5 Unified Initialization attempt {attempt}/5...")
             # 120000 ms = 120 seconds timeout for the library wait.
-            if mt5.initialize(path=self.path, timeout=120000, portable=True):
-                print("MT5 library initialized successfully.")
+            if mt5.initialize(
+                path=self.path,
+                login=int(self.login_id),
+                password=self.password,
+                server=self.server,
+                timeout=120000,
+                portable=True
+            ):
+                print(f"MT5 initialized and logged in successfully to {self.server} (Account: {self.login_id})")
                 connected = True
                 break
 
@@ -42,22 +46,7 @@ class TerminalConnector:
             print("CRITICAL: Failed to establish IPC connection after 5 attempts.")
             return False
 
-        print("Attempting login...")
-
-        # SECTION 5 — Login Automatically (Separate from initialize)
-        authorized = mt5.login(
-            login=int(self.login_id),
-            password=self.password,
-            server=self.server
-        )
-
-        if authorized:
-            print(f"Logged in successfully to {self.server} (Account: {self.login_id})")
-            return True
-        else:
-            print(f"Failed to login, error code = {mt5.last_error()}")
-            mt5.shutdown()
-            return False
+        return True
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]

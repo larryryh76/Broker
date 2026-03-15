@@ -16,12 +16,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install MetaTrader5 pandas pymongo python-dotenv psutil numpy pandas-ta-classic scikit-learn joblib requests
+          python -m pip install MetaTrader5 pandas pymongo python-dotenv psutil numpy pandas-ta scikit-learn joblib requests
+          python -m pip list
 
       - name: Setup Headless Display (Mesa3D)
         uses: pyvista/setup-headless-display-action@v3

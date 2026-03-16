@@ -2,3 +2,9 @@ mt5linux
 rpyc==4.1.5
 pandas
 numpy
+pymongo
+requests
+python-dotenv
+psutil
+scikit-learn
+joblib

@@ -29,6 +29,7 @@ sleep 20
 
 echo "Starting mt5linux bridge server (inside Wine)..."
 # The bridge server must run where the MetaTrader5 library is available
+# Using specific command as requested by user to ensure it stays active
 wine python -m mt5linux --host 0.0.0.0 --port 8001 &
 
 # Keep container alive

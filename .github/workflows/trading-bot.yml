@@ -38,7 +38,7 @@ jobs:
             -e MT5_LOGIN="${{ secrets.MT5_LOGIN }}" \
             -e MT5_PASSWORD="${{ secrets.MT5_PASSWORD }}" \
             -e MT5_SERVER="${{ secrets.MT5_SERVER }}" \
-            ghcr.io/larryryh76/broker-mt5:latest
+            ghcr.io/larryryh76/mt5-headless:latest
 
       - name: Verify MT5 Container Status
         run: docker ps -a

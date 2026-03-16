@@ -10,8 +10,7 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Bridge configuration for Docker-based mt5linux (Using 127.0.0.1 for stability)
-        self.mt5 = MetaTrader5(host='127.0.0.1', port=8001)
+        self.mt5 = None
 
     def connect(self):
         # SECTION 16 — Extended Connection Wait Loop (Anti-ConnectionRefused)
@@ -22,6 +21,9 @@ class TerminalConnector:
         for attempt in range(1, max_retries + 1):
             print(f"Attempt {attempt}: Connecting to MT5 bridge at 127.0.0.1:8001...")
             try:
+                # Instantiate mt5linux client fresh for each attempt to avoid stale socket states
+                self.mt5 = MetaTrader5(host='127.0.0.1', port=8001)
+
                 if self.mt5.initialize():
                     # Validate connection via version check
                     version = self.mt5.version()
@@ -51,7 +53,7 @@ class TerminalConnector:
                     print("Connection failed, retrying in 2 seconds")
 
             except Exception as e:
-                # Catching ConnectionRefusedError specifically
+                # Catching ConnectionRefusedError and ConnectionResetError
                 print(f"Connection failed ({e}), retrying in 2 seconds")
 
             if attempt < max_retries:

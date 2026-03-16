@@ -21,7 +21,9 @@ COPY . .
 # Expose bridge port
 EXPOSE 8001
 
-# Command to start the trading bot
-# The base image's entrypoint will handle starting Xvfb and MT5
-# We override CMD to run our bot logic
-CMD ["python3", "trading-bot/bot.py"]
+# Use startup script to manage MT5 and bot processes
+COPY start_mt5.sh /app/start_mt5.sh
+RUN chmod +x /app/start_mt5.sh
+
+# Entrypoint to handle headless services and trading bot
+ENTRYPOINT ["/app/start_mt5.sh"]

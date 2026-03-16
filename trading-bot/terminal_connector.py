@@ -10,36 +10,41 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        # Bridge configuration for Docker-based mt5linux
-        self.mt5 = MetaTrader5(host='localhost', port=8001)
+        # Bridge configuration for Docker-based mt5linux (Using 127.0.0.1 for stability)
+        self.mt5 = MetaTrader5(host='127.0.0.1', port=8001)
 
     def connect(self):
-        # SECTION 15 — Robust Multi-Attempt Connection Loop (Anti-ConnectionReset)
-        # Requirement: Retry up to 8 times with a 10-second wait.
-        max_retries = 8
+        # SECTION 15 — Resilient Connection Loop (Anti-ConnectionReset)
+        # Requirement: Retry up to 12 times with 10s wait, using mt5.version() validation.
+        max_retries = 12
         connected = False
 
         for attempt in range(1, max_retries + 1):
-            print(f"Attempt {attempt}: Connecting to MT5 bridge...")
+            print(f"Attempt {attempt}: Connecting to MT5 bridge at 127.0.0.1...")
             try:
-                # Attempt to initialize/connect to the bridge
                 if self.mt5.initialize():
-                    print("Connected to MT5 bridge successfully")
+                    # Validate connection via version check
+                    version = self.mt5.version()
+                    if version:
+                        print(f"Connected successfully. MT5 Version: {version}")
 
-                    # Attempt login inside the initialized connection
-                    print(f"Attempting login to {self.server}...")
-                    authorized = self.mt5.login(
-                        login=int(self.login_id),
-                        password=self.password,
-                        server=self.server
-                    )
+                        # Attempt login
+                        print(f"Attempting login to {self.server}...")
+                        authorized = self.mt5.login(
+                            login=int(self.login_id),
+                            password=self.password,
+                            server=self.server
+                        )
 
-                    if authorized:
-                        print(f"Logged in successfully via bridge to {self.server}")
-                        connected = True
-                        break
+                        if authorized:
+                            print(f"Logged in successfully via bridge to {self.server}")
+                            connected = True
+                            break
+                        else:
+                            print(f"Login failed. Error: {self.mt5.last_error()}")
+                            self.mt5.shutdown()
                     else:
-                        print(f"Login failed on attempt {attempt}. Error: {self.mt5.last_error()}")
+                        print("Bridge initialized but version check failed.")
                         self.mt5.shutdown()
                 else:
                     print("Connection failed, retrying in 10 seconds")
@@ -51,7 +56,7 @@ class TerminalConnector:
                 time.sleep(10)
 
         if not connected:
-            print("CRITICAL: Failed to establish authorized bridge connection after 8 attempts.")
+            print(f"CRITICAL: Failed to establish authorized bridge connection after {max_retries} attempts.")
             return False
 
         return True

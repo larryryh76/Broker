@@ -63,6 +63,8 @@ jobs:
           for i in {1..30}; do
             if nc -z localhost 8001; then
               echo "Bridge port 8001 is open!"
+              echo "Testing bridge socket with Python..."
+              python -c "import socket; s = socket.socket(); s.settimeout(5); s.connect(('127.0.0.1', 8001)); s.close()" && echo "Socket test passed!"
               echo "Stabilizing for 60 seconds to ensure MT5 terminal is ready..."
               sleep 60
               exit 0

@@ -69,8 +69,8 @@ jobs:
       - name: Extract Logs from Container
         if: always()
         run: |
-          docker cp mt5:/app/trading-bot/logs/ . || true
-          docker cp mt5:/app/trading-bot/snapshots/ . || true
+          docker cp mt5:/app/trading-bot/logs/ trading-bot/ || true
+          docker cp mt5:/app/trading-bot/snapshots/ trading-bot/ || true
 
       - name: Upload Logs and Snapshots
         uses: actions/upload-artifact@v4

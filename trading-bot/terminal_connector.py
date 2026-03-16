@@ -14,19 +14,20 @@ class TerminalConnector:
         self.mt5 = MetaTrader5(host='127.0.0.1', port=8001)
 
     def connect(self):
-        # SECTION 15 — Resilient Connection Loop (Anti-ConnectionReset)
-        # Requirement: Retry up to 12 times with 10s wait, using mt5.version() validation.
-        max_retries = 12
+        # SECTION 16 — Extended Connection Wait Loop (Anti-ConnectionRefused)
+        # Requirement: Retry up to 30 times with a 2-second wait (60s total).
+        max_retries = 30
         connected = False
 
         for attempt in range(1, max_retries + 1):
-            print(f"Attempt {attempt}: Connecting to MT5 bridge at 127.0.0.1...")
+            print(f"Attempt {attempt}: Connecting to MT5 bridge at 127.0.0.1:8001...")
             try:
                 if self.mt5.initialize():
                     # Validate connection via version check
                     version = self.mt5.version()
                     if version:
-                        print(f"Connected successfully. MT5 Version: {version}")
+                        print("Connected to MT5 bridge successfully")
+                        print(f"MT5 Version: {version}")
 
                         # Attempt login
                         print(f"Attempting login to {self.server}...")
@@ -47,16 +48,17 @@ class TerminalConnector:
                         print("Bridge initialized but version check failed.")
                         self.mt5.shutdown()
                 else:
-                    print("Connection failed, retrying in 10 seconds")
+                    print("Connection failed, retrying in 2 seconds")
 
             except Exception as e:
-                print(f"Connection failed ({e}), retrying in 10 seconds")
+                # Catching ConnectionRefusedError specifically
+                print(f"Connection failed ({e}), retrying in 2 seconds")
 
             if attempt < max_retries:
-                time.sleep(10)
+                time.sleep(2)
 
         if not connected:
-            print(f"CRITICAL: Failed to establish authorized bridge connection after {max_retries} attempts.")
+            print(f"CRITICAL: Failed to establish bridge connection after {max_retries} attempts (60s).")
             return False
 
         return True

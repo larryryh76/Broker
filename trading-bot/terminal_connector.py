@@ -14,29 +14,19 @@ class TerminalConnector:
         self.mt5 = MetaTrader5(host='localhost', port=8001)
 
     def connect(self):
-        print("Connecting to mt5linux bridge at localhost:8001...")
-
-        # SECTION 13 — Headless Bridge Synchronization (Requested)
-        try:
-            from mt5linux import wait_for_bridge
-            print("Using mt5linux.wait_for_bridge(timeout=90)...")
-            wait_for_bridge(host='localhost', port=8001, timeout=90)
-        except (ImportError, AttributeError):
-            print("wait_for_bridge not found, relying on robust retry loop.")
-
-        # SECTION 14 — Robust Synchronization & Retry Loop (Anti-ConnectionReset)
-        # Attempt to connect up to 6 times with exponential backoff as requested
-        max_retries = 6
+        # SECTION 15 — Robust Multi-Attempt Connection Loop (Anti-ConnectionReset)
+        # Requirement: Retry up to 8 times with a 10-second wait.
+        max_retries = 8
         connected = False
 
         for attempt in range(1, max_retries + 1):
-            print(f"Connection attempt {attempt}/{max_retries}...")
+            print(f"Attempt {attempt}: Connecting to MT5 bridge...")
             try:
-                # Initialize bridge
+                # Attempt to initialize/connect to the bridge
                 if self.mt5.initialize():
-                    print(f"Bridge initialized successfully on attempt {attempt}.")
+                    print("Connected to MT5 bridge successfully")
 
-                    # Attempt login
+                    # Attempt login inside the initialized connection
                     print(f"Attempting login to {self.server}...")
                     authorized = self.mt5.login(
                         login=int(self.login_id),
@@ -52,20 +42,16 @@ class TerminalConnector:
                         print(f"Login failed on attempt {attempt}. Error: {self.mt5.last_error()}")
                         self.mt5.shutdown()
                 else:
-                    print(f"Bridge initialization failed on attempt {attempt}.")
+                    print("Connection failed, retrying in 10 seconds")
 
             except Exception as e:
-                print(f"Connection error on attempt {attempt}: {e}")
+                print(f"Connection failed ({e}), retrying in 10 seconds")
 
             if attempt < max_retries:
-                wait_time = 10 * (2 ** (attempt - 1)) # Exponential backoff: 10s, 20s, 40s...
-                # Cap wait time at 60s
-                wait_time = min(wait_time, 60)
-                print(f"Waiting {wait_time}s before next retry...")
-                time.sleep(wait_time)
+                time.sleep(10)
 
         if not connected:
-            print("CRITICAL: Failed to establish authorized bridge connection after all retries.")
+            print("CRITICAL: Failed to establish authorized bridge connection after 8 attempts.")
             return False
 
         return True

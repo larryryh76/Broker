@@ -9,17 +9,6 @@ jobs:
   foundation-cycle:
     runs-on: ubuntu-latest
 
-    services:
-      # SECTION 12 — Custom MT5 Headless Environment
-      mt5:
-        image: ghcr.io/${{ github.repository_owner }}/mt5-headless:latest
-        ports:
-          - 8001:8001
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -35,6 +24,39 @@ jobs:
           pip install -r trading-bot/requirements.txt
           python -m pip list
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # SECTION 12 — Manual MT5 Container Lifecycle
+      - name: Start MT5 Container
+        run: |
+          docker run -d --name mt5 -p 8001:8001 \
+            -e MT5_LOGIN="${{ secrets.MT5_LOGIN }}" \
+            -e MT5_PASSWORD="${{ secrets.MT5_PASSWORD }}" \
+            -e MT5_SERVER="${{ secrets.MT5_SERVER }}" \
+            ghcr.io/larryryh76/broker-mt5:latest
+
+      - name: Verify MT5 Container Status
+        run: docker ps -a
+
+      - name: Wait for Container to be Running
+        run: |
+          echo "Checking container health..."
+          for i in {1..20}; do
+            if [ "$(docker inspect -f '{{.State.Running}}' mt5)" == "true" ]; then
+              echo "Container is running."
+              exit 0
+            fi
+            echo "Waiting for container..."
+            sleep 5
+          done
+          echo "Container failed to start."
+          exit 1
+
       - name: Wait for MT5 Bridge
         run: |
           echo "Waiting for MT5 bridge (RPyC) to initialize..."
@@ -45,7 +67,7 @@ jobs:
               sleep 60
               exit 0
             fi
-            echo "Waiting..."
+            echo "Waiting for bridge port..."
             sleep 10
           done
           echo "Bridge failed to start."
@@ -62,8 +84,8 @@ jobs:
           python bot.py
 
       - name: Print MT5 container logs
-        if: failure()
-        run: docker logs mt5
+        if: always()
+        run: docker logs mt5 || true
 
       - name: Ensure logs directories exist
         if: always()

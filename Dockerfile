@@ -33,39 +33,45 @@ RUN pip3 install mt5linux rpyc==4.1.5
 WORKDIR /mt5
 
 # Initialize Wine prefix
-RUN Xvfb :99 -screen 0 1024x768x16 & \
+RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    wineboot --init
+    wineboot --init && \
+    wineserver -w
 
 # Install Gecko and Mono
-RUN Xvfb :99 -screen 0 1024x768x16 & \
+RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    winetricks -q gecko mono
+    WINEPREFIX=/root/.wine winetricks -q gecko mono && \
+    wineserver -w
 
 # Download MetaTrader 5 installer
 RUN wget -O /mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe
 
 # Install MetaTrader 5
-RUN Xvfb :99 -screen 0 1024x768x16 & \
+RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    wine /mt5setup.exe /silent
+    wine /mt5setup.exe /silent && \
+    wineserver -w
 
 # Download Python for Windows
 RUN wget -O /python-setup.exe https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
 
 # Install Python inside Wine
-RUN Xvfb :99 -screen 0 1024x768x16 & \
+RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    wine /python-setup.exe /quiet InstallAllUsers=1 PrependPath=1
+    wine /python-setup.exe /quiet InstallAllUsers=1 PrependPath=1 && \
+    wineserver -w
 
 # Install Python trading dependencies
-RUN Xvfb :99 -screen 0 1024x768x16 & \
+RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    wine python -m pip install --upgrade pip
+    wine python -m pip install --upgrade pip && \
+    wineserver -w
 
-RUN Xvfb :99 -screen 0 1024x768x16 & \
+RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5
+    wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5 && \
+    wineserver -w
 
 # Copy start script
 COPY start_mt5.sh /start_mt5.sh

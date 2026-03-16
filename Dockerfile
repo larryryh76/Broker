@@ -15,7 +15,7 @@ RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install mt5linux for the Linux client side (if needed in container)
-RUN pip3 install mt5linux rpyc
+RUN pip3 install mt5linux rpyc==4.1.5
 
 # Create a workspace
 WORKDIR /mt5

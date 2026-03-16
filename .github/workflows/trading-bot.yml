@@ -61,6 +61,16 @@ jobs:
           cd trading-bot
           python bot.py
 
+      - name: Print MT5 container logs
+        if: failure()
+        run: docker logs mt5
+
+      - name: Ensure logs directories exist
+        if: always()
+        run: |
+          mkdir -p trading-bot/logs
+          mkdir -p trading-bot/snapshots
+
       - name: Upload Logs and Snapshots
         uses: actions/upload-artifact@v4
         if: always()

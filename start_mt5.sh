@@ -20,7 +20,7 @@ if ! wine python --version > /dev/null 2>&1; then
     sleep 60
     # Install MetaTrader5 and mt5linux inside Wine Python
     wine python -m pip install --upgrade pip
-    wine python -m pip install MetaTrader5 mt5linux rpyc
+    wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5
 fi
 
 echo "Starting MT5 Terminal..."

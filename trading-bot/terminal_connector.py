@@ -16,21 +16,27 @@ class TerminalConnector:
     def connect(self):
         print("Connecting to mt5linux bridge at localhost:8001...")
 
-        connected = False
-        for attempt in range(1, 6):
-            print(f"Bridge connection attempt {attempt}/5...")
-            if self.mt5.initialize():
-                print("Connected to mt5linux bridge successfully.")
-                connected = True
-                break
+        # SECTION 13 — Headless Bridge Synchronization
+        # wait_for_bridge implementation (90s timeout as requested)
+        try:
+            from mt5linux import wait_for_bridge
+            print("Using mt5linux.wait_for_bridge(timeout=90)...")
+            wait_for_bridge(host='localhost', port=8001, timeout=90)
+        except (ImportError, AttributeError):
+            # Fallback if wait_for_bridge is not available in the installed version
+            start_time = time.time()
+            while time.time() - start_time < 90:
+                print(f"Waiting for MT5 bridge... (Elapsed: {int(time.time() - start_time)}s)")
+                try:
+                    if self.mt5.initialize(): break
+                except Exception: pass
+                time.sleep(5)
 
-            print(f"Failed to connect to bridge (Attempt {attempt})")
-            if attempt < 5:
-                time.sleep(10)
-
-        if not connected:
-            print("CRITICAL: Failed to connect to bridge after 5 attempts.")
+        if not self.mt5.initialize():
+            print("CRITICAL: Failed to connect to bridge after timeout.")
             return False
+
+        print("Connected to mt5linux bridge successfully.")
 
         print("Attempting login via bridge...")
         authorized = self.mt5.login(

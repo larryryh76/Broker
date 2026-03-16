@@ -1,7 +1,7 @@
 mt5linux
 psutil==5.9.8
-numpy==2.2.6
-pandas==2.2.2
+numpy
+pandas
 scikit-learn==1.5.1
 python-dotenv
 joblib

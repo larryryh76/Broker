@@ -41,6 +41,8 @@ jobs:
           for i in {1..30}; do
             if nc -z localhost 8001; then
               echo "Bridge port 8001 is open!"
+              echo "Stabilizing for 60 seconds to ensure MT5 terminal is ready..."
+              sleep 60
               exit 0
             fi
             echo "Waiting..."

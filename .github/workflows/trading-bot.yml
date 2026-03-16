@@ -13,17 +13,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r trading-bot/requirements.txt
-          python -m pip list
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -32,18 +21,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # SECTION 12 — Manual MT5 Container Lifecycle
-      - name: Start MT5 Container
+      - name: Start Combined Bot Container
         run: |
           docker run -d --name mt5 -p 8001:8001 \
             -e MT5_LOGIN="${{ secrets.MT5_LOGIN }}" \
             -e MT5_PASSWORD="${{ secrets.MT5_PASSWORD }}" \
             -e MT5_SERVER="${{ secrets.MT5_SERVER }}" \
-            ghcr.io/larryryh76/mt5-headless:latest
+            -e MONGODB_URI="${{ secrets.MONGODB_URI }}" \
+            ghcr.io/larryryh76/broker-bot:latest
 
-      - name: Verify MT5 Container Status
+      - name: Verify Container Status
         run: docker ps -a
 
-      - name: Wait for Container to be Running
+      - name: Wait for Container Health
         run: |
           echo "Checking container health..."
           for i in {1..20}; do
@@ -57,43 +47,30 @@ jobs:
           echo "Container failed to start."
           exit 1
 
-      - name: Wait for MT5 Bridge
+      - name: Wait for MT5 Initialized
         run: |
-          echo "Waiting for MT5 bridge (RPyC) to initialize..."
-          for i in {1..30}; do
-            if nc -z localhost 8001; then
-              echo "Bridge port 8001 is open!"
-              echo "Testing bridge socket with Python..."
-              python -c "import socket; s = socket.socket(); s.settimeout(5); s.connect(('127.0.0.1', 8001)); s.close()" && echo "Socket test passed!"
-              echo "Stabilizing for 60 seconds to ensure MT5 terminal is ready..."
-              sleep 60
-              exit 0
-            fi
-            echo "Waiting for bridge port..."
-            sleep 10
-          done
-          echo "Bridge failed to start."
-          exit 1
+          echo "Waiting for MT5 terminal and bridge to stabilize..."
+          # Since the bot is running inside the container, we just monitor logs or wait fixed time
+          sleep 90
+          docker logs mt5
 
-      - name: Run Foundation Cycle
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: |
-          cd trading-bot
-          python bot.py
-
-      - name: Print MT5 container logs
+      - name: Print Final Container Logs
         if: always()
         run: docker logs mt5 || true
 
-      - name: Ensure logs directories exist
+      - name: Ensure logs directories exist (Local dummy for artifact compatibility)
         if: always()
         run: |
           mkdir -p trading-bot/logs
           mkdir -p trading-bot/snapshots
+
+      # Note: Since the bot runs INSIDE the container,
+      # we'd need to use 'docker cp' to get logs back to the host for uploading.
+      - name: Extract Logs from Container
+        if: always()
+        run: |
+          docker cp mt5:/app/trading-bot/logs/ . || true
+          docker cp mt5:/app/trading-bot/snapshots/ . || true
 
       - name: Upload Logs and Snapshots
         uses: actions/upload-artifact@v4

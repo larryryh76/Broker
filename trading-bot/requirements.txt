@@ -1,11 +1,4 @@
-MetaTrader5
 mt5linux
 rpyc==4.1.5
-psutil==5.9.8
-numpy
 pandas
-scikit-learn==1.5.1
-python-dotenv
-joblib
-pymongo
-requests
+numpy

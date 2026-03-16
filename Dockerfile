@@ -9,19 +9,26 @@ ENV WINEPREFIX=/root/.wine
 
 # Install Wine, Xvfb, wget and dependencies
 RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
-    wine \
     wine64 \
     wine32 \
+    winbind \
+    cabextract \
     xvfb \
     python3 \
     python3-pip \
     curl \
     wget \
     unzip \
+    winetricks \
+    fonts-liberation \
+    fonts-wine \
     && rm -rf /var/lib/apt/lists/*
 
 # Initialize Wine
 RUN xvfb-run wineboot --init
+
+# Install Gecko and Mono (required for MT5 installer OLE/RPC)
+RUN xvfb-run winetricks -q gecko mono
 
 # Install mt5linux for the Linux client side
 RUN pip3 install mt5linux rpyc==4.1.5
@@ -31,7 +38,7 @@ WORKDIR /mt5
 
 # Download and install MetaTrader 5 silently using Wine
 RUN wget -O /mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe \
-    && xvfb-run wine /mt5setup.exe /auto /quit
+    && xvfb-run wine /mt5setup.exe /silent
 
 # Download and install Windows Python for Wine (to run the bridge server)
 RUN wget -O /python-setup.exe https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe \

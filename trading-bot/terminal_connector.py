@@ -16,42 +16,59 @@ class TerminalConnector:
     def connect(self):
         print("Connecting to mt5linux bridge at localhost:8001...")
 
-        # SECTION 13 — Headless Bridge Synchronization
-        # wait_for_bridge implementation (90s timeout as requested)
+        # SECTION 13 — Headless Bridge Synchronization (Requested)
         try:
             from mt5linux import wait_for_bridge
             print("Using mt5linux.wait_for_bridge(timeout=90)...")
             wait_for_bridge(host='localhost', port=8001, timeout=90)
         except (ImportError, AttributeError):
-            # Fallback if wait_for_bridge is not available in the installed version
-            start_time = time.time()
-            while time.time() - start_time < 90:
-                print(f"Waiting for MT5 bridge... (Elapsed: {int(time.time() - start_time)}s)")
-                try:
-                    if self.mt5.initialize(): break
-                except Exception: pass
-                time.sleep(5)
+            print("wait_for_bridge not found, relying on robust retry loop.")
 
-        if not self.mt5.initialize():
-            print("CRITICAL: Failed to connect to bridge after timeout.")
+        # SECTION 14 — Robust Synchronization & Retry Loop (Anti-ConnectionReset)
+        # Attempt to connect up to 6 times with exponential backoff as requested
+        max_retries = 6
+        connected = False
+
+        for attempt in range(1, max_retries + 1):
+            print(f"Connection attempt {attempt}/{max_retries}...")
+            try:
+                # Initialize bridge
+                if self.mt5.initialize():
+                    print(f"Bridge initialized successfully on attempt {attempt}.")
+
+                    # Attempt login
+                    print(f"Attempting login to {self.server}...")
+                    authorized = self.mt5.login(
+                        login=int(self.login_id),
+                        password=self.password,
+                        server=self.server
+                    )
+
+                    if authorized:
+                        print(f"Logged in successfully via bridge to {self.server}")
+                        connected = True
+                        break
+                    else:
+                        print(f"Login failed on attempt {attempt}. Error: {self.mt5.last_error()}")
+                        self.mt5.shutdown()
+                else:
+                    print(f"Bridge initialization failed on attempt {attempt}.")
+
+            except Exception as e:
+                print(f"Connection error on attempt {attempt}: {e}")
+
+            if attempt < max_retries:
+                wait_time = 10 * (2 ** (attempt - 1)) # Exponential backoff: 10s, 20s, 40s...
+                # Cap wait time at 60s
+                wait_time = min(wait_time, 60)
+                print(f"Waiting {wait_time}s before next retry...")
+                time.sleep(wait_time)
+
+        if not connected:
+            print("CRITICAL: Failed to establish authorized bridge connection after all retries.")
             return False
 
-        print("Connected to mt5linux bridge successfully.")
-
-        print("Attempting login via bridge...")
-        authorized = self.mt5.login(
-            login=int(self.login_id),
-            password=self.password,
-            server=self.server
-        )
-
-        if authorized:
-            print(f"Logged in successfully via bridge to {self.server}")
-            return True
-        else:
-            print("Failed to login via bridge.")
-            self.mt5.shutdown()
-            return False
+        return True
 
     def map_symbol(self, symbol):
         candidates = [symbol, symbol + "m", symbol + "-mt5"]

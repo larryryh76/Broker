@@ -7,8 +7,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
 ENV WINEARCH=win64
 ENV WINEPREFIX=/root/.wine
+ENV WINEDEBUG=-all
 
-# Install WineHQ (Wine 9.0), Xvfb, wget and dependencies
+# Install WineHQ (Wine 11.0), Xvfb, wget and dependencies
 RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
     software-properties-common \
     wget \
@@ -23,68 +24,50 @@ RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
     cabextract \
     xvfb \
     x11-utils \
+    dbus-x11 \
+    libvulkan1 \
+    libvulkan1:i386 \
     python3 \
     python3-pip \
     unzip \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Install latest winetricks from source for better prefix handling
+# Install latest winetricks from source
 RUN wget -q -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
     && chmod +x /usr/local/bin/winetricks
 
 # Create workspace
 WORKDIR /mt5
 
-# 1. Initialize Wine prefix (Fresh 64-bit)
-RUN rm -rf /root/.wine && \
-    rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 5 && \
-    WINEPREFIX=/root/.wine wineboot --init && \
-    wineserver -w
+# 1. Consolidated Wine prefix initialization and dependency installation
+RUN xvfb-run --server-args="-screen 0 1024x768x24" sh -c " \
+    wineboot --init && \
+    wineserver -w && \
+    winetricks -q corefonts && \
+    wineserver -w && \
+    winetricks -q d3dcompiler_47 && \
+    wineserver -w && \
+    wineboot -u && \
+    wineserver -w"
 
-# 2. Install Dependencies inside Wine
-RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 5 && \
-    WINEPREFIX=/root/.wine winetricks -q corefonts && \
-    WINEPREFIX=/root/.wine winetricks -q d3dcompiler_47 && \
-    wineserver -w
+# 2. Setup MT5 and Python for Windows
+RUN wget -O /mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe && \
+    wget -O /python-setup.exe https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
 
-# 3. Install Gecko and Mono (automatic via wineboot or explicit winetricks)
-# Newer wine (9.0) handles this better, but we can ensure they are available
-RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 5 && \
-    WINEPREFIX=/root/.wine wineboot -u && \
-    wineserver -w
+# 3. Install MT5 and Python inside Wine
+RUN xvfb-run --server-args="-screen 0 1024x768x24" sh -c " \
+    wine /mt5setup.exe /silent && \
+    wineserver -w && \
+    wine /python-setup.exe /quiet InstallAllUsers=1 PrependPath=1 && \
+    wineserver -w"
 
-# 4. Download MetaTrader 5 installer
-RUN wget -O /mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe
-
-# 5. Install MetaTrader 5
-RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 5 && \
-    WINEPREFIX=/root/.wine wine /mt5setup.exe /silent && \
-    wineserver -w
-
-# 6. Download Python for Windows
-RUN wget -O /python-setup.exe https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
-
-# 7. Install Python inside Wine
-RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 5 && \
-    WINEPREFIX=/root/.wine wine /python-setup.exe /quiet InstallAllUsers=1 PrependPath=1 && \
-    wineserver -w
-
-# 8. Install Python trading dependencies inside Wine
-RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 5 && \
-    WINEPREFIX=/root/.wine wine python -m pip install --upgrade pip && \
-    wineserver -w
-
-RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 5 && \
-    WINEPREFIX=/root/.wine wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5 && \
-    wineserver -w
+# 4. Install Python trading dependencies inside Wine
+RUN xvfb-run --server-args="-screen 0 1024x768x24" sh -c " \
+    wine python -m pip install --upgrade pip && \
+    wineserver -w && \
+    wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5 && \
+    wineserver -w"
 
 # Copy start script
 COPY start_mt5.sh /start_mt5.sh

@@ -6,7 +6,7 @@ Xvfb :99 -screen 0 1024x768x16 &
 export DISPLAY=:99
 
 # 2. Setup MT5 path
-MT5_PATH="/root/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+MT5_PATH="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
 
 echo "Starting MT5 Terminal..."
 wine "$MT5_PATH" /portable /skipupdate &

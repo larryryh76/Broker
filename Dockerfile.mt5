@@ -8,21 +8,25 @@ ENV DISPLAY=:99
 ENV WINEARCH=win64
 ENV WINEPREFIX=/root/.wine
 
-# Install Wine, Xvfb, wget and dependencies
+# Install WineHQ (Wine 9.0), Xvfb, wget and dependencies
 RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
-    wine64 \
-    wine32 \
+    software-properties-common \
+    wget \
+    curl \
+    gnupg2 \
+    && mkdir -pm 755 /etc/apt/keyrings \
+    && wget -O - https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key \
+    && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/jammy/winehq-jammy.sources \
+    && apt-get update && apt-get install -y --install-recommends \
+    winehq-stable \
     winbind \
     cabextract \
     xvfb \
     x11-utils \
     python3 \
     python3-pip \
-    curl \
-    wget \
     unzip \
     fonts-liberation \
-    fonts-wine \
     && rm -rf /var/lib/apt/lists/*
 
 # Install latest winetricks from source for better prefix handling
@@ -39,16 +43,18 @@ RUN rm -rf /root/.wine && \
     WINEPREFIX=/root/.wine wineboot --init && \
     wineserver -w
 
-# 2. Install Gecko inside Wine
+# 2. Install Dependencies inside Wine
 RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    WINEPREFIX=/root/.wine winetricks -q gecko && \
+    WINEPREFIX=/root/.wine winetricks -q corefonts && \
+    WINEPREFIX=/root/.wine winetricks -q d3dcompiler_47 && \
     wineserver -w
 
-# 3. Install Mono inside Wine
+# 3. Install Gecko and Mono (automatic via wineboot or explicit winetricks)
+# Newer wine (9.0) handles this better, but we can ensure they are available
 RUN rm -f /tmp/.X99-lock && Xvfb :99 -screen 0 1024x768x16 & \
     sleep 5 && \
-    WINEPREFIX=/root/.wine winetricks -q mono && \
+    WINEPREFIX=/root/.wine wineboot -u && \
     wineserver -w
 
 # 4. Download MetaTrader 5 installer

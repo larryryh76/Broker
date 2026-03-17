@@ -19,10 +19,10 @@ class TerminalConnector:
         connected = False
 
         for attempt in range(1, max_retries + 1):
-            print(f"Attempt {attempt}: Connecting to MT5 bridge at 127.0.0.1:8001...")
+            print(f"Attempt {attempt}: Connecting to MT5 bridge at host 'mt5' port 8001...")
             try:
                 # Instantiate mt5linux client fresh for each attempt to avoid stale socket states
-                self.mt5 = MetaTrader5(host='127.0.0.1', port=8001)
+                self.mt5 = MetaTrader5(host='mt5', port=8001)
 
                 if self.mt5.initialize():
                     # Validate connection via version check

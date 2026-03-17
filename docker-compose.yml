@@ -3,7 +3,9 @@ version: '3.8'
 services:
   mt5:
     container_name: mt5
-    image: ghcr.io/larryryh76/mt5-headless:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mt5
     ports:
       - "8001:8001"
     environment:
@@ -13,7 +15,9 @@ services:
 
   bot:
     container_name: bot
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     depends_on:
       - mt5
     environment:

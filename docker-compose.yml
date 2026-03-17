@@ -3,6 +3,7 @@ version: '3.8'
 services:
   mt5:
     container_name: mt5
+    image: ghcr.io/larryryh76/mt5-headless:latest
     build:
       context: .
       dockerfile: Dockerfile.mt5
@@ -12,9 +13,11 @@ services:
       - MT5_LOGIN=${MT5_LOGIN}
       - MT5_PASSWORD=${MT5_PASSWORD}
       - MT5_SERVER=${MT5_SERVER}
+    restart: unless-stopped
 
   bot:
     container_name: bot
+    image: ghcr.io/larryryh76/broker-bot:latest
     build:
       context: .
       dockerfile: Dockerfile

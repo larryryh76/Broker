@@ -133,7 +133,8 @@ class TradingMachine:
                         self.log(f"ALERT: {signal} detected on {symbol} (Confidence: {confidence})")
 
                         # Stealth Execution Delay (Anti-Institution)
-                        delay = random.randint(30, 290)
+                        # Reduced range to fit within 15-minute cycle
+                        delay = random.randint(5, 45)
                         self.log(f"Stealth: Postponing submission for {delay}s...")
                         time.sleep(delay)
 

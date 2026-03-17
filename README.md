@@ -1,40 +1,39 @@
-# THE MONEY MACHINE: GitHub-Native Foundation
+# THE MONEY MACHINE: Dockerized Autonomous MT5 Foundation
 
-This repository provides a stable, fully autonomous foundation for MetaTrader 5 (MT5) trading bots running exclusively on GitHub Actions. It has been refactored to remove complex Docker/Wine layers and focus on a robust, native foundation.
+This repository provides a professional-grade, fully autonomous architecture for MetaTrader 5 (MT5) trading bots. It is designed to run exclusively on GitHub Actions or equivalent CI/CD platforms using a decoupled multi-service Docker environment.
 
-## Foundation Features
+## Architecture Highlights
 
-- **Direct MT5 Integration**: Uses the official `MetaTrader5` Python library on `windows-latest` runners.
-- **Pure GitHub Workflow**: No external servers or manual setup required. 100% cloud-native.
-- **Autonomous Authentication**: Pre-seeds `terminal.ini` and `common.ini` to bypass GUI hangs and enable Algo-Trading automatically.
-- **Persistent Snapshots**: Periodically captures account status (balance, equity, margin) and saves them as GitHub artifacts and cloud state (if MongoDB is configured).
-- **Workspace-Local Terminal**: Installs and caches the MT5 terminal directly within the repository workspace (`mt5_terminal/`).
+- **Decoupled Services**: Separates the MetaTrader 5 environment (Wine/headless) from the trading bot logic (Python 3) using `docker-compose`.
+- **mt5linux Bridge**: Employs an RPyC bridge to allow Linux-based Python code to communicate with the Windows-only MetaTrader 5 terminal.
+- **Resilient Connectivity**: Features a multi-layered synchronization strategy with a 30-attempt connection retry loop to handle the initialization lag of MT5 under Wine.
+- **Pure Cloud Execution**: No local MT5 installation, Windows license, or GUI session required. 100% cloud-native on `ubuntu-latest`.
+- **Autonomous Lifecycle**: Implements full trade reconciliation, risk management (circuit breakers), and position management (break-even protection).
 
-## Project Cleanup Summary
+## Repository Structure
 
-The following complex/broken components have been removed to ensure stability:
-- **Docker/Container Architecture**: Eliminated `Dockerfile` and Wine-based orchestration which caused permission and IPC errors.
-- **Wine Bridges**: Removed `mt5linux` and cross-platform bridge servers in favor of native Windows stability.
-- **System-Wide Dependencies**: Transitioned to workspace-local installations to avoid environment pollution.
+- `trading-bot/`: Core Python application (bot, strategy, AI engine, risk management).
+- `.github/workflows/`: Automation for building Docker images and running trading cycles.
+- `docker-compose.yml`: Orchestrates the MT5 terminal and bot services.
+- `Dockerfile`: Provisions the trading bot environment.
 
-## Setup Instructions
+## Setup & Deployment
 
 ### 1. GitHub Secrets
-Configure these secrets in your repository:
-- `MT5_LOGIN`: Your MT5 account number.
-- `MT5_PASSWORD`: Your trading password.
-- `MT5_SERVER`: Your broker's server name (e.g., `FBS-Real`).
-- `MONGODB_URI`: (Optional) MongoDB Atlas connection string for persistent state.
+Configure the following secrets in your repository:
+- `MT5_LOGIN`: MT5 account number.
+- `MT5_PASSWORD`: MT5 trading password.
+- `MT5_SERVER`: Broker's server name.
+- `MONGODB_URI`: (Optional) MongoDB Atlas connection string for persistence.
 
-### 2. Automation
-The bot runs every 15 minutes by default. You can manually trigger a run via the **Actions** tab using **Workflow Dispatch**.
+### 2. Execution
+The system is scheduled to run every 15 minutes via GitHub Actions. You can manually trigger a run via **Workflow Dispatch** in the **Actions** tab.
 
-## Adding AI Strategies
+## Monitoring
 
-To extend this foundation into a full AI trading machine:
-1. **Indicator Module**: Add technical analysis functions in a new `indicators.py` or extend `strategy.py`.
-2. **AI Integration**: Re-introduce `ai_model.py` for signal prediction using the validated `TerminalConnector` to fetch historical candles.
-3. **Execution Logic**: Extend the `execute_order` method in `TerminalConnector` to implement your trading rules.
+- **Action Logs**: Real-time streaming of bot execution and MT5 terminal logs.
+- **Artifacts**: Account snapshots, trade history, and execution logs are uploaded as artifacts after every run.
+- **Cloud State**: If MongoDB is configured, the bot persists its learning state and trade history for continuity across runs.
 
 ## Disclaimer
-Past performance does not guarantee future results. Trading involves significant risk.
+Trading involves significant risk. This foundation is provided for educational and developmental purposes.

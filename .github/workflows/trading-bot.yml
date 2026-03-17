@@ -1,4 +1,4 @@
-name: Foundation MT5 Snapshot Cycle (Docker/mt5linux)
+name: Foundation MT5 Snapshot Cycle (Multi-Container)
 
 on:
   workflow_dispatch:
@@ -13,6 +13,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -20,57 +25,57 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # SECTION 12 — Manual MT5 Container Lifecycle
-      - name: Start Combined Bot Container
-        run: |
-          docker run -d --name mt5 -p 8001:8001 \
-            -e MT5_LOGIN="${{ secrets.MT5_LOGIN }}" \
-            -e MT5_PASSWORD="${{ secrets.MT5_PASSWORD }}" \
-            -e MT5_SERVER="${{ secrets.MT5_SERVER }}" \
-            -e MONGODB_URI="${{ secrets.MONGODB_URI }}" \
-            ghcr.io/larryryh76/broker-bot:latest
+      # SECTION 17 — Multi-Container Execution
+      - name: Start Services
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: docker-compose up -d
 
-      - name: Verify Container Status
-        run: docker ps -a
-
-      - name: Wait for Container Health
+      - name: Verify MT5 Container Health
         run: |
-          echo "Checking container health..."
+          echo "Waiting for MT5 container to be healthy..."
           for i in {1..20}; do
             if [ "$(docker inspect -f '{{.State.Running}}' mt5)" == "true" ]; then
               echo "Container is running."
               exit 0
             fi
-            echo "Waiting for container..."
+            echo "Waiting..."
             sleep 5
           done
-          echo "Container failed to start."
+          echo "MT5 failed to start."
           exit 1
 
-      - name: Wait for MT5 Initialized
+      - name: Monitor Trading Bot Execution
         run: |
-          echo "Waiting for MT5 terminal and bridge to stabilize..."
-          # Since the bot is running inside the container, we just monitor logs or wait fixed time
-          sleep 90
-          docker logs mt5
+          echo "Following bot logs..."
+          # The bot container will exit when finished.
+          # We wait for it and capture exit code.
+          docker logs -f bot
 
-      - name: Print Final Container Logs
+          EXIT_CODE=$(docker inspect bot --format='{{.State.ExitCode}}')
+          echo "Bot exited with code: $EXIT_CODE"
+          if [ "$EXIT_CODE" != "0" ]; then
+            exit 1
+          fi
+
+      - name: Print MT5 container logs (on failure)
         if: always()
         run: docker logs mt5 || true
 
-      - name: Ensure logs directories exist (Local dummy for artifact compatibility)
+      - name: Ensure logs directories exist
         if: always()
         run: |
           mkdir -p trading-bot/logs
           mkdir -p trading-bot/snapshots
 
-      # Note: Since the bot runs INSIDE the container,
-      # we'd need to use 'docker cp' to get logs back to the host for uploading.
-      - name: Extract Logs from Container
+      - name: Extract Logs from Bot Container
         if: always()
         run: |
-          docker cp mt5:/app/trading-bot/logs/ trading-bot/ || true
-          docker cp mt5:/app/trading-bot/snapshots/ trading-bot/ || true
+          docker cp bot:/app/trading-bot/logs/ trading-bot/ || true
+          docker cp bot:/app/trading-bot/snapshots/ trading-bot/ || true
 
       - name: Upload Logs and Snapshots
         uses: actions/upload-artifact@v4
@@ -80,3 +85,7 @@ jobs:
           path: |
             trading-bot/logs/
             trading-bot/snapshots/
+
+      - name: Shutdown Services
+        if: always()
+        run: docker-compose down

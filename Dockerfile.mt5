@@ -41,36 +41,23 @@ WORKDIR /mt5
 RUN wget -O /mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe && \
     wget -O /python-setup.exe https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
 
+# 1. Initialize Wine and install Gecko/Mono
+RUN xvfb-run -a wineboot --init && wineserver -w
+
+# 2. Install MetaTrader 5
+RUN xvfb-run -a wine /mt5setup.exe /silent && wineserver -w
+
+# 3. Install Python for Windows
+RUN xvfb-run -a wine /python-setup.exe /quiet InstallAllUsers=1 PrependPath=1 && wineserver -w
+
+# 4. Install Bridge Dependencies
+RUN xvfb-run -a wine python -m pip install --upgrade pip && \
+    xvfb-run -a wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5 && \
+    wineserver -w
+
 # Start script
-RUN echo '#!/bin/bash\n\
-rm -f /tmp/.X99-lock\n\
-Xvfb :99 -screen 0 1024x768x24 &\n\
-sleep 5\n\
-if [ ! -d "/root/.wine" ] || [ ! -f "/root/.wine/drive_c/windows/system32/kernel32.dll" ]; then\n\
-    echo "Initializing Wine prefix..."\n\
-    wineboot --init\n\
-    wineserver -w\n\
-fi\n\
-MT5_PATH="/root/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe"\n\
-if [ ! -f "$MT5_PATH" ]; then\n\
-    echo "Installing MetaTrader 5..."\n\
-    wine /mt5setup.exe /silent\n\
-    wineserver -w\n\
-fi\n\
-if ! wine python --version >/dev/null 2>&1; then\n\
-    echo "Installing Python for Windows..."\n\
-    wine /python-setup.exe /quiet InstallAllUsers=1 PrependPath=1\n\
-    wineserver -w\n\
-    wine python -m pip install --upgrade pip\n\
-    wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5\n\
-    wineserver -w\n\
-fi\n\
-echo "Starting MetaTrader 5..."\n\
-wine "$MT5_PATH" /portable /skipupdate &\n\
-sleep 30\n\
-echo "Starting RPyC Bridge..."\n\
-wine python -m mt5linux --host 0.0.0.0 --port 8001 &\n\
-wait' > /start_mt5.sh && chmod +x /start_mt5.sh
+COPY start_mt5.sh /start_mt5.sh
+RUN chmod +x /start_mt5.sh
 
 EXPOSE 8001
 CMD ["/start_mt5.sh"]

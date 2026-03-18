@@ -6,10 +6,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set environment variables early
 ENV DISPLAY=:99
 ENV WINEARCH=win64
-ENV WINEPREFIX=/home/trader/.wine
+ENV WINEPREFIX=/root/.wine
 ENV WINEDEBUG=-all
 
-# Install WineHQ (Wine 11.0), Xvfb, wget and essential 2026-standard dependencies
+# Install WineHQ (Wine 11.0 Staging), Xvfb, and essential 2026-standard dependencies
 RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
     software-properties-common \
     wget \
@@ -19,7 +19,7 @@ RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
     && wget -O - https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key \
     && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/jammy/winehq-jammy.sources \
     && apt-get update && apt-get install -y --install-recommends \
-    winehq-stable \
+    winehq-staging \
     winbind \
     cabextract \
     xvfb \
@@ -27,16 +27,17 @@ RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
     dbus-x11 \
     libvulkan1 \
     libvulkan1:i386 \
+    libgl1-mesa-glx \
+    libgl1-mesa-glx:i386 \
+    libgl1-mesa-dri \
+    libgl1-mesa-dri:i386 \
+    libxi6 \
+    libxrender1 \
+    libxrandr2 \
+    libxcursor1 \
+    libxcomposite1 \
     libasound2 \
     libpulse0 \
-    libdbus-1-3 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxi6 \
-    libxtst6 \
-    libxrandr2 \
-    libxrender1 \
-    libxkbcommon0 \
     python3 \
     python3-pip \
     unzip \
@@ -44,57 +45,49 @@ RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y \
     netcat \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m trader
-USER trader
-WORKDIR /home/trader
-
 # Install latest winetricks from source
-RUN wget -q -O /home/trader/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
-    && chmod +x /home/trader/winetricks
+RUN wget -q -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
+    && chmod +x /usr/local/bin/winetricks
 
-# 1. Robust initialization using Xvfb directly (avoiding xvfb-run issues in layers)
-RUN Xvfb :99 -screen 0 1024x768x24 & \
-    sleep 5 && \
+# Create workspace
+WORKDIR /mt5
+
+# Consolidated Robust Initialization (Running as root to avoid X11 euid issues in Docker layers)
+RUN xvfb-run -a sh -c " \
+    wineboot --init && \
+    wineserver -w && \
+    /usr/local/bin/winetricks -q corefonts && \
+    wineserver -w && \
+    /usr/local/bin/winetricks -q d3dcompiler_47 && \
+    wineserver -w && \
     wine hostname && \
     wineserver -w && \
-    /home/trader/winetricks -q corefonts && \
-    wineserver -w && \
-    /home/trader/winetricks -q d3dcompiler_47 && \
-    wineserver -w && \
     wineboot -u && \
-    wineserver -w
+    wineserver -w"
 
-# 2. Setup MT5 and Python for Windows
-RUN wget -O /home/trader/mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe && \
-    wget -O /home/trader/python-setup.exe https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
+# Setup MT5 and Python for Windows
+RUN wget -O /mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe && \
+    wget -O /python-setup.exe https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
 
-# 3. Install MT5 and Python inside Wine
-RUN Xvfb :99 -screen 0 1024x768x24 & \
-    sleep 5 && \
-    wine /home/trader/mt5setup.exe /silent && \
+# Install MT5 and Python inside Wine
+RUN xvfb-run -a sh -c " \
+    wine /mt5setup.exe /silent && \
     wineserver -w && \
-    wine /home/trader/python-setup.exe /quiet InstallAllUsers=1 PrependPath=1 && \
-    wineserver -w
+    wine /python-setup.exe /quiet InstallAllUsers=1 PrependPath=1 && \
+    wineserver -w"
 
-# 4. Install Python trading dependencies inside Wine
-RUN Xvfb :99 -screen 0 1024x768x24 & \
-    sleep 5 && \
+# Install Python trading dependencies inside Wine
+RUN xvfb-run -a sh -c " \
     wine python -m pip install --upgrade pip && \
     wineserver -w && \
     wine python -m pip install MetaTrader5 mt5linux rpyc==4.1.5 && \
-    wineserver -w
+    wineserver -w"
 
 # Copy start script
-COPY start_mt5.sh /home/trader/start_mt5.sh
-# Note: Copying as root and changing owner is safer in some Docker setups, but we are USER trader.
-# If copying as root, we would need to switch back.
-
-USER root
-RUN chown trader:trader /home/trader/start_mt5.sh && chmod +x /home/trader/start_mt5.sh
-USER trader
+COPY start_mt5.sh /start_mt5.sh
+RUN chmod +x /start_mt5.sh
 
 # Expose bridge port
 EXPOSE 8001
 
-CMD ["/home/trader/start_mt5.sh"]
+CMD ["/start_mt5.sh"]

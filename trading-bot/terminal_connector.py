@@ -22,11 +22,11 @@ class TerminalConnector:
             print(f"Attempt {attempt}: Connecting to MT5 bridge at host 'mt5' port 8001 (Attempt {attempt}/{max_retries})...")
             try:
                 # Instantiate mt5linux client fresh for each attempt to avoid stale socket states
-                # Wrapped in internal try-except as RPyC can fail during init
+                # Wrapped in internal try-except as RPyC can fail during init (socket.error, EOFError)
                 try:
                     self.mt5 = MetaTrader5(host='mt5', port=8001)
-                except Exception as init_err:
-                    print(f"Bridge client instantiation failed ({init_err}), retrying in 3 seconds...")
+                except (Exception, ConnectionError, EOFError) as init_err:
+                    print(f"Bridge client instantiation failed ({type(init_err).__name__}: {init_err}), retrying in 3 seconds...")
                     if attempt < max_retries:
                         time.sleep(3)
                         continue

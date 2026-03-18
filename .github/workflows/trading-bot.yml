@@ -1,4 +1,4 @@
-name: Foundation MT5 Snapshot Cycle (Multi-Container)
+name: Autonomous MT5 Trading Cycle
 
 on:
   workflow_dispatch:
@@ -6,8 +6,11 @@ on:
     - cron: "*/15 * * * *"
 
 jobs:
-  foundation-cycle:
+  trading-cycle:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout Code
@@ -18,41 +21,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-compose
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # SECTION 17 — Multi-Container Execution
-      - name: Start Services
+      - name: Start Multi-Container Services
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: docker-compose up -d
+        run: docker-compose up -d --build
 
-      - name: Verify MT5 Container Health
-        run: |
-          echo "Waiting for MT5 container to be healthy..."
-          for i in {1..20}; do
-            if [ "$(docker inspect -f '{{.State.Running}}' mt5)" == "true" ]; then
-              echo "Container is running."
-              exit 0
-            fi
-            echo "Waiting..."
-            sleep 5
-          done
-          echo "MT5 failed to start."
-          exit 1
-
-      - name: Monitor Trading Bot Execution
+      - name: Monitor Trading Bot
         run: |
           echo "Following bot logs..."
-          # The bot container will exit when finished.
-          # We wait for it and capture exit code.
           docker logs -f bot
 
           EXIT_CODE=$(docker inspect bot --format='{{.State.ExitCode}}')
@@ -61,30 +40,23 @@ jobs:
             exit 1
           fi
 
-      - name: Print MT5 container logs (on failure)
+      - name: Print MT5 logs on failure
         if: always()
         run: docker logs mt5 || true
 
-      - name: Ensure logs directories exist
+      - name: Extract Artifacts
         if: always()
         run: |
-          mkdir -p trading-bot/logs
-          mkdir -p trading-bot/snapshots
+          mkdir -p artifacts/logs artifacts/snapshots
+          docker cp bot:/app/trading-bot/logs/ artifacts/ || true
+          docker cp bot:/app/trading-bot/snapshots/ artifacts/ || true
 
-      - name: Extract Logs from Bot Container
-        if: always()
-        run: |
-          docker cp bot:/app/trading-bot/logs/ trading-bot/ || true
-          docker cp bot:/app/trading-bot/snapshots/ trading-bot/ || true
-
-      - name: Upload Logs and Snapshots
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: foundation-artifacts-${{ github.run_id }}
-          path: |
-            trading-bot/logs/
-            trading-bot/snapshots/
+          name: trading-artifacts-${{ github.run_id }}
+          path: artifacts/
 
       - name: Shutdown Services
         if: always()

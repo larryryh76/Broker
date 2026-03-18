@@ -14,54 +14,35 @@ class DBClient:
         self.models_collection = self.db["models"] if self.db is not None else None
 
     def get_latest_state(self):
-        if self.state_collection is None:
-            return None
+        if self.state_collection is None: return None
         return self.state_collection.find_one(sort=[("timestamp", -1)])
 
     def save_state(self, state_data):
-        if self.state_collection is None:
-            return
+        if self.state_collection is None: return
         state_data["timestamp"] = datetime.now(timezone.utc)
         self.state_collection.insert_one(state_data)
 
     def log_trade(self, trade_data):
-        if self.trades_collection is None:
-            return
+        if self.trades_collection is None: return
         trade_data["timestamp"] = datetime.now(timezone.utc)
         self.trades_collection.insert_one(trade_data)
 
     def get_open_logged_trades(self):
-        if self.trades_collection is None:
-            return []
+        if self.trades_collection is None: return []
         return list(self.trades_collection.find({"status": "OPEN"}))
 
     def update_trade(self, order_id, update_data):
-        if self.trades_collection is None:
-            return
+        if self.trades_collection is None: return
         self.trades_collection.update_one({"order_id": int(order_id)}, {"$set": update_data})
 
-    def clear_all_trades(self):
-        if self.trades_collection is None:
-            return
-        self.trades_collection.delete_many({})
-
-    def clear_learning_state(self):
-        if self.state_collection is None:
-            return
-        self.state_collection.delete_many({})
-
     def get_total_realized_profit(self):
-        if self.trades_collection is None:
-            return 0.0
-        pipeline = [
-            {"$group": {"_id": None, "total": {"$sum": "$profit_loss"}}}
-        ]
+        if self.trades_collection is None: return 0.0
+        pipeline = [{"$group": {"_id": None, "total": {"$sum": "$profit_loss"}}}]
         result = list(self.trades_collection.aggregate(pipeline))
         return result[0]["total"] if result else 0.0
 
     def save_model(self, model_name, model_bytes):
-        if self.models_collection is None:
-            return
+        if self.models_collection is None: return
         self.models_collection.update_one(
             {"name": model_name},
             {"$set": {"data": bson.Binary(model_bytes), "timestamp": datetime.now(timezone.utc)}},
@@ -69,7 +50,6 @@ class DBClient:
         )
 
     def load_model(self, model_name):
-        if self.models_collection is None:
-            return None
+        if self.models_collection is None: return None
         doc = self.models_collection.find_one({"name": model_name})
         return doc["data"] if doc is not None else None

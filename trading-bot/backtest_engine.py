@@ -11,14 +11,24 @@ class BacktestEngine:
 
         for symbol, df in self.data.items():
             df = df.copy()
-            # Calculate indicators using pandas rolling (avoiding pandas_ta)
-            df['RSI'] = 50.0 # Placeholder
+            # RSI Calculation
+            delta = df['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+
+            # Moving Averages
             df['SMA_FAST'] = df['close'].rolling(window=strategy_params['sma_fast']).mean()
             df['SMA_SLOW'] = df['close'].rolling(window=strategy_params['sma_slow']).mean()
-            df['ATR'] = (df['high'] - df['low']).rolling(window=14).mean()
+
+            # ATR Calculation
+            high_low = df['high'] - df['low']
+            high_close = np.abs(df['high'] - df['close'].shift())
+            low_close = np.abs(df['low'] - df['close'].shift())
+            true_range = np.max(pd.concat([high_low, high_close, low_close], axis=1), axis=1)
+            df['ATR'] = true_range.rolling(14).mean()
 
             # Simplified simulation
-            # We don't have full tick data, so we simulate at close
             df = df.dropna()
             if df.empty: continue
 
@@ -30,9 +40,9 @@ class BacktestEngine:
                 curr = df.iloc[i]
                 nxt = df.iloc[i+1]
 
-                # Signal logic using params
+                # Signal logic
                 buy_signal = (curr['RSI'] < strategy_params['rsi_oversold']) and (curr['close'] > curr['SMA_FAST'])
-                sell_signal = (curr['RSI'] > strategy_params['rsi_overbought']) and (curr['close'] < curr['SMA_FAST'])
+                sell_signal = (curr['RSI'] > strategy_params['rsi_overbought']) and (curr['close'] < strategy_params['rsi_overbought'])
 
                 if buy_signal:
                     diff = nxt['close'] - curr['close']

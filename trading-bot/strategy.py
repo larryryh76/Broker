@@ -1,3 +1,5 @@
+import pandas as pd
+import numpy as np
 import config
 
 class Strategy:
@@ -8,25 +10,26 @@ class Strategy:
         if df is None or len(df) < config.SMA_SLOW:
             return df
 
-        # Placeholders for indicators to run without pandas_ta
-        df['RSI'] = 50.0 # Neutral placeholder
+        # RSI Calculation (Native Pandas)
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=config.RSI_PERIOD).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=config.RSI_PERIOD).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        # Moving Averages
         df['SMA_FAST'] = df['close'].rolling(window=config.SMA_FAST).mean()
         df['SMA_SLOW'] = df['close'].rolling(window=config.SMA_SLOW).mean()
 
-        # MACD placeholders
-        df['MACD'] = 0.0
-        df['MACD_SIGNAL'] = 0.0
-        df['MACD_HIST'] = 0.0
+        # ATR Calculation (Native Pandas)
+        high_low = df['high'] - df['low']
+        high_close = np.abs(df['high'] - df['close'].shift())
+        low_close = np.abs(df['low'] - df['close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = np.max(ranges, axis=1)
+        df['ATR'] = true_range.rolling(14).mean()
 
-        # Bollinger Bands placeholders
-        df['BB_UPPER'] = df['close'] * 1.02
-        df['BB_LOWER'] = df['close'] * 0.98
-
-        # ATR placeholder
-        df['ATR'] = (df['high'] - df['low']).rolling(window=14).mean()
-
-        # Support and Resistance Levels (Zone Detection)
-        # Using a 50-period rolling window for simplified SR
+        # Support and Resistance Levels
         df['Support'] = df['low'].rolling(window=50).min()
         df['Resistance'] = df['high'].rolling(window=50).max()
 
@@ -38,31 +41,25 @@ class Strategy:
 
         latest = df.iloc[-1]
 
-        # Core Conditions from Project Objectives (Simplified for Placeholder Mode)
-
-        # 1. RSI placeholder check
+        # Core Conditions
         rsi_buy = latest['RSI'] < config.RSI_OVERSOLD
         rsi_sell = latest['RSI'] > config.RSI_OVERBOUGHT
 
-        # 2. Price vs Primary Trend MA (SMA_SLOW)
         trend_buy = latest['close'] > latest['SMA_SLOW']
         trend_sell = latest['close'] < latest['SMA_SLOW']
 
-        # 3. AI Probability Threshold
-        ai_buy = bullish_prob > 0.60
-        ai_sell = bearish_prob > 0.60
+        ai_buy = bullish_prob > 0.65
+        ai_sell = bearish_prob > 0.65
 
-        # 4. Momentum / SR Confirmations
-        # Buy: Price near support OR MACD Hist increasing
-        momentum_buy = (latest['close'] <= latest['Support'] * 1.001) or (latest['MACD_HIST'] > 0)
-        # Sell: Price near resistance OR MACD Hist decreasing
-        momentum_sell = (latest['close'] >= latest['Resistance'] * 0.999) or (latest['MACD_HIST'] < 0)
+        # Momentum confirmation
+        momentum_buy = latest['SMA_FAST'] > latest['SMA_SLOW']
+        momentum_sell = latest['SMA_FAST'] < latest['SMA_SLOW']
 
-        # Outcome Dominance Weighted Scoring (Intelligence Layer)
-        score_bull = (2.0 if trend_buy else 0) + (1.0 if rsi_buy else 0) + (2.0 if ai_buy else 0) + (0.5 if momentum_buy else 0)
-        score_bear = (2.0 if trend_sell else 0) + (1.0 if rsi_sell else 0) + (2.0 if ai_sell else 0) + (0.5 if momentum_sell else 0)
+        # Weighted Scoring
+        score_bull = (2.0 if trend_buy else 0) + (1.5 if rsi_buy else 0) + (2.0 if ai_buy else 0) + (0.5 if momentum_buy else 0)
+        score_bear = (2.0 if trend_sell else 0) + (1.5 if rsi_sell else 0) + (2.0 if ai_sell else 0) + (0.5 if momentum_sell else 0)
 
-        # Threshold for execution: 4.5/5.5
+        # Threshold for execution
         if score_bull >= 4.5:
             return "BUY", score_bull
         if score_bear >= 4.5:

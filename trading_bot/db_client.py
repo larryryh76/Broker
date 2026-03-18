@@ -2,7 +2,7 @@ import os
 import bson
 from pymongo import MongoClient
 from datetime import datetime, timezone
-import config
+from trading_bot import config
 
 class DBClient:
     def __init__(self):

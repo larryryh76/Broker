@@ -1,4 +1,4 @@
-import config
+from trading_bot import config
 from trading_bot.terminal_connector import TerminalConnector
 from trading_bot.db_client import DBClient
 from trading_bot.data_engine import DataEngine

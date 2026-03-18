@@ -1,21 +1,19 @@
-# THE MONEY MACHINE: Dockerized Autonomous MT5 Foundation
+# THE MONEY MACHINE: Native MT5 Cloud Foundation
 
-This repository provides a professional-grade, fully autonomous architecture for MetaTrader 5 (MT5) trading bots. It is designed to run exclusively on GitHub Actions or equivalent CI/CD platforms using a decoupled multi-service Docker environment.
+This repository provides a professional-grade, fully autonomous architecture for MetaTrader 5 (MT5) trading bots, optimized for stability and performance on GitHub Actions using native Windows runners.
 
 ## Architecture Highlights
 
-- **Decoupled Services**: Separates the MetaTrader 5 environment (Wine/headless) from the trading bot logic (Python 3) using `docker-compose`.
-- **mt5linux Bridge**: Employs an RPyC bridge to allow Linux-based Python code to communicate with the Windows-only MetaTrader 5 terminal.
-- **Resilient Connectivity**: Features a multi-layered synchronization strategy with a 30-attempt connection retry loop to handle the initialization lag of MT5 under Wine.
-- **Pure Cloud Execution**: No local MT5 installation, Windows license, or GUI session required. 100% cloud-native on `ubuntu-latest`.
-- **Autonomous Lifecycle**: Implements full trade reconciliation, risk management (circuit breakers), and position management (break-even protection).
+- **Native Windows Execution**: Runs directly on `windows-latest` runners, eliminating the overhead and instability of emulation layers like Wine or Docker.
+- **Official MetaTrader 5 Integration**: Utilizes the official `MetaTrader5` Python package for direct, low-latency communication with the terminal.
+- **Automated Lifecycle**: Implements full trade reconciliation, risk management (circuit breakers), and position management (break-even protection).
+- **Pure Cloud Execution**: No local MT5 installation or manual intervention required. 100% cloud-native via GitHub Actions.
+- **Persistent State**: Integrates with MongoDB Atlas to maintain learning states and trade history across ephemeral CI runs.
 
 ## Repository Structure
 
-- `trading-bot/`: Core Python application (bot, strategy, AI engine, risk management).
-- `.github/workflows/`: Automation for building Docker images and running trading cycles.
-- `docker-compose.yml`: Orchestrates the MT5 terminal and bot services.
-- `Dockerfile`: Provisions the trading bot environment.
+- `trading_bot/`: Core Python application (bot, strategy, AI engine, risk management).
+- `.github/workflows/`: Automation for running 15-minute trading cycles.
 
 ## Setup & Deployment
 
@@ -31,7 +29,7 @@ The system is scheduled to run every 15 minutes via GitHub Actions. You can manu
 
 ## Monitoring
 
-- **Action Logs**: Real-time streaming of bot execution and MT5 terminal logs.
+- **Action Logs**: Real-time streaming of bot execution and MT5 terminal status.
 - **Artifacts**: Account snapshots, trade history, and execution logs are uploaded as artifacts after every run.
 - **Cloud State**: If MongoDB is configured, the bot persists its learning state and trade history for continuity across runs.
 

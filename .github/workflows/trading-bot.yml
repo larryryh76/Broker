@@ -1,4 +1,4 @@
-name: Autonomous MT5 Trading Cycle
+name: Autonomous MT5 Trading Cycle (Native Windows)
 
 on:
   workflow_dispatch:
@@ -7,49 +7,80 @@ on:
 
 jobs:
   trading-cycle:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Compose
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker-compose
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
 
-      - name: Start Multi-Container Services
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r trading_bot/requirements.txt
+          pip install MetaTrader5
+
+      - name: Download and Install MT5
+        shell: powershell
+        run: |
+          $url = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+          $outpath = "$PSScriptRoot\mt5setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $outpath
+          Start-Process -FilePath $outpath -ArgumentList "/silent" -Wait
+
+          # Wait for MT5 to settle
+          Start-Sleep -Seconds 10
+
+      - name: Create MT5 Terminal INI
+        shell: powershell
+        run: |
+          $iniPath = "trading_bot/terminal.ini"
+          $iniContent = @"
+          [Common]
+          Login=$(($env:MT5_LOGIN))
+          Password=$(($env:MT5_PASSWORD))
+          Server=$(($env:MT5_SERVER))
+          CertPassword=
+          ProxyEnable=0
+          ProxyType=0
+          ProxyAddress=
+          ProxyAuth=
+          "@
+          Set-Content -Path $iniPath -Value $iniContent
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+
+      - name: Run Trading Bot
+        shell: powershell
+        run: |
+          # Set PYTHONPATH to include the root directory
+          $env:PYTHONPATH = "."
+          python trading_bot/bot.py
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: docker-compose up -d --build
-
-      - name: Monitor Trading Bot
-        run: |
-          echo "Following bot logs..."
-          docker logs -f bot
-
-          EXIT_CODE=$(docker inspect bot --format='{{.State.ExitCode}}')
-          echo "Bot exited with code: $EXIT_CODE"
-          if [ "$EXIT_CODE" != "0" ]; then
-            exit 1
-          fi
-
-      - name: Print MT5 logs on failure
-        if: always()
-        run: docker logs mt5 || true
 
       - name: Extract Artifacts
         if: always()
+        shell: powershell
         run: |
-          mkdir -p artifacts/logs artifacts/snapshots
-          docker cp bot:/app/trading-bot/logs/ artifacts/ || true
-          docker cp bot:/app/trading-bot/snapshots/ artifacts/ || true
+          New-Item -ItemType Directory -Force -Path "artifacts/logs"
+          New-Item -ItemType Directory -Force -Path "artifacts/snapshots"
+          if (Test-Path "trading_bot/logs") {
+            Copy-Item -Path "trading_bot/logs/*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          if (Test-Path "trading_bot/snapshots") {
+            Copy-Item -Path "trading_bot/snapshots/*" -Destination "artifacts/snapshots" -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -57,7 +88,3 @@ jobs:
         with:
           name: trading-artifacts-${{ github.run_id }}
           path: artifacts/
-
-      - name: Shutdown Services
-        if: always()
-        run: docker-compose down

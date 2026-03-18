@@ -14,15 +14,16 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Install dependencies
-COPY trading-bot/requirements.txt .
+COPY trading_bot/requirements.txt .
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install -r requirements.txt
 
 # Copy bot code
-COPY trading-bot/ trading-bot/
+COPY trading_bot/ trading_bot/
 
 # Ensure logs and other necessary directories exist
-RUN mkdir -p trading-bot/logs trading-bot/snapshots trading-bot/data trading-bot/models
+RUN mkdir -p trading_bot/logs trading_bot/snapshots trading_bot/data trading_bot/models
 
-# Command to run the bot
-CMD ["python3", "trading-bot/bot.py"]
+# Set Python Path and command
+ENV PYTHONPATH=/app
+CMD ["python3", "trading_bot/bot.py"]

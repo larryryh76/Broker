@@ -3,7 +3,6 @@ version: '3.8'
 services:
   mt5:
     container_name: mt5
-    image: ghcr.io/larryryh76/mt5-headless:latest
     build:
       context: .
       dockerfile: Dockerfile.mt5
@@ -17,7 +16,6 @@ services:
 
   bot:
     container_name: bot
-    image: ghcr.io/larryryh76/broker-bot:latest
     build:
       context: .
       dockerfile: Dockerfile

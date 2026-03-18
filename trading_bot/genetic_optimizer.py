@@ -1,4 +1,4 @@
-import config
+from trading_bot import config
 from strategy_generator import StrategyGenerator
 from backtest_engine import BacktestEngine
 

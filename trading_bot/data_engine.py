@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-import config
+from trading_bot import config
 from datetime import datetime
 
 class DataEngine:

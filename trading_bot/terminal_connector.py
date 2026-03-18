@@ -2,7 +2,7 @@ import os
 import time
 from mt5linux import MetaTrader5
 import pandas as pd
-import config
+from trading_bot import config
 from datetime import datetime, timedelta
 
 class TerminalConnector:

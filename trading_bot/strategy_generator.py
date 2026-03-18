@@ -1,5 +1,5 @@
 import random
-import config
+from trading_bot import config
 
 class StrategyGenerator:
     def __init__(self):

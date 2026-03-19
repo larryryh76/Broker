@@ -30,20 +30,31 @@ jobs:
         run: |
           $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $setupPath = "$env:TEMP\mt5setup.exe"
+          $installPath = "C:\mt5_terminal"
 
           echo "Downloading MT5 Installer..."
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
 
-          echo "Installing MT5 Terminal (Silent/Portable)..."
-          # Using /auto /quit /portable is the reliable way for silent GHA setup
-          Start-Process -FilePath $setupPath -ArgumentList "/auto", "/quit", "/portable" -Wait
+          echo "Installing MT5 Terminal to $installPath..."
+          # Using /auto and /path for specific location
+          Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
 
-          echo "Installation completed."
+          Start-Sleep -Seconds 15
+
+          if (Test-Path "$installPath\terminal64.exe") {
+            echo "MT5 Installed successfully at $installPath"
+          } else {
+            echo "CRITICAL: terminal64.exe not found in $installPath"
+            # Fallback search
+            $found = Get-ChildItem -Path "C:\" -Filter "terminal64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              echo "Found MT5 at: $($found.FullName)"
+            }
+          }
 
       - name: Run Trading Bot
         shell: powershell
         run: |
-          # Set PYTHONPATH to include the root directory
           $env:PYTHONPATH = "."
           python trading_bot/bot.py
         env:
@@ -51,6 +62,7 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MT5_TERMINAL_PATH: 'C:\mt5_terminal\terminal64.exe'
 
       - name: Extract Artifacts
         if: always()

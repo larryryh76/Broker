@@ -36,21 +36,28 @@ jobs:
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
 
           echo "Installing MT5 Terminal to $installPath..."
-          # Using /auto and /path for specific location
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
 
-          Start-Sleep -Seconds 15
+          Start-Sleep -Seconds 20
 
-          if (Test-Path "$installPath\terminal64.exe") {
-            echo "MT5 Installed successfully at $installPath"
+          $terminalExe = "$installPath\terminal64.exe"
+          if (Test-Path $terminalExe) {
+            echo "MT5 Installed successfully. Performing Pre-Launch Initialization..."
+
+            # Start MT5 in background to initialize IPC bridge
+            # Using /login and /server to trigger initial connection logic
+            $args = "/portable", "/skipupdate", "/login:$($env:MT5_LOGIN)", "/server:$($env:MT5_SERVER)"
+            Start-Process -FilePath $terminalExe -ArgumentList $args
+
+            echo "Waiting 60s for MT5 to stabilize IPC bridge..."
+            Start-Sleep -Seconds 60
           } else {
-            echo "CRITICAL: terminal64.exe not found in $installPath"
-            # Fallback search
-            $found = Get-ChildItem -Path "C:\" -Filter "terminal64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) {
-              echo "Found MT5 at: $($found.FullName)"
-            }
+            echo "CRITICAL: terminal64.exe not found."
+            exit 1
           }
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot
         shell: powershell

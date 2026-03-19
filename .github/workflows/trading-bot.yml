@@ -25,37 +25,20 @@ jobs:
           pip install -r trading_bot/requirements.txt
           pip install MetaTrader5
 
-      - name: Download and Install MT5
+      - name: Setup MT5 Terminal
         shell: powershell
         run: |
-          $url = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
-          $outpath = "$PSScriptRoot\mt5setup.exe"
-          Invoke-WebRequest -Uri $url -OutFile $outpath
-          Start-Process -FilePath $outpath -ArgumentList "/silent" -Wait
+          $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+          $setupPath = "$env:TEMP\mt5setup.exe"
 
-          # Wait for MT5 to settle
-          Start-Sleep -Seconds 10
+          echo "Downloading MT5 Installer..."
+          Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
 
-      - name: Create MT5 Terminal INI
-        shell: powershell
-        run: |
-          $iniPath = "trading_bot/terminal.ini"
-          $iniContent = @"
-          [Common]
-          Login=$(($env:MT5_LOGIN))
-          Password=$(($env:MT5_PASSWORD))
-          Server=$(($env:MT5_SERVER))
-          CertPassword=
-          ProxyEnable=0
-          ProxyType=0
-          ProxyAddress=
-          ProxyAuth=
-          "@
-          Set-Content -Path $iniPath -Value $iniContent
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+          echo "Installing MT5 Terminal (Silent/Portable)..."
+          # Using /auto /quit /portable is the reliable way for silent GHA setup
+          Start-Process -FilePath $setupPath -ArgumentList "/auto", "/quit", "/portable" -Wait
+
+          echo "Installation completed."
 
       - name: Run Trading Bot
         shell: powershell
@@ -73,13 +56,12 @@ jobs:
         if: always()
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Force -Path "artifacts/logs"
-          New-Item -ItemType Directory -Force -Path "artifacts/snapshots"
+          if (!(Test-Path "artifacts")) { New-Item -ItemType Directory -Path "artifacts" }
           if (Test-Path "trading_bot/logs") {
-            Copy-Item -Path "trading_bot/logs/*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item -Path "trading_bot/logs" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
           }
           if (Test-Path "trading_bot/snapshots") {
-            Copy-Item -Path "trading_bot/snapshots/*" -Destination "artifacts/snapshots" -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item -Path "trading_bot/snapshots" -Destination "artifacts/snapshots" -Recurse -Force -ErrorAction SilentlyContinue
           }
 
       - name: Upload Artifacts

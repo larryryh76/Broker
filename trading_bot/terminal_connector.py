@@ -24,21 +24,24 @@ class TerminalConnector:
 
         try:
             # Multi-attempt initialization loop for slow startups
-            for i in range(1, 4):
-                print(f"Initialization attempt {i}...")
+            # Since MT5 is pre-launched in GHA, we attempt to attach to it
+            for i in range(1, 6):
+                print(f"Initialization attempt {i}/5...")
                 init_args = {
                     "login": int(self.login_id),
                     "password": self.password,
                     "server": self.server,
-                    "timeout": 120000
+                    "timeout": 180000 # 180s
                 }
                 if path: init_args["path"] = path
 
+                # Try attaching to existing terminal first
                 if self.mt5.initialize(**init_args):
+                    print("Attached to MetaTrader 5 successfully.")
                     break
 
-                print(f"Attempt {i} failed: {self.mt5.last_error()}. Retrying in 10s...")
-                time.sleep(10)
+                print(f"Attempt {i} failed: {self.mt5.last_error()}. Waiting 15s for IPC bridge readiness...")
+                time.sleep(15)
             else:
                 print("Direct initialization failed. Trying fallback...")
                 if not self.mt5.initialize(path=path) if path else self.mt5.initialize():

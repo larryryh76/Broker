@@ -59,10 +59,11 @@ class Strategy:
         score_bull = (2.0 if trend_buy else 0) + (1.5 if rsi_buy else 0) + (2.0 if ai_buy else 0) + (0.5 if momentum_buy else 0)
         score_bear = (2.0 if trend_sell else 0) + (1.5 if rsi_sell else 0) + (2.0 if ai_sell else 0) + (0.5 if momentum_sell else 0)
 
-        # Threshold for execution
-        if score_bull >= 4.5:
+        # Threshold for execution: 4.5 (Requires AI) or 4.0 (Strong Technicals)
+        # Reduced to 3.5 to allow technical trading while AI is calibrating
+        if score_bull >= 3.5:
             return "BUY", score_bull
-        if score_bear >= 4.5:
+        if score_bear >= 3.5:
             return "SELL", score_bear
 
         return "WAIT", 0

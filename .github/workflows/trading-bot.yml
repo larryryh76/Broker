@@ -31,6 +31,7 @@ jobs:
           $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $setupPath = "$env:TEMP\mt5setup.exe"
           $installPath = "C:\mt5_terminal"
+          $terminalExe = "$installPath\terminal64.exe"
 
           echo "Downloading MT5 Installer..."
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
@@ -38,22 +39,35 @@ jobs:
           echo "Installing MT5 Terminal to $installPath..."
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
 
-          Start-Sleep -Seconds 20
-
-          $terminalExe = "$installPath\terminal64.exe"
-          if (Test-Path $terminalExe) {
-            echo "MT5 Installed successfully. Performing Pre-Launch Initialization..."
-
-            # Start MT5 in background to initialize IPC bridge
-            # Using /login and /server to trigger initial connection logic
-            $args = "/portable", "/skipupdate", "/login:$($env:MT5_LOGIN)", "/server:$($env:MT5_SERVER)"
-            Start-Process -FilePath $terminalExe -ArgumentList $args
-
-            echo "Waiting 60s for MT5 to stabilize IPC bridge..."
-            Start-Sleep -Seconds 60
-          } else {
-            echo "CRITICAL: terminal64.exe not found."
+          if (!(Test-Path $terminalExe)) {
+            echo "CRITICAL: Installation failed. terminal64.exe not found."
             exit 1
+          }
+
+          echo "MT5 Installed. Starting PHASE 1: Initialization..."
+          # First launch to generate config/data files
+          $args = "/portable", "/skipupdate", "/login:$($env:MT5_LOGIN)", "/server:$($env:MT5_SERVER)"
+          $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
+
+          echo "Waiting 45s for first-time initialization..."
+          Start-Sleep -Seconds 45
+
+          echo "Closing MT5 for stabilization..."
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 10
+
+          echo "Starting PHASE 2: Stable Background Run..."
+          $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
+
+          echo "Verifying MT5 process is alive..."
+          Start-Sleep -Seconds 20
+          $check = Get-Process terminal64 -ErrorAction SilentlyContinue
+          if ($check) {
+            echo "MT5 is running (PID: $($check.Id))"
+          } else {
+            echo "CRITICAL: MT5 failed to stay alive. Retrying launch..."
+            $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
+            Start-Sleep -Seconds 30
           }
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
@@ -63,6 +77,8 @@ jobs:
         shell: powershell
         run: |
           $env:PYTHONPATH = "."
+          # Verify process again right before bot
+          Get-Process terminal64 -ErrorAction SilentlyContinue
           python trading_bot/bot.py
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}

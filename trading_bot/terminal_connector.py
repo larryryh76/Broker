@@ -1,5 +1,6 @@
 import os
 import time
+import psutil
 import MetaTrader5 as mt5
 import pandas as pd
 from trading_bot import config
@@ -14,6 +15,17 @@ class TerminalConnector:
 
     def connect(self):
         print(f"Attempting to initialize MetaTrader 5 (Native Windows Direct)...")
+
+        # Pre-connection Process Check
+        mt5_running = False
+        for proc in psutil.process_iter(['name']):
+            if "terminal64.exe" in proc.info['name'].lower():
+                mt5_running = True
+                print(f"Found active MT5 process: {proc.info['name']} (PID: {proc.pid})")
+                break
+
+        if not mt5_running:
+            print("WARNING: No terminal64.exe process detected via psutil.")
 
         path = config.TERMINAL_PATH
         if path and os.path.exists(path):
@@ -44,7 +56,8 @@ class TerminalConnector:
                 time.sleep(15)
             else:
                 print("Direct initialization failed. Trying fallback...")
-                if not self.mt5.initialize(path=path) if path else self.mt5.initialize():
+                initialized = self.mt5.initialize(path=path) if path else self.mt5.initialize()
+                if not initialized:
                     print(f"Fallback initialization failed: {self.mt5.last_error()}")
                     return False
 

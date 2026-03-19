@@ -44,41 +44,57 @@ jobs:
             exit 1
           }
 
-          echo "MT5 Installed. Starting PHASE 1: Initialization..."
-          # First launch to generate config/data files
-          $args = "/portable", "/skipupdate", "/login:$($env:MT5_LOGIN)", "/server:$($env:MT5_SERVER)"
+          # --- CONFIGURATION SEEDING ---
+          echo "Seeding MT5 Configuration..."
+          $configDir = "$installPath\config"
+          if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir }
+
+          $commonIni = @"
+          [Common]
+          Login=$($env:MT5_LOGIN)
+          Password=$($env:MT5_PASSWORD)
+          Server=$($env:MT5_SERVER)
+          ProxyEnable=0
+          "@
+          Set-Content -Path "$configDir\common.ini" -Value $commonIni
+
+          # --- PHASE 1: INITIALIZATION ---
+          echo "Starting MT5 PHASE 1: Initialization..."
+          $args = "/portable", "/skipupdate"
           $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
 
-          echo "Waiting 45s for first-time initialization..."
-          Start-Sleep -Seconds 45
+          echo "Waiting 60s for MT5 to stabilize profile..."
+          Start-Sleep -Seconds 60
 
-          echo "Closing MT5 for stabilization..."
+          echo "Terminating MT5 Phase 1..."
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 15
 
-          echo "Starting PHASE 2: Stable Background Run..."
+          # --- PHASE 2: STABLE RUN ---
+          echo "Starting MT5 PHASE 2: Stable IPC run..."
           $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
 
-          echo "Verifying MT5 process is alive..."
-          Start-Sleep -Seconds 20
-          $check = Get-Process terminal64 -ErrorAction SilentlyContinue
-          if ($check) {
-            echo "MT5 is running (PID: $($check.Id))"
-          } else {
-            echo "CRITICAL: MT5 failed to stay alive. Retrying launch..."
-            $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
-            Start-Sleep -Seconds 30
+          echo "Waiting 120s for IPC bridge and LOGIN readiness..."
+          for ($i=1; $i -le 12; $i++) {
+            Start-Sleep -Seconds 10
+            $check = Get-Process terminal64 -ErrorAction SilentlyContinue
+            if ($check) {
+              $mem = [math]::Round($check.WorkingSet64 / 1MB, 2)
+              echo "Attempt $i: MT5 is ALIVE (PID: $($check.Id), Memory: $mem MB)"
+            } else {
+              echo "Attempt $i: MT5 CRASHED! Relaunching..."
+              $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
+            }
           }
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot
         shell: powershell
         run: |
           $env:PYTHONPATH = "."
-          # Verify process again right before bot
-          Get-Process terminal64 -ErrorAction SilentlyContinue
           python trading_bot/bot.py
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}

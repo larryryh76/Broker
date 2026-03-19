@@ -15,9 +15,15 @@ logging.basicConfig(
 logger = logging.getLogger("TheMoneyMachine")
 
 # Broker Credentials
-MT5_LOGIN = int(os.getenv("MT5_LOGIN", "0"))
+MT5_LOGIN_RAW = os.getenv("MT5_LOGIN", "0")
+MT5_LOGIN = int(MT5_LOGIN_RAW) if MT5_LOGIN_RAW.isdigit() else 0
 MT5_PASSWORD = os.getenv("MT5_PASSWORD", "")
 MT5_SERVER = os.getenv("MT5_SERVER", "")
+
+# Validation (CRITICAL)
+if MT5_LOGIN == 0 or not MT5_PASSWORD or not MT5_SERVER:
+    print(f"CRITICAL ERROR: MT5 Credentials missing. LOGIN: {MT5_LOGIN}, SERVER: {MT5_SERVER}")
+    # In a real machine, we might raise SystemExit(1)
 
 # Bot Settings
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]

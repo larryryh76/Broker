@@ -23,7 +23,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r trading_bot/requirements.txt
-          pip install MetaTrader5
+          pip install MetaTrader5 psutil
 
       - name: Setup MT5 Terminal
         shell: powershell
@@ -33,22 +33,18 @@ jobs:
           $installPath = "C:\mt5_terminal"
           $terminalExe = "$installPath\terminal64.exe"
 
-          echo "Downloading MT5 Installer..."
-          Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
-
-          echo "Installing MT5 Terminal to $installPath..."
-          Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
-
           if (!(Test-Path $terminalExe)) {
-            echo "CRITICAL: Installation failed. terminal64.exe not found."
-            exit 1
+            echo "Downloading MT5 Installer..."
+            Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
+
+            echo "Installing MT5 Terminal to $installPath..."
+            Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
+            Start-Sleep -Seconds 10
           }
 
-          # --- CONFIGURATION SEEDING ---
-          echo "Seeding MT5 Configuration..."
+          # Seed config for Algo Trading
           $configDir = "$installPath\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir }
-
           $commonIni = @"
           [Common]
           Login=$($env:MT5_LOGIN)
@@ -57,39 +53,6 @@ jobs:
           ProxyEnable=0
           "@
           Set-Content -Path "$configDir\common.ini" -Value $commonIni
-
-          # --- PHASE 1: INITIALIZATION ---
-          echo "Starting MT5 PHASE 1: Initialization..."
-          $args = "/portable", "/skipupdate"
-          $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
-
-          echo "Waiting 60s for MT5 to stabilize profile..."
-          Start-Sleep -Seconds 60
-
-          echo "Terminating MT5 Phase 1..."
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 15
-
-          # --- PHASE 2: STABLE RUN ---
-          echo "Starting MT5 PHASE 2: Stable IPC run..."
-          $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
-
-          echo "Waiting 120s for IPC bridge and LOGIN readiness..."
-          for ($i=1; $i -le 12; $i++) {
-            Start-Sleep -Seconds 10
-            $check = Get-Process terminal64 -ErrorAction SilentlyContinue
-            if ($check) {
-              $mem = [math]::Round($check.WorkingSet64 / 1MB, 2)
-              echo "Attempt ${i}: MT5 is ALIVE (PID: $($check.Id), Memory: $mem MB)"
-            } else {
-              echo "Attempt ${i}: MT5 CRASHED! Relaunching..."
-              $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
-            }
-          }
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot
         shell: powershell

@@ -80,9 +80,9 @@ jobs:
             $check = Get-Process terminal64 -ErrorAction SilentlyContinue
             if ($check) {
               $mem = [math]::Round($check.WorkingSet64 / 1MB, 2)
-              echo "Attempt $i: MT5 is ALIVE (PID: $($check.Id), Memory: $mem MB)"
+              echo "Attempt ${i}: MT5 is ALIVE (PID: $($check.Id), Memory: $mem MB)"
             } else {
-              echo "Attempt $i: MT5 CRASHED! Relaunching..."
+              echo "Attempt ${i}: MT5 CRASHED! Relaunching..."
               $proc = Start-Process -FilePath $terminalExe -ArgumentList $args -PassThru
             }
           }

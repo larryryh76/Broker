@@ -15,32 +15,37 @@ class TerminalConnector:
     def connect(self):
         print(f"Attempting to initialize MetaTrader 5 (Native Windows Direct)...")
 
-        # In GHA windows-latest, mt5.initialize() might not find a terminal
-        # unless it is explicitly installed or if the library can download it.
-        # However, the official package usually requires a terminal to be present.
-        # We use a 120s timeout and full credentials.
+        path = config.TERMINAL_PATH
+        if path and os.path.exists(path):
+            print(f"Using terminal path: {path}")
+        else:
+            print("Terminal path not found or not specified. Using default discovery.")
+            path = None
 
         try:
-            if not self.mt5.initialize(
-                login=int(self.login_id),
-                password=self.password,
-                server=self.server,
-                timeout=120000 # 120s
-            ):
-                print(f"Failed to initialize MT5: {self.mt5.last_error()}")
+            # Multi-attempt initialization loop for slow startups
+            for i in range(1, 4):
+                print(f"Initialization attempt {i}...")
+                init_args = {
+                    "login": int(self.login_id),
+                    "password": self.password,
+                    "server": self.server,
+                    "timeout": 120000
+                }
+                if path: init_args["path"] = path
 
-                # Fallback: simple initialize and then login
-                print("Attempting basic initialization fallback...")
-                if not self.mt5.initialize():
-                    print(f"Basic initialization failed: {self.mt5.last_error()}")
+                if self.mt5.initialize(**init_args):
+                    break
+
+                print(f"Attempt {i} failed: {self.mt5.last_error()}. Retrying in 10s...")
+                time.sleep(10)
+            else:
+                print("Direct initialization failed. Trying fallback...")
+                if not self.mt5.initialize(path=path) if path else self.mt5.initialize():
+                    print(f"Fallback initialization failed: {self.mt5.last_error()}")
                     return False
 
-                print("Basic initialization successful. Attempting login...")
-                if not self.mt5.login(
-                    login=int(self.login_id),
-                    password=self.password,
-                    server=self.server
-                ):
+                if not self.mt5.login(login=int(self.login_id), password=self.password, server=self.server):
                     print(f"Login failed: {self.mt5.last_error()}")
                     return False
 

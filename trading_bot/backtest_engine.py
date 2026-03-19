@@ -42,7 +42,7 @@ class BacktestEngine:
 
                 # Signal logic
                 buy_signal = (curr['RSI'] < strategy_params['rsi_oversold']) and (curr['close'] > curr['SMA_FAST'])
-                sell_signal = (curr['RSI'] > strategy_params['rsi_overbought']) and (curr['close'] < strategy_params['rsi_overbought'])
+                sell_signal = (curr['RSI'] > strategy_params['rsi_overbought']) and (curr['close'] < curr['SMA_FAST'])
 
                 if buy_signal:
                     diff = nxt['close'] - curr['close']

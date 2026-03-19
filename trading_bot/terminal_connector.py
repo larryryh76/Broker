@@ -1,6 +1,6 @@
 import os
 import time
-from mt5linux import MetaTrader5
+import MetaTrader5 as mt5
 import pandas as pd
 from trading_bot import config
 from datetime import datetime, timedelta
@@ -10,70 +10,30 @@ class TerminalConnector:
         self.login_id = config.MT5_LOGIN
         self.password = config.MT5_PASSWORD
         self.server = config.MT5_SERVER
-        self.mt5 = None
+        self.mt5 = mt5
 
     def connect(self):
-        # SECTION 16 — Extended Connection Wait Loop (Anti-ConnectionRefused)
-        # Requirement: Retry up to 30 times with a 2-second wait (60s total).
-        max_retries = 30
-        connected = False
+        print(f"Attempting to initialize MetaTrader 5 (Native Windows)...")
 
-        for attempt in range(1, max_retries + 1):
-            print(f"Attempt {attempt}: Connecting to MT5 bridge at host 'mt5' port 8001 (Attempt {attempt}/{max_retries})...")
-            try:
-                # Instantiate mt5linux client fresh for each attempt to avoid stale socket states
-                # Wrapped in internal try-except as RPyC can fail during init (socket.error, EOFError)
-                try:
-                    self.mt5 = MetaTrader5(host='mt5', port=8001)
-                except (Exception, ConnectionError, EOFError) as init_err:
-                    print(f"Bridge client instantiation failed ({type(init_err).__name__}: {init_err}), retrying in 3 seconds...")
-                    if attempt < max_retries:
-                        time.sleep(3)
-                        continue
-                    else:
-                        print(f"CRITICAL: Failed to instantiate MetaTrader5 after {max_retries} attempts.")
-                        return False
-
-                print("Bridge client instantiated. Initializing MT5 connection...")
-                if self.mt5.initialize():
-                    # Validate connection via version check
-                    version = self.mt5.version()
-                    if version:
-                        print("Connected to MT5 bridge successfully")
-                        print(f"MT5 Version: {version}")
-
-                        # Attempt login
-                        print(f"Attempting login to {self.server}...")
-                        authorized = self.mt5.login(
-                            login=int(self.login_id),
-                            password=self.password,
-                            server=self.server
-                        )
-
-                        if authorized:
-                            print(f"Logged in successfully via bridge to {self.server}")
-                            connected = True
-                            break
-                        else:
-                            print(f"Login failed. Error: {self.mt5.last_error()}")
-                            self.mt5.shutdown()
-                    else:
-                        print("Bridge initialized but version check failed.")
-                        self.mt5.shutdown()
-                else:
-                    print("Connection failed, retrying in 2 seconds")
-
-            except Exception as e:
-                # Catching ConnectionRefusedError and ConnectionResetError
-                print(f"Connection failed ({e}), retrying in 2 seconds")
-
-            if attempt < max_retries:
-                time.sleep(2)
-
-        if not connected:
-            print(f"CRITICAL: Failed to establish bridge connection after {max_retries} attempts (60s).")
+        # Use credentials from config if available
+        if not self.mt5.initialize(
+            login=int(self.login_id),
+            password=self.password,
+            server=self.server,
+            timeout=120000 # 120s
+        ):
+            print(f"Failed to initialize MT5: {self.mt5.last_error()}")
             return False
 
+        print("MT5 initialized successfully.")
+
+        # Verify account
+        info = self.mt5.account_info()
+        if info is None:
+            print("Failed to get account info after initialization.")
+            return False
+
+        print(f"Logged into account: {info.login}")
         return True
 
     def map_symbol(self, symbol):
@@ -102,7 +62,11 @@ class TerminalConnector:
     def execute_order(self, symbol, side, lot, sl, tp):
         symbol = self.map_symbol(symbol)
         order_type = self.mt5.ORDER_TYPE_BUY if side == "BUY" else self.mt5.ORDER_TYPE_SELL
-        price = self.mt5.symbol_info_tick(symbol).ask if side == "BUY" else self.mt5.symbol_info_tick(symbol).bid
+
+        tick = self.mt5.symbol_info_tick(symbol)
+        if tick is None: return None
+
+        price = tick.ask if side == "BUY" else tick.bid
 
         request = {
             "action": self.mt5.TRADE_ACTION_DEAL,
@@ -114,7 +78,7 @@ class TerminalConnector:
             "tp": float(tp),
             "deviation": 20,
             "magic": 123456,
-            "comment": "Foundation Bot",
+            "comment": "Native Bot",
             "type_time": self.mt5.ORDER_TIME_GTC,
             "type_filling": self.mt5.ORDER_FILLING_IOC,
         }
@@ -142,7 +106,11 @@ class TerminalConnector:
         symbol = p.symbol
         lot = p.volume
         order_type = self.mt5.ORDER_TYPE_SELL if p.type == self.mt5.POSITION_TYPE_BUY else self.mt5.ORDER_TYPE_BUY
-        price = self.mt5.symbol_info_tick(symbol).bid if order_type == self.mt5.ORDER_TYPE_SELL else self.mt5.symbol_info_tick(symbol).ask
+
+        tick = self.mt5.symbol_info_tick(symbol)
+        if tick is None: return False
+
+        price = tick.bid if order_type == self.mt5.ORDER_TYPE_SELL else tick.ask
 
         request = {
             "action": self.mt5.TRADE_ACTION_DEAL,
@@ -153,7 +121,7 @@ class TerminalConnector:
             "price": float(price),
             "deviation": 20,
             "magic": 123456,
-            "comment": "Foundation Close",
+            "comment": "Native Close",
             "type_time": self.mt5.ORDER_TIME_GTC,
             "type_filling": self.mt5.ORDER_FILLING_IOC,
         }
@@ -166,6 +134,5 @@ class TerminalConnector:
         return [d._asdict() for d in deals if d.magic == 123456]
 
     def disconnect(self):
-        # SECTION 7 — Safe Shutdown
         self.mt5.shutdown()
-        print("MT5 foundation shutdown.")
+        print("MT5 shutdown.")

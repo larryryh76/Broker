@@ -58,64 +58,37 @@ jobs:
              New-Item -ItemType Directory -Force -Path "$dataPath\$sd"
           }
 
-          # Enable Algo Trading and seed account
-          $commonIni = @"
-          [Common]
-          Login=$($env:MT5_LOGIN)
-          Password=$($env:MT5_PASSWORD)
-          Server=$($env:MT5_SERVER)
-          ProxyEnable=0
-          CertPassword=
-          [Expert]
-          AllowLiveTrading=1
-          AllowDllImport=1
-          "@
-          Set-Content -Path "$dataPath\config\common.ini" -Value $commonIni
-
           $terminalIni = @"
           [Main]
           Login=$($env:MT5_LOGIN)
+          Password=$($env:MT5_PASSWORD)
           Server=$($env:MT5_SERVER)
+          AutoConnect=1
           [Common]
           AlgoTrading=1
           "@
           Set-Content -Path "$dataPath\config\terminal.ini" -Value $terminalIni
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
-      - name: Launch and Stabilize MT5
-        shell: powershell
-        run: |
-          # 1. Kill stale instances
-          taskkill /F /IM terminal64.exe /T /ErrorAction SilentlyContinue
+          # 4. Launch MT5 with Login Parameters
+          echo "Launching MT5 for first-time login..."
+          # Clean existing
+          Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force
 
-          $mt5Path = $env:MT5_EXE
-          $mt5Dir = $env:MT5_DIR
-          $mt5Data = $env:MT5_DATA
+          $args = "/portable", "/datapath:$dataPath", "/skipupdate", "/login:$($env:MT5_LOGIN)", "/password:$($env:MT5_PASSWORD)", "/server:$($env:MT5_SERVER)"
+          Start-Process -FilePath $mt5Path -ArgumentList $args -WorkingDirectory (Split-Path $mt5Path)
 
-          echo "Launching MT5 from $mt5Path with Data Path $mt5Data..."
-          # PassThru gives us the process object
-          $proc = Start-Process -FilePath $mt5Path `
-              -ArgumentList "/portable", "/datapath:$mt5Data", "/skipupdate" `
-              -WorkingDirectory $mt5Dir `
-              -PassThru
+          echo "Waiting 60s for initialization and login stabilization..."
+          Start-Sleep -Seconds 60
 
-          echo "Monitoring stabilization (Active Wait)..."
-          for ($i=1; $i -le 12; $i++) {
-            Start-Sleep -Seconds 10
-            $check = Get-Process terminal64 -ErrorAction SilentlyContinue
-            if ($check) {
-              $mem = [math]::Round($check.WorkingSet64 / 1MB, 2)
-              echo "Attempt ${i}: MT5 ACTIVE (PID: $($check.Id), Memory: ${mem} MB)"
-            } else {
-              echo "Attempt ${i}: MT5 missing. Relaunching..."
-              $proc = Start-Process -FilePath $mt5Path -ArgumentList "/portable", "/datapath:$mt5Data", "/skipupdate" -WorkingDirectory $mt5Dir -PassThru
-            }
+          # Verify logs are being written
+          if (Test-Path "$dataPath\MQL5\Logs") {
+             echo "Terminal Log directory exists."
+          } else {
+             echo "WARNING: Log directory not found. Terminal may not be initialized."
           }
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot

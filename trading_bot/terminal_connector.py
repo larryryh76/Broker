@@ -17,16 +17,21 @@ class TerminalConnector:
     def kill_mt5(self):
         """Forcefully terminates all MT5 processes."""
         print("MT5 MACHINE: Terminating all MT5 processes...")
-        subprocess.run(["taskkill", "/F", "/IM", "terminal64.exe", "/T"], capture_output=True)
-        time.sleep(2)
+        cmd = 'Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force'
+        subprocess.run(["powershell", "-Command", cmd], capture_output=True)
+        time.sleep(3)
         print("MT5 MACHINE: All MT5 processes terminated.")
 
     def launch_mt5(self, path):
-        """Launches MT5 via PowerShell (Single Session Model)."""
-        print(f"MT5 MACHINE: Launching MT5 from {path}...")
+        """Launches MT5 via PowerShell with explicit login parameters."""
+        print(f"MT5 MACHINE: Launching MT5 from {path} with explicit credentials...")
 
-        # Using Start-Process in Normal window style for single session
-        cmd = f'Start-Process "{path}" -ArgumentList "/portable", "/skipupdate" -WindowStyle Normal'
+        data_path = os.getenv("MT5_DATA_PATH", "")
+        args = [f'"/portable"', f'"/skipupdate"', f'"/login:{self.login_id}"', f'"/password:{self.password}"', f'"/server:{self.server}"']
+        if data_path: args.append(f'"/datapath:{data_path}"')
+
+        args_str = ", ".join(args)
+        cmd = f'Start-Process "{path}" -ArgumentList {args_str} -WindowStyle Normal'
         subprocess.run(["powershell", "-Command", cmd], check=True)
 
         # Verify process
@@ -73,57 +78,58 @@ class TerminalConnector:
             print("MT5 MACHINE: CRITICAL - terminal64.exe missing.")
             return False
 
-        # Use data path if provided in environment
-        data_path = os.getenv("MT5_DATA_PATH", "")
-
-        max_attempts = 5
+        max_attempts = 10
         for i in range(1, max_attempts + 1):
             print(f"\n--- MT5 CONNECTION ATTEMPT {i}/{max_attempts} ---")
 
-            # Step 1: Prove IPC Bridge Readiness
-            # We don't relaunch unless initialization fails completely
-            print(f"MT5 MACHINE: Initializing IPC bridge to {path}...")
+            # Step 1: Pre-launch Verification (Process Health)
+            mt5_pid = None
+            cpu_usage = 0
+            for proc in psutil.process_iter(['name', 'pid', 'cpu_percent']):
+                if "terminal64.exe" in proc.info['name'].lower():
+                    mt5_pid = proc.info['pid']
+                    cpu_usage = proc.info['cpu_percent']
+                    break
 
-            # Mandatory sequence: path, then explicit login
-            init_args = {"path": path}
-            if data_path:
-                # Note: datapath is handled via Start-Process in GHA, but we pass it here too if supported
-                print(f"MT5 MACHINE: Targeting Data Path: {data_path}")
+            if mt5_pid:
+                print(f"MT5 MACHINE: Terminal found (PID: {mt5_pid}, CPU: {cpu_usage}%).")
+            else:
+                print("MT5 MACHINE: Terminal missing. Triggering clean launch...")
+                self.kill_mt5()
+                if not self.launch_mt5(path): continue
+                time.sleep(30)
 
-            if self.mt5.initialize(**init_args):
-                print(f"MT5 MACHINE: IPC Bridge ONLINE. Version: {self.mt5.version()}")
+            # Step 2: Initialize IPC
+            print(f"MT5 MACHINE: Attempting IPC attachment to {path}...")
+            # We use basic path init to establish bridge
+            if self.mt5.initialize(path=path):
+                print(f"MT5 MACHINE: IPC ONLINE. Version: {self.mt5.version()}")
 
-                # Active Wait for Terminal Readiness (Verify UI/Internal state)
-                for wait_i in range(1, 13):
-                    t_info = self.mt5.terminal_info()
-                    if t_info:
-                        print(f"MT5 MACHINE: Terminal Ready. Connected to network: {t_info.connected}")
-                        break
-                    print(f"MT5 MACHINE: Waiting for Terminal API readiness ({wait_i}/12)...")
+                # Active Wait for Login state
+                for wait_i in range(1, 7):
+                    acc = self.mt5.account_info()
+                    if acc and acc.login == int(self.login_id):
+                        print(f"MT5 MACHINE: SUCCESS | Account: {acc.login} | Balance: ${acc.balance}")
+                        return True
+
+                    print(f"MT5 MACHINE: Waiting for terminal login stabilization ({wait_i}/6)...")
+                    # Try explicit login re-push if needed
+                    self.mt5.login(login=int(self.login_id), password=self.password, server=self.server)
                     time.sleep(10)
 
-                # Step 2: Explicit Login
-                print(f"MT5 MACHINE: Performing explicit login to {self.server}...")
-                if self.mt5.login(login=int(self.login_id), password=self.password, server=self.server):
-                    # Step 3: Prove Account Readiness
-                    account = self.mt5.account_info()
-                    if account and account.login == int(self.login_id):
-                        print(f"MT5 MACHINE: SUCCESS | Account: {account.login} | Balance: ${account.balance}")
-                        return True
-                    else:
-                        print(f"MT5 MACHINE: Login succeeded but account verification failed. Error: {self.mt5.last_error()}")
-                else:
-                    print(f"MT5 MACHINE: Login call failed. Error: {self.mt5.last_error()}")
+                print("MT5 MACHINE: Terminal ready but account login timed out. Retrying full cycle.")
+                self.mt5.shutdown()
             else:
-                print(f"MT5 MACHINE: IPC Initialization failed. Error: {self.mt5.last_error()}")
+                err_code, err_msg = self.mt5.last_error()
+                print(f"MT5 MACHINE: IPC attachment failed ({err_code}): {err_msg}")
 
-            # If we reach here, attempt relaunch for next try
-            print("MT5 MACHINE: Attempting process relaunch...")
-            self.kill_mt5()
-            self.launch_mt5(path)
-            time.sleep(30)
+            # Failure Recovery
+            if i % 3 == 0:
+                print("MT5 MACHINE: Sustained failure. performing emergency process reset.")
+                self.kill_mt5()
+                time.sleep(10)
 
-        print("\nMT5 MACHINE: MT5 FAILED TO REACH READY STATE.")
+        print("\nMT5 MACHINE: MT5 FAILED TO REACH READY STATE AFTER CONTROLLED RETRIES.")
         return False
 
     def map_symbol(self, symbol):

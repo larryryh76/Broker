@@ -22,14 +22,21 @@ class TerminalConnector:
         print("MT5 MACHINE: All MT5 processes terminated.")
 
     def launch_mt5(self, path):
-        """Launches MT5 via PowerShell."""
-        print(f"MT5 MACHINE: Launching MT5 from {path}...")
-        # Using Start-Process to keep it in background correctly
-        cmd = f'Start-Process "{path}" -ArgumentList "/portable", "/skipupdate"'
-        subprocess.run(["powershell", "-Command", cmd], check=True)
+        """Launches MT5 via PowerShell using PsExec for interactive session."""
+        print(f"MT5 MACHINE: Launching MT5 via PsExec from {path}...")
+
+        # In GHA, we need to ensure we target Session 1 (Interactive)
+        psexec = "C:\\pstools\\psexec.exe"
+        if os.path.exists(psexec):
+            cmd = f'{psexec} /accepteula -i 1 -d "{path}" /portable /skipupdate'
+            subprocess.run(cmd, shell=True)
+        else:
+            # Fallback to direct Start-Process
+            cmd = f'Start-Process "{path}" -ArgumentList "/portable", "/skipupdate"'
+            subprocess.run(["powershell", "-Command", cmd], check=True)
 
         # Verify process
-        time.sleep(10)
+        time.sleep(15)
         for proc in psutil.process_iter(['name', 'pid']):
             if "terminal64.exe" in proc.info['name'].lower():
                 print(f"MT5 MACHINE: MT5 Launched successfully (PID: {proc.info['pid']})")

@@ -43,12 +43,29 @@ class TerminalConnector:
                 return True
         return False
 
+    def discover_terminal(self):
+        """Dynamically searches for terminal64.exe if path is not provided."""
+        if config.TERMINAL_PATH and os.path.exists(config.TERMINAL_PATH):
+            return config.TERMINAL_PATH
+
+        print("MT5 MACHINE: Terminal path not found in config. Searching dynamically...")
+        # Common locations
+        search_paths = ["C:\\", "D:\\", os.environ.get("ProgramFiles", "C:\\Program Files")]
+        for sp in search_paths:
+            if not os.path.exists(sp): continue
+            for root, dirs, files in os.walk(sp):
+                if "terminal64.exe" in files:
+                    found_path = os.path.join(root, "terminal64.exe")
+                    print(f"MT5 MACHINE: Dynamic Discovery found MT5 at: {found_path}")
+                    return found_path
+        return None
+
     def connect(self):
         print(f"MT5 MACHINE: Initiating high-priority DETERMINISTIC login sequence...")
 
-        path = config.TERMINAL_PATH
-        if not path or not os.path.exists(path):
-            print(f"MT5 MACHINE: CRITICAL - Terminal path invalid: {path}")
+        path = self.discover_terminal()
+        if not path:
+            print("MT5 MACHINE: CRITICAL - terminal64.exe could not be located anywhere.")
             return False
 
         max_attempts = 5

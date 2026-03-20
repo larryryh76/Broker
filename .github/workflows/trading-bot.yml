@@ -26,6 +26,7 @@ jobs:
           pip install MetaTrader5 psutil
 
       - name: Setup MT5 and Tools
+        id: setup
         shell: powershell
         run: |
           # 1. Download PsExec for interactive session management
@@ -41,10 +42,24 @@ jobs:
 
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 15
 
-          # 3. Seed Config for Automatic Login
-          $configDir = "$installPath\config"
+          # 3. Dynamic Discovery of terminal64.exe
+          $mt5Path = Get-ChildItem -Path "C:\" -Filter "terminal64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $mt5Path) {
+             $mt5Path = "C:\mt5_terminal\terminal64.exe" # Last resort fallback
+          }
+
+          $mt5Dir = Split-Path $mt5Path
+          echo "MT5 FOUND AT: $mt5Path"
+          echo "MT5 DIR: $mt5Dir"
+
+          # Set for GHA environment
+          echo "MT5_EXE=$mt5Path" >> $env:GITHUB_ENV
+          echo "MT5_DIR=$mt5Dir" >> $env:GITHUB_ENV
+
+          # 4. Seed Config for Automatic Login
+          $configDir = "$mt5Dir\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir }
           $commonIni = @"
           [Common]
@@ -62,17 +77,13 @@ jobs:
       - name: Launch MT5 (Interactive Session)
         shell: powershell
         run: |
-          $terminalExe = "C:\mt5_terminal\terminal64.exe"
-
           # 1. Activate Windows Explorer to ensure interactive session shell
           cmd /c "start explorer.exe"
           Start-Sleep -Seconds 5
 
           # 2. Launch MT5 attached to Session 1 via PsExec
-          echo "Launching MT5 in Interactive Session..."
-          # -i 1 attaches to Session 1 (Interactive Desktop), -d means don't wait for completion
-          # Accept EULA for PsExec automatically
-          C:\pstools\psexec.exe /accepteula -i 1 -d $terminalExe /portable /skipupdate
+          echo "Launching MT5 from $env:MT5_EXE in Interactive Session..."
+          C:\pstools\psexec.exe /accepteula -i 1 -d "$env:MT5_EXE" /portable /skipupdate
 
           # 3. Stabilization and UI Handling Loop
           echo "Waiting for Terminal Initialization (Monitored)..."
@@ -84,19 +95,13 @@ jobs:
             if ($proc) {
               $mem = [math]::Round($proc.WorkingSet64 / 1MB, 2)
               echo "Attempt ${i}: MT5 is ALIVE (PID: $($proc.Id), Memory: ${mem} MB)"
-
-              # Dismiss potential dialogs (Enter key)
               [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
             } else {
               echo "Attempt ${i}: MT5 missing. relaunching..."
-              C:\pstools\psexec.exe /accepteula -i 1 -d $terminalExe /portable /skipupdate
+              C:\pstools\psexec.exe /accepteula -i 1 -d "$env:MT5_EXE" /portable /skipupdate
             }
           }
-
           echo "Terminal stabilization sequence complete."
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot
         shell: powershell
@@ -108,15 +113,20 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          MT5_TERMINAL_PATH: 'C:\mt5_terminal\terminal64.exe'
+          MT5_TERMINAL_PATH: ${{ env.MT5_EXE }}
 
       - name: Extract Artifacts
         if: always()
         shell: powershell
         run: |
           if (!(Test-Path "artifacts")) { New-Item -ItemType Directory -Path "artifacts" }
+          # Attempt to find MQL5 Logs in portable data folder
+          $mt5DataDir = "$env:MT5_DIR"
+          if (Test-Path "$mt5DataDir\MQL5\Logs") {
+             Copy-Item -Path "$mt5DataDir\MQL5\Logs\*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
+          }
           if (Test-Path "trading_bot/logs") {
-            Copy-Item -Path "trading_bot/logs" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item -Path "trading_bot/logs/*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
           }
           if (Test-Path "trading_bot/snapshots") {
             Copy-Item -Path "trading_bot/snapshots" -Destination "artifacts/snapshots" -Recurse -Force -ErrorAction SilentlyContinue

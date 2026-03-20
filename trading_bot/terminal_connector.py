@@ -66,69 +66,64 @@ class TerminalConnector:
         return None
 
     def connect(self):
-        print(f"MT5 MACHINE: Initiating high-priority DETERMINISTIC login sequence...")
+        print(f"MT5 MACHINE: Initiating high-priority API-DRIVEN login sequence...")
 
         path = self.discover_terminal()
         if not path:
-            print("MT5 MACHINE: CRITICAL - terminal64.exe could not be located anywhere.")
+            print("MT5 MACHINE: CRITICAL - terminal64.exe missing.")
             return False
+
+        # Use data path if provided in environment
+        data_path = os.getenv("MT5_DATA_PATH", "")
 
         max_attempts = 5
         for i in range(1, max_attempts + 1):
-            print(f"\n--- MT5 CONNECTION/LOGIN ATTEMPT {i}/{max_attempts} ---")
+            print(f"\n--- MT5 CONNECTION ATTEMPT {i}/{max_attempts} ---")
 
-            # 1. Kill & Clean Slate
-            self.kill_mt5()
+            # Step 1: Prove IPC Bridge Readiness
+            # We don't relaunch unless initialization fails completely
+            print(f"MT5 MACHINE: Initializing IPC bridge to {path}...")
 
-            # 2. Fresh Launch (Portable mode)
-            if not self.launch_mt5(path):
-                print("MT5 MACHINE: Terminal launch failed. Retrying cycle...")
-                continue
+            # Mandatory sequence: path, then explicit login
+            init_args = {"path": path}
+            if data_path:
+                # Note: datapath is handled via Start-Process in GHA, but we pass it here too if supported
+                print(f"MT5 MACHINE: Targeting Data Path: {data_path}")
 
-            # 3. Stabilization Wait
-            print("MT5 MACHINE: Stabilization period (25s)...")
-            time.sleep(25)
+            if self.mt5.initialize(**init_args):
+                print(f"MT5 MACHINE: IPC Bridge ONLINE. Version: {self.mt5.version()}")
 
-            # 4. Step 1: Initialize IPC bridge (Path only)
-            # mt5.initialize does NOT support timeout parameter in all versions
-            # We use it if possible, but keep it simple.
-            print(f"MT5 MACHINE: [Step 1] Initializing IPC bridge to terminal at {path}...")
-            init_res = self.mt5.initialize(path=path)
+                # Active Wait for Terminal Readiness (Verify UI/Internal state)
+                for wait_i in range(1, 13):
+                    t_info = self.mt5.terminal_info()
+                    if t_info:
+                        print(f"MT5 MACHINE: Terminal Ready. Connected to network: {t_info.connected}")
+                        break
+                    print(f"MT5 MACHINE: Waiting for Terminal API readiness ({wait_i}/12)...")
+                    time.sleep(10)
 
-            if init_res:
-                print("MT5 MACHINE: IPC Bridge Initialized.")
-
-                # 5. Step 2: Explicit Login Loop
-                print(f"MT5 MACHINE: [Step 2] Attempting explicit login to {self.server}...")
-
-                # Allow multiple login attempts within the same session
-                for l_attempt in range(1, 4):
-                    print(f"MT5 MACHINE: Login attempt {l_attempt}/3...")
-                    login_res = self.mt5.login(
-                        login=int(self.login_id),
-                        password=self.password,
-                        server=self.server
-                    )
-
-                    if login_res:
-                        print("MT5 MACHINE: Login call returned True.")
-                        # 6. Final Verification
-                        info = self.mt5.account_info()
-                        if info and info.login == int(self.login_id):
-                            print(f"MT5 MACHINE: LOGIN VERIFIED | Account: {info.login} | Balance: ${info.balance} | Broker: {info.company}")
-                            return True
-                        else:
-                            err_code, err_msg = self.mt5.last_error()
-                            print(f"MT5 MACHINE: account_info verification failed. Error ({err_code}): {err_msg}")
+                # Step 2: Explicit Login
+                print(f"MT5 MACHINE: Performing explicit login to {self.server}...")
+                if self.mt5.login(login=int(self.login_id), password=self.password, server=self.server):
+                    # Step 3: Prove Account Readiness
+                    account = self.mt5.account_info()
+                    if account and account.login == int(self.login_id):
+                        print(f"MT5 MACHINE: SUCCESS | Account: {account.login} | Balance: ${account.balance}")
+                        return True
                     else:
-                        err_code, err_msg = self.mt5.last_error()
-                        print(f"MT5 MACHINE: Login attempt {l_attempt} failed. Error ({err_code}): {err_msg}")
-                        time.sleep(10)
+                        print(f"MT5 MACHINE: Login succeeded but account verification failed. Error: {self.mt5.last_error()}")
+                else:
+                    print(f"MT5 MACHINE: Login call failed. Error: {self.mt5.last_error()}")
             else:
-                err_code, err_msg = self.mt5.last_error()
-                print(f"MT5 MACHINE: initialize() failed. Error ({err_code}): {err_msg}")
+                print(f"MT5 MACHINE: IPC Initialization failed. Error: {self.mt5.last_error()}")
 
-        print("\nMT5 MACHINE: MT5 INIT/LOGIN FAILED AFTER CONTROLLED RETRIES.")
+            # If we reach here, attempt relaunch for next try
+            print("MT5 MACHINE: Attempting process relaunch...")
+            self.kill_mt5()
+            self.launch_mt5(path)
+            time.sleep(30)
+
+        print("\nMT5 MACHINE: MT5 FAILED TO REACH READY STATE.")
         return False
 
     def map_symbol(self, symbol):

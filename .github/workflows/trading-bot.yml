@@ -29,13 +29,7 @@ jobs:
         id: setup
         shell: powershell
         run: |
-          # 1. Download PsExec
-          $pstoolsUrl = "https://download.sysinternals.com/files/PSTools.zip"
-          $pstoolsPath = "$env:TEMP\PSTools.zip"
-          Invoke-WebRequest -Uri $pstoolsUrl -OutFile $pstoolsPath
-          Expand-Archive -Path $pstoolsPath -DestinationPath "C:\pstools" -Force
-
-          # 2. Download and Install MT5
+          # 1. Download and Install MT5
           $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $setupPath = "$env:TEMP\mt5setup.exe"
           $installPath = "C:\mt5_terminal"
@@ -47,7 +41,7 @@ jobs:
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
           Start-Sleep -Seconds 15
 
-          # 3. VERIFIED DISCOVERY (No Assumptions)
+          # 2. VERIFIED DISCOVERY (No Assumptions)
           $mt5Path = Get-ChildItem -Path "C:\" -Filter "terminal64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
 
           if (-not $mt5Path -or -not (Test-Path $mt5Path)) {
@@ -61,7 +55,6 @@ jobs:
           echo "MT5 VERIFIED:"
           echo "Path: $($mt5File.FullName)"
           echo "Size: $([math]::Round($mt5File.Length / 1MB, 2)) MB"
-          echo "LastModified: $($mt5File.LastWriteTime)"
 
           # Ensure execution permissions
           Unblock-File -Path $mt5Path
@@ -70,7 +63,7 @@ jobs:
           echo "MT5_EXE=$mt5Path" >> $env:GITHUB_ENV
           echo "MT5_DIR=$mt5Dir" >> $env:GITHUB_ENV
 
-          # 4. Seed Config for Automatic Login
+          # 3. Seed Config for Automatic Login
           $configDir = "$mt5Dir\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir }
           $commonIni = @"
@@ -86,47 +79,30 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
-      - name: Launch MT5 and Verify Process
+      - name: Launch MT5 (Single Session Model)
         shell: powershell
         run: |
           $mt5Path = $env:MT5_EXE
           $mt5Dir = $env:MT5_DIR
 
-          # 1. Activate Windows Explorer
-          cmd /c "start explorer.exe"
-          Start-Sleep -Seconds 5
+          echo "Attempting SINGLE SESSION launch of MetaTrader 5..."
+          # Start-Process with explicit working directory in Normal mode
+          Start-Process -FilePath $mt5Path -WorkingDirectory $mt5Dir -ArgumentList "/portable", "/skipupdate" -WindowStyle Normal
 
-          echo "Attempting SAFE launch of MetaTrader 5..."
-          # Start-Process with explicit working directory
-          Start-Process -FilePath $mt5Path -WorkingDirectory $mt5Dir -ArgumentList "/portable", "/skipupdate"
+          echo "Waiting 30s for terminal process stabilization..."
+          Start-Sleep -Seconds 30
 
-          Start-Sleep -Seconds 15
-
-          # 2. VERIFY PROCESS EXISTS
+          # VERIFY PROCESS EXISTS
           $proc = Get-Process terminal64 -ErrorAction SilentlyContinue
           if (-not $proc) {
-             Write-Error "MT5 failed to launch even though file exists."
+             Write-Error "MT5 failed to launch in single session mode."
              exit 1
           }
-          echo "MT5 RUNNING: PID $($proc.Id)"
+          echo "MT5 ACTIVE: PID $($proc.Id)"
 
-          # 3. Now Use PsExec to ensure Session 1 attachment (If needed, but Start-Process was already verified)
-          echo "Migrating to Interactive Session (PsExec)..."
-          C:\pstools\psexec.exe /accepteula -i 1 -d "$mt5Path" /portable /skipupdate
-
-          # 4. Final Stabilization Loop
-          Add-Type -AssemblyName System.Windows.Forms
-          for ($i=1; $i -le 6; $i++) {
-            Start-Sleep -Seconds 15
-            $check = Get-Process terminal64 -ErrorAction SilentlyContinue
-            if ($check) {
-              echo "Attempt ${i}: MT5 is STABLE (PID: $($check.Id))"
-              [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-            } else {
-              echo "Attempt ${i}: MT5 crashed. Relaunching..."
-              C:\pstools\psexec.exe /accepteula -i 1 -d "$mt5Path" /portable /skipupdate
-            }
-          }
+          # Final stabilization check
+          Start-Sleep -Seconds 15
+          echo "Terminal ready for Python attachment."
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}

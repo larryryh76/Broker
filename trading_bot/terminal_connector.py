@@ -44,20 +44,31 @@ class TerminalConnector:
         return False
 
     def discover_terminal(self):
-        """Dynamically searches for terminal64.exe if path is not provided."""
-        if config.TERMINAL_PATH and os.path.exists(config.TERMINAL_PATH):
-            return config.TERMINAL_PATH
+        """Dynamically searches for terminal64.exe with strict validation."""
+        # 1. Check Config Path (Passed from GHA)
+        if config.TERMINAL_PATH:
+            if os.path.exists(config.TERMINAL_PATH):
+                print(f"MT5 MACHINE: Verified Terminal path from config: {config.TERMINAL_PATH}")
+                return config.TERMINAL_PATH
+            else:
+                print(f"MT5 MACHINE: WARNING - Config path does not exist: {config.TERMINAL_PATH}")
 
-        print("MT5 MACHINE: Terminal path not found in config. Searching dynamically...")
-        # Common locations
-        search_paths = ["C:\\", "D:\\", os.environ.get("ProgramFiles", "C:\\Program Files")]
-        for sp in search_paths:
-            if not os.path.exists(sp): continue
-            for root, dirs, files in os.walk(sp):
-                if "terminal64.exe" in files:
-                    found_path = os.path.join(root, "terminal64.exe")
-                    print(f"MT5 MACHINE: Dynamic Discovery found MT5 at: {found_path}")
-                    return found_path
+        print("MT5 MACHINE: Searching dynamically for terminal64.exe...")
+        # 2. Search common drive roots (Shallow search first for performance)
+        drives = ["C:\\", "D:\\"]
+        for drive in drives:
+            if not os.path.exists(drive): continue
+            # Look in typical GHA install locations first
+            common_subdirs = ["mt5_terminal", "Program Files", "Program Files (x86)"]
+            for sd in common_subdirs:
+                full_sd = os.path.join(drive, sd)
+                if not os.path.exists(full_sd): continue
+                for root, dirs, files in os.walk(full_sd):
+                    if "terminal64.exe" in files:
+                        found_path = os.path.join(root, "terminal64.exe")
+                        print(f"MT5 MACHINE: Dynamic Discovery SUCCESS: {found_path}")
+                        return found_path
+
         return None
 
     def connect(self):

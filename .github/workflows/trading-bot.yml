@@ -25,11 +25,11 @@ jobs:
           pip install -r trading_bot/requirements.txt
           pip install MetaTrader5 psutil
 
-      - name: Setup MT5 and Tools
+      - name: Setup MT5 and Verification
         id: setup
         shell: powershell
         run: |
-          # 1. Download PsExec for interactive session management
+          # 1. Download PsExec
           $pstoolsUrl = "https://download.sysinternals.com/files/PSTools.zip"
           $pstoolsPath = "$env:TEMP\PSTools.zip"
           Invoke-WebRequest -Uri $pstoolsUrl -OutFile $pstoolsPath
@@ -40,19 +40,31 @@ jobs:
           $setupPath = "$env:TEMP\mt5setup.exe"
           $installPath = "C:\mt5_terminal"
 
+          echo "Downloading MT5 Installer..."
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
+
+          echo "Installing MT5 Terminal..."
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
           Start-Sleep -Seconds 15
 
-          # 3. Dynamic Discovery of terminal64.exe
+          # 3. VERIFIED DISCOVERY (No Assumptions)
           $mt5Path = Get-ChildItem -Path "C:\" -Filter "terminal64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $mt5Path) {
-             $mt5Path = "C:\mt5_terminal\terminal64.exe" # Last resort fallback
+
+          if (-not $mt5Path -or -not (Test-Path $mt5Path)) {
+             Write-Error "MT5 executable NOT FOUND. stopping."
+             exit 1
           }
 
+          $mt5File = Get-Item $mt5Path
           $mt5Dir = Split-Path $mt5Path
-          echo "MT5 FOUND AT: $mt5Path"
-          echo "MT5 DIR: $mt5Dir"
+
+          echo "MT5 VERIFIED:"
+          echo "Path: $($mt5File.FullName)"
+          echo "Size: $([math]::Round($mt5File.Length / 1MB, 2)) MB"
+          echo "LastModified: $($mt5File.LastWriteTime)"
+
+          # Ensure execution permissions
+          Unblock-File -Path $mt5Path
 
           # Set for GHA environment
           echo "MT5_EXE=$mt5Path" >> $env:GITHUB_ENV
@@ -74,34 +86,50 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
-      - name: Launch MT5 (Interactive Session)
+      - name: Launch MT5 and Verify Process
         shell: powershell
         run: |
-          # 1. Activate Windows Explorer to ensure interactive session shell
+          $mt5Path = $env:MT5_EXE
+          $mt5Dir = $env:MT5_DIR
+
+          # 1. Activate Windows Explorer
           cmd /c "start explorer.exe"
           Start-Sleep -Seconds 5
 
-          # 2. Launch MT5 attached to Session 1 via PsExec
-          echo "Launching MT5 from $env:MT5_EXE in Interactive Session..."
-          C:\pstools\psexec.exe /accepteula -i 1 -d "$env:MT5_EXE" /portable /skipupdate
+          echo "Attempting SAFE launch of MetaTrader 5..."
+          # Start-Process with explicit working directory
+          Start-Process -FilePath $mt5Path -WorkingDirectory $mt5Dir -ArgumentList "/portable", "/skipupdate"
 
-          # 3. Stabilization and UI Handling Loop
-          echo "Waiting for Terminal Initialization (Monitored)..."
+          Start-Sleep -Seconds 15
+
+          # 2. VERIFY PROCESS EXISTS
+          $proc = Get-Process terminal64 -ErrorAction SilentlyContinue
+          if (-not $proc) {
+             Write-Error "MT5 failed to launch even though file exists."
+             exit 1
+          }
+          echo "MT5 RUNNING: PID $($proc.Id)"
+
+          # 3. Now Use PsExec to ensure Session 1 attachment (If needed, but Start-Process was already verified)
+          echo "Migrating to Interactive Session (PsExec)..."
+          C:\pstools\psexec.exe /accepteula -i 1 -d "$mt5Path" /portable /skipupdate
+
+          # 4. Final Stabilization Loop
           Add-Type -AssemblyName System.Windows.Forms
-
-          for ($i=1; $i -le 12; $i++) {
-            Start-Sleep -Seconds 10
-            $proc = Get-Process terminal64 -ErrorAction SilentlyContinue
-            if ($proc) {
-              $mem = [math]::Round($proc.WorkingSet64 / 1MB, 2)
-              echo "Attempt ${i}: MT5 is ALIVE (PID: $($proc.Id), Memory: ${mem} MB)"
+          for ($i=1; $i -le 6; $i++) {
+            Start-Sleep -Seconds 15
+            $check = Get-Process terminal64 -ErrorAction SilentlyContinue
+            if ($check) {
+              echo "Attempt ${i}: MT5 is STABLE (PID: $($check.Id))"
               [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
             } else {
-              echo "Attempt ${i}: MT5 missing. relaunching..."
-              C:\pstools\psexec.exe /accepteula -i 1 -d "$env:MT5_EXE" /portable /skipupdate
+              echo "Attempt ${i}: MT5 crashed. Relaunching..."
+              C:\pstools\psexec.exe /accepteula -i 1 -d "$mt5Path" /portable /skipupdate
             }
           }
-          echo "Terminal stabilization sequence complete."
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot
         shell: powershell
@@ -120,7 +148,6 @@ jobs:
         shell: powershell
         run: |
           if (!(Test-Path "artifacts")) { New-Item -ItemType Directory -Path "artifacts" }
-          # Attempt to find MQL5 Logs in portable data folder
           $mt5DataDir = "$env:MT5_DIR"
           if (Test-Path "$mt5DataDir\MQL5\Logs") {
              Copy-Item -Path "$mt5DataDir\MQL5\Logs\*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue

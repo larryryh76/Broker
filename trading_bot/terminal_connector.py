@@ -6,15 +6,6 @@ import MetaTrader5 as mt5
 import pandas as pd
 from trading_bot import config
 from datetime import datetime, timedelta
-import multiprocessing
-
-def _mt5_init_worker(args, result_queue):
-    """Worker function for multiprocessing initialization."""
-    try:
-        success = mt5.initialize(**args)
-        result_queue.put(success)
-    except Exception as e:
-        result_queue.put(e)
 
 class TerminalConnector:
     def __init__(self):
@@ -38,7 +29,7 @@ class TerminalConnector:
         subprocess.run(["powershell", "-Command", cmd], check=True)
 
         # Verify process
-        time.sleep(5)
+        time.sleep(10)
         for proc in psutil.process_iter(['name', 'pid']):
             if "terminal64.exe" in proc.info['name'].lower():
                 print(f"MT5 MACHINE: MT5 Launched successfully (PID: {proc.info['pid']})")
@@ -46,7 +37,7 @@ class TerminalConnector:
         return False
 
     def connect(self):
-        print(f"MT5 MACHINE: Initiating high-priority DETERMINISTIC connection sequence...")
+        print(f"MT5 MACHINE: Initiating high-priority DETERMINISTIC login sequence...")
 
         path = config.TERMINAL_PATH
         if not path or not os.path.exists(path):
@@ -55,68 +46,60 @@ class TerminalConnector:
 
         max_attempts = 5
         for i in range(1, max_attempts + 1):
-            print(f"\n--- MT5 CONNECTION ATTEMPT {i}/{max_attempts} ---")
+            print(f"\n--- MT5 CONNECTION/LOGIN ATTEMPT {i}/{max_attempts} ---")
 
-            # 1. Clean Slate
+            # 1. Kill & Clean Slate
             self.kill_mt5()
 
-            # 2. Fresh Launch
+            # 2. Fresh Launch (Portable mode)
             if not self.launch_mt5(path):
-                print(f"MT5 MACHINE: Launch failed in attempt {i}. Retrying...")
+                print("MT5 MACHINE: Terminal launch failed. Retrying cycle...")
                 continue
 
             # 3. Stabilization Wait
             print("MT5 MACHINE: Stabilization period (25s)...")
             time.sleep(25)
 
-            # 4. Timed Initialization
-            print(f"MT5 MACHINE: Attempting timed initialization to {self.server}...")
+            # 4. Step 1: Initialize IPC bridge (Path only)
+            # mt5.initialize does NOT support timeout parameter in all versions
+            # We use it if possible, but keep it simple.
+            print(f"MT5 MACHINE: [Step 1] Initializing IPC bridge to terminal at {path}...")
+            init_res = self.mt5.initialize(path=path)
 
-            init_args = {
-                "path": path,
-                "login": int(self.login_id),
-                "password": self.password,
-                "server": self.server,
-                "timeout": 10000 # 10s library timeout
-            }
+            if init_res:
+                print("MT5 MACHINE: IPC Bridge Initialized.")
 
-            result_queue = multiprocessing.Queue()
-            process = multiprocessing.Process(target=_mt5_init_worker, args=(init_args, result_queue))
-            process.start()
+                # 5. Step 2: Explicit Login Loop
+                print(f"MT5 MACHINE: [Step 2] Attempting explicit login to {self.server}...")
 
-            # Wait for 20 seconds max
-            process.join(timeout=20)
+                # Allow multiple login attempts within the same session
+                for l_attempt in range(1, 4):
+                    print(f"MT5 MACHINE: Login attempt {l_attempt}/3...")
+                    login_res = self.mt5.login(
+                        login=int(self.login_id),
+                        password=self.password,
+                        server=self.server
+                    )
 
-            if process.is_alive():
-                print("MT5 MACHINE: CRITICAL - initialization HANG detected. Killing process.")
-                process.terminate()
-                process.join()
-                continue
-
-            if result_queue.empty():
-                print("MT5 MACHINE: Initialization failed with no result.")
-                continue
-
-            res = result_queue.get()
-            if isinstance(res, Exception):
-                print(f"MT5 MACHINE: Initialization exception: {res}")
-                continue
-
-            if res:
-                print("MT5 MACHINE: initialize() returned True.")
-                # 5. Final Verification
-                info = self.mt5.account_info()
-                if info:
-                    print(f"MT5 MACHINE: LOGIN SUCCESS | Account: {info.login} | Balance: ${info.balance} | Server: {info.server}")
-                    return True
-                else:
-                    err_code, err_msg = self.mt5.last_error()
-                    print(f"MT5 MACHINE: account_info() returned None. Error ({err_code}): {err_msg}")
+                    if login_res:
+                        print("MT5 MACHINE: Login call returned True.")
+                        # 6. Final Verification
+                        info = self.mt5.account_info()
+                        if info and info.login == int(self.login_id):
+                            print(f"MT5 MACHINE: LOGIN VERIFIED | Account: {info.login} | Balance: ${info.balance} | Broker: {info.company}")
+                            return True
+                        else:
+                            err_code, err_msg = self.mt5.last_error()
+                            print(f"MT5 MACHINE: account_info verification failed. Error ({err_code}): {err_msg}")
+                    else:
+                        err_code, err_msg = self.mt5.last_error()
+                        print(f"MT5 MACHINE: Login attempt {l_attempt} failed. Error ({err_code}): {err_msg}")
+                        time.sleep(10)
             else:
                 err_code, err_msg = self.mt5.last_error()
-                print(f"MT5 MACHINE: initialize() returned False. Error ({err_code}): {err_msg}")
+                print(f"MT5 MACHINE: initialize() failed. Error ({err_code}): {err_msg}")
 
-        print("\nMT5 MACHINE: MT5 INIT FAILED AFTER CONTROLLED RETRIES.")
+        print("\nMT5 MACHINE: MT5 INIT/LOGIN FAILED AFTER CONTROLLED RETRIES.")
         return False
 
     def map_symbol(self, symbol):

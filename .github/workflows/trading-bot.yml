@@ -42,7 +42,7 @@ jobs:
             Start-Sleep -Seconds 10
           }
 
-          # Seed config for Algo Trading
+          # Seed config for Algo Trading (CRITICAL: Requires Credentials)
           $configDir = "$installPath\config"
           if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir }
           $commonIni = @"
@@ -53,6 +53,10 @@ jobs:
           ProxyEnable=0
           "@
           Set-Content -Path "$configDir\common.ini" -Value $commonIni
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot
         shell: powershell

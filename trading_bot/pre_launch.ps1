@@ -8,8 +8,9 @@ $installPath = "$workspace\terminal"
 $exePath = "$installPath\terminal64.exe"
 $dataPath = "$installPath"
 $logPath = "$installPath\MQL5\Logs"
+$openglDll = "$installPath\opengl32.dll"
 
-Write-Host "=== MT5 MONEY MACHINE PRE-LAUNCH ==="
+Write-Host "=== MT5 ROBUST PRE-LAUNCH (Mesa3D Verification) ==="
 
 # 🔥 Kill all existing processes
 taskkill /F /IM terminal64.exe 2>$null
@@ -17,12 +18,24 @@ taskkill /F /IM metaeditor64.exe 2>$null
 
 Start-Sleep -Seconds 3
 
+# 🔥 Mesa3D Integrity Check
+if (Test-Path $openglDll) {
+    $fileSize = (Get-Item $openglDll).Length
+    if ($fileSize -lt 1MB) {
+        Write-Error "CRITICAL: opengl32.dll is corrupted (Size: $fileSize bytes). Expected > 1MB."
+        exit 1
+    }
+    Write-Host "Mesa3D Verification: opengl32.dll size is $fileSize bytes (OK)."
+} else {
+    Write-Host "WARNING: opengl32.dll not found in terminal directory."
+}
+
 # 🔥 Create clean folders
 if (!(Test-Path $logPath)) {
     New-Item -ItemType Directory -Force -Path $logPath | Out-Null
 }
 
-# 🔥 Generate LOBOTOMIZED config
+# 🔥 Generate LOBOTOMIZED config (News/Sound disabled)
 $startupIni = @"
 [Common]
 Login=$($env:MT5_LOGIN)
@@ -36,6 +49,13 @@ Enabled=1
 
 [Charts]
 MaxBars=100
+
+[Terminal]
+NewsEnable=0
+Sound=0
+EnableMQL5Storage=0
+EnableMQL5Community=0
+EnableNews=0
 
 [Startup]
 EnableNews=0

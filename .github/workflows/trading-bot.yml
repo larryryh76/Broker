@@ -1,4 +1,4 @@
-name: Money Machine MT5 Trading Cycle
+name: Robust MT5 Trading Cycle
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
           New-ItemProperty -Path $regPath -Name "AcceptEULA" -Value 1 -PropertyType DWord -Force
           Write-Host "Registry EULA Accepted."
 
-      - name: Deploy Graphics-Emulated MT5 (Mesa3D 24.3.0)
+      - name: Deploy Graphics-Emulated MT5 (Mesa3D Verification)
         shell: powershell
         run: |
           $workspace = "$env:GITHUB_WORKSPACE\terminal"
@@ -46,12 +46,18 @@ jobs:
           Write-Host "Installing MT5 Terminal..."
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$workspace" -Wait
 
-          # 2. Download Mesa3D (opengl32.dll) via curl with retries
-          # Using a reliable direct download for the x64 opengl32.dll from Mesa-dist-win
-          # Mesa-dist-win latest version is usually hosted on GitHub or specific mirrors
+          # 2. Download Mesa3D (opengl32.dll) via curl with retries and size verification
           $dllUrl = "https://github.com/mmozeiko/opengl32-mesa/releases/download/v20.1.7/opengl32.dll"
           curl.exe --retry 5 -L -o "$workspace\opengl32.dll" "$dllUrl"
-          Write-Host "Mesa3D opengl32.dll injected into $workspace"
+
+          if (Test-Path "$workspace\opengl32.dll") {
+              $size = (Get-Item "$workspace\opengl32.dll").Length
+              if ($size -lt 1MB) {
+                  Write-Error "CRITICAL: Mesa3D download corrupted ($size bytes)."
+                  exit 1
+              }
+              Write-Host "Mesa3D injected: $size bytes (OK)."
+          }
 
           $mt5Path = "$workspace\terminal64.exe"
           if (!(Test-Path $mt5Path)) {
@@ -61,7 +67,7 @@ jobs:
           Unblock-File -Path $mt5Path
           Unblock-File -Path "$workspace\opengl32.dll"
 
-      - name: Pre-Launch MT5 (Liveness Heartbeat)
+      - name: Pre-Launch MT5 (Heartbeat Monitor)
         shell: powershell
         run: |
           pwsh -ExecutionPolicy Bypass -File trading_bot/pre_launch.ps1
@@ -70,7 +76,7 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
-      - name: Run Money Machine Bot
+      - name: Run Trading Bot
         shell: powershell
         run: |
           $env:PYTHONPATH = "."

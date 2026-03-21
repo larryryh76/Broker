@@ -3,3 +3,7 @@ playwright-stealth
 pymongo
 python-dotenv
 pytest
+scikit-learn
+joblib
+numpy
+pandas

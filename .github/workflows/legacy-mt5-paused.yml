@@ -1,7 +1,7 @@
-name: Legacy MT5 Trading Cycle (PAUSED)
+name: Legacy MT5 Trading Cycle (FULLY PAUSED)
 
 on:
-  workflow_dispatch: # Manual only to preserve 'PAUSED' state
+  workflow_dispatch: # Manual only to ensure 'PAUSED' state
 
 jobs:
   paused:

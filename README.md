@@ -1,86 +1,60 @@
-# OMNI-RECURSIVE MONEY MACHINE (V3.5)
+# OMNI-RECURSIVE MONEY MACHINE (V3.5) - PRODUCTION GRADE
 
-The **Omni-Recursive Money Machine V3.5** is a stateful, probabilistic, self-adaptive betting system specifically engineered for the **Spin da Bottle** game on Football.com Nigeria. It utilizes a multi-model ensemble and a structured intelligence layer (MongoDB) to identify and exploit statistical edges in real-time.
+The **Omni-Recursive Money Machine V3.5** is a production-grade, stateful, probabilistic, and self-adaptive betting system specifically engineered for the **Spin da Bottle** game on Football.com Nigeria.
+
+## 🧠 PRODUCTION UPGRADES (V3.5)
+
+### 1. Hardened Anti-Detection (Playwright)
+- **Stealth Integration:** Fixed `playwright-stealth` to bypass modern bot detection (Failsafe `stealth(page)` logic).
+- **Fingerprint Randomization:** Randomized User-Agents, realistic viewport settings, and `--disable-blink-features=AutomationControlled` browser flags.
+- **Human Emulation:** Implemented timing jitter (0.8s-2.5s), non-instant clicks, and random hover/click offsets.
+
+### 2. True Probabilistic Ensemble Brain
+- **Softmax Weighting:** Replaced heuristic weights with a Softmax Ensemble (Markov, Streak, Mean Reversion, Bayesian Baseline).
+- **Adaptive Learning:** Models are rewarded for correct predictions and penalized for errors, with weights updated dynamically via a back-propagation inspired loop.
+
+### 3. Strict Expected Value (EV) Engine
+- **Edge Calculation:** EV = (prob_win * payout) - (prob_loss * stake).
+- **Enforcement:** The system NEVER places a bet unless EV > 0, probability > 0.55, and dynamic confidence thresholds are met.
+- **Detailed Logging:** Full decision-making process is logged, showing win probability, confidence, and expected value.
+
+### 4. Advanced Risk Management (Kelly-Inspired)
+- **Dynamic Staking:** stake = bankroll * edge * confidence_factor.
+- **Drawdown Protection:** If the system detects a drawdown > 15% from its peak equity, stake size is automatically reduced by 50% to preserve capital.
+- **Circuit Breaker:** Session automatically halts after 4 consecutive losses or 15% drawdown to allow model recalibration.
+
+### 5. Failsafe Architecture
+- **Persistent State:** All data (spins, sequences, models, sessions) is persisted in MongoDB Atlas to handle stateless CI/CD runners.
+- **Graceful Error Handling:** Comprehensive `try/except` wrapping around critical browser and database operations ensures the bot saves its state even upon crash.
 
 ---
 
-## 🧠 System Architecture
-
-### 1. Intelligence Layer (Memory Graph)
-- **Pattern Learning:** Reconstructs full system state on each run from MongoDB.
-- **Sequence Intelligence:** Stores patterns (e.g., `UUDUD`) with win/loss rates to calculate transition probabilities.
-- **Persistence:** All session data (bankroll, model weights, streaking history) persists across stateless GitHub Actions runs.
-
-### 2. Ensemble Brain
-- **Multi-Model Support:** Integrates Markov Chains, Streak Continuation, Mean Reversion (5-count switch), and Bayesian Baselines.
-- **Dynamic Adaptation:** Weights each model based on its recent performance. Models that predict accurately are rewarded; failing models are penalized.
-- **Exploration Engine:** Dedicated 20% of bets for exploration to prevent overfitting and pattern locking.
-
-### 3. Financial & Risk Engine
-- **Tuition Mode:** Initial phase focused on model calibration with flat ₦10 stakes.
-- **Sniper Mode:** Advanced phase using Kelly-inspired staking logic based on edge and confidence.
-- **Vault Protection:** Automatically locks ₦500 once the bankroll reaches ₦800.
-- **Drawdown Control:** Reduces aggression or pauses execution if drawdown exceeds 15% from the peak.
-
-### 4. Stealth Execution Layer
-- **Headless Browser:** Uses Playwright with `playwright-stealth` to bypass bot detection.
-- **Human Simulation:** Implements random jitter, variable click offsets, and timing randomization.
-
----
-
-## 🛠 Setup Instructions
+## 🛠 SETUP INSTRUCTIONS
 
 ### GitHub Secrets
-To deploy the system, configure the following secrets in your repository:
-- `MONGODB_URI`: Connection string for your MongoDB Atlas cluster.
-- `SPIN_URL`: The URL for the Football.com Nigeria Spin da Bottle game.
+Configure the following secrets in your repository:
+- `MONGODB_URI`: MongoDB connection string.
+- `SPIN_URL`: Target game URL (Football.com NG).
 - `FOOTBALL_NG_LOGIN`: Your account login.
 - `FOOTBALL_NG_PASS`: Your account password.
+- `SELECTOR_HISTORY`: CSS selector for spin history results.
+- `SELECTOR_AMOUNT`: CSS selector for the bet amount input.
+- `SELECTOR_UP`: CSS selector for the 'Up' button.
+- `SELECTOR_DOWN`: CSS selector for the 'Down' button.
+- `SELECTOR_LOGIN`: CSS selector for the login username field.
+- `SELECTOR_PASS`: CSS selector for the login password field.
+- `SELECTOR_SUBMIT`: CSS selector for the login submit button.
 
-### Selector Configuration (Last Mile Optimization)
-Due to the dynamic nature of web applications, you may need to configure the following environment variables if the default selectors fail:
-- `SELECTOR_HISTORY`: Selector for spin history circles (e.g., `.history-circle`).
-- `SELECTOR_AMOUNT`: Selector for the bet amount input field.
-- `SELECTOR_UP`: Selector for the 'Up' button.
-- `SELECTOR_DOWN`: Selector for the 'Down' button.
+### Selector Discovery & Debugging
+Since web interfaces are dynamic, the bot includes a built-in discovery engine. If the bot fails to interact with the game:
+1. Check the `artifacts` directory in your GitHub Action run.
+2. Review the screenshots (`initial_load.png`, `post_login.png`, `scraping_error.png`, `bet_error.png`).
+3. Identify the correct CSS selectors from the screenshots or browser DevTools.
+4. Update the corresponding GitHub Secrets to restore functionality without code changes.
 
-**Tip:** Check the `artifacts` directory in your GitHub Action run for screenshots (`initial_load.png`, `scraping_error.png`) to debug and identify the correct selectors.
-
-### MongoDB Configuration
-Ensure the following collections are created in a database named `omni_v35`:
-- `spins`: Raw spin outcomes.
-- `sequences`: Pattern intelligence nodes.
-- `models`: Ensemble model weights and performance metrics.
-- `sessions`: Global bankroll and session state.
-
----
-
-## ⚙️ Deployment (GitHub Actions)
-The system is automated via GitHub Actions to run every 15 minutes.
-1. Each cycle begins by loading the session state from MongoDB.
-2. The browser observes the latest spin history.
-3. The Ensemble Brain calculates probabilities and the Edge Calculator computes Expected Value (EV).
-4. If a positive EV and sufficient confidence exist, a bet is executed.
-5. Post-cycle, the results are logged, and the state is persisted back to MongoDB.
+### Execution
+The system is automated via GitHub Actions to run every 15 minutes. It takes screenshots on any interaction failure and uploads them as artifacts for debugging.
 
 ---
 
-## 📁 Folder Structure
-- `spin_bot/`
-  - `bot.py`: Main orchestrator and system lifecycle manager.
-  - `models.py`: Ensemble model implementations and weight adaptation logic.
-  - `memory.py`: MongoDB interaction layer and state persistence.
-  - `risk.py`: Financial engine, drawdown controls, and vault logic.
-  - `executor.py`: Probability-to-decision engine and EV calculation.
-  - `playwright_client.py`: Browser automation and stealth layer.
-- `.github/workflows/spin-bot.yml`: GitHub Actions execution workflow.
-- `legacy_mt5/`: Archived MetaTrader 5 bot infrastructure (PAUSED).
-
----
-
-## ⚠️ Risk Disclaimer
-This system is an experimental probabilistic tool. Betting involves significant financial risk. The developers are not responsible for any financial losses incurred through the use of this software. **Never risk more than you can afford to lose.**
-
----
-
-🎯 **Operating Principle:** Identify the edge, act only when confirmed, preserve capital aggressively, and survive the long term.
+🎯 **OPERATING PRINCIPLE:** The system is a probabilistic decision engine. It does not guess. It calculates edge and acts ONLY when edge exists.

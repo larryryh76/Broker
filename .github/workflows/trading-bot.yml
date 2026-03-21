@@ -25,90 +25,31 @@ jobs:
           pip install -r trading_bot/requirements.txt
           pip install MetaTrader5 psutil
 
-      - name: Setup Bulletproof MT5 Environment
+      - name: Install MT5
         shell: powershell
         run: |
           $installPath = "C:\mt5_terminal"
           if (!(Test-Path $installPath)) { New-Item -ItemType Directory -Path $installPath }
-
-          # 1. Download and Install MT5
           $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $setupPath = "$env:TEMP\mt5setup.exe"
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
-
-          echo "Installing MT5 Terminal..."
+          Write-Host "Installing MT5 Terminal..."
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
           Start-Sleep -Seconds 10
-
-          # 2. Discover Executable
-          $mt5Path = Get-ChildItem -Path "C:\" -Filter "terminal64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $mt5Path) { $mt5Path = "$installPath\terminal64.exe" }
+          $mt5Path = "$installPath\terminal64.exe"
+          if (!(Test-Path $mt5Path)) {
+            Write-Error "MT5 installation failed: terminal64.exe not found."
+            exit 1
+          }
           Unblock-File -Path $mt5Path
 
-          echo "MT5_EXE=$mt5Path" >> $env:GITHUB_ENV
-          echo "MT5_DIR=$(Split-Path $mt5Path)" >> $env:GITHUB_ENV
-
-          # 3. Inject Startup configuration (startup.ini)
-          echo "Injecting startup.ini..."
-          $startupIni = @"
-          [Common]
-          Login=$($env:MT5_LOGIN)
-          Password=$($env:MT5_PASSWORD)
-          Server=$($env:MT5_SERVER)
-          CertConfirm=1
-          [Experts]
-          AllowLiveTrading=1
-          Enabled=1
-          [Charts]
-          MaxBars=500
-          [Terminal]
-          NewsEnable=0
-          Sound=0
-          EnableMQL5Storage=0
-          EnableMQL5Community=0
-          EnableNews=0
-          "@
-          Set-Content -Path "$installPath\startup.ini" -Value $startupIni
+      - name: Pre-Launch MT5 (Bulletproof)
+        shell: powershell
+        run: |
+          pwsh -ExecutionPolicy Bypass -File trading_bot/pre_launch.ps1
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
-
-      - name: Pre-warm MT5 Initialization
-        shell: powershell
-        run: |
-          $mt5Path = $env:MT5_EXE
-          $mt5Dir = $env:MT5_DIR
-
-          # Activate Explorer for session shell
-          cmd /c "start explorer.exe"
-          Start-Sleep -Seconds 5
-
-          echo "PHASE 1 (WARM-UP): Initializing MT5 profile..."
-          $args = "/portable", "/config:startup.ini", "/skipupdate"
-          $proc = Start-Process -FilePath $mt5Path -ArgumentList $args -WorkingDirectory $mt5Dir -PassThru
-
-          echo "Waiting 75s for internal bootstrapping..."
-          Start-Sleep -Seconds 75
-
-          echo "Terminating Warm-up phase..."
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 15
-
-          echo "PHASE 2 (ACTIVE SESSION): Launching stable instance..."
-          Start-Process -FilePath $mt5Path -ArgumentList $args -WorkingDirectory $mt5Dir
-
-          echo "Verifying process health..."
-          Start-Sleep -Seconds 20
-          $check = Get-Process terminal64 -ErrorAction SilentlyContinue
-          if ($check) {
-            echo "MT5 STABLE: PID $($check.Id)"
-          } else {
-            Write-Error "MT5 failed to reach stable state."
-            exit 1
-          }
-        env:
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
       - name: Run Trading Bot
@@ -121,15 +62,14 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          MT5_TERMINAL_PATH: ${{ env.MT5_EXE }}
+          MT5_TERMINAL_PATH: 'C:\mt5_terminal\terminal64.exe'
 
       - name: Extract Artifacts
         if: always()
         shell: powershell
         run: |
           if (!(Test-Path "artifacts")) { New-Item -ItemType Directory -Path "artifacts" }
-          # MQL5 Logs are in portable root
-          $mt5Dir = $env:MT5_DIR
+          $mt5Dir = "C:\mt5_terminal"
           if (Test-Path "$mt5Dir\MQL5\Logs") {
              Copy-Item -Path "$mt5Dir\MQL5\Logs\*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
           }

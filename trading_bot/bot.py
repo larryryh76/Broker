@@ -69,6 +69,14 @@ class TradingMachine:
 
             risk_manager = RiskManagement(account, virtual_equity)
 
+            # 🔥 Money Machine Protection Logic ($5 Account)
+            # Close all positions if equity drops below $4.25 (15% drawdown limit)
+            if account.get("equity", virtual_equity) < 4.25:
+                self.log("MONEY MACHINE PROTECTION: Equity dropped below $4.25 (Limit reached). Closing all.")
+                for pos in self.connector.get_open_positions():
+                    self.connector.close_position(pos['ticket'])
+                return
+
             # 🔥 Micro-Account Shield Logic: Protection for the $5 core
             if risk_manager.check_micro_shield():
                 self.log("MICRO-ACCOUNT SHIELD: Core drawdown reached ($0.75 / 15%). Closing all.")

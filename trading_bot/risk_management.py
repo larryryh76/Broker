@@ -7,30 +7,26 @@ class RiskManagement:
         self.base_capital = 5.0
 
     def calculate_lot_size(self, current_day=1):
-        # 🔥 Aggressive Micro-Account Logic ($5 Core)
-        # Sizing starts at 0.01 lot minimum
-        # Scaling kicks in only after substantial growth
-        if self.virtual_equity < 50.0:
-            return 0.01
-
-        # Sizing for larger accounts
-        risk_percent = 0.20
-        lot = (self.virtual_equity * risk_percent) / 10.0
-        return max(0.01, round(lot, 2))
+        # 🔥 Money Machine Strategy: $5 Account Core
+        # Lot size is FIXED at 0.01 ONLY for the compounding phase
+        return 0.01
 
     def get_levels(self, side, price, atr):
+        # Money Machine: Targeting 20-point moves
         # 1:3 RRR for growth
-        multiplier = 1.5
-        risk = max(atr * multiplier, 0.00010) # Minimum 10 points
+        # Points are usually 0.01 for XAUUSD (1 point = 0.01 price move)
+        # 20 points = 0.20 price move
+        risk = 0.07 # ~7 points risk
+        reward = 0.21 # ~21 points reward (target move)
 
         if side == "BUY":
             sl = price - risk
-            tp = price + (risk * 3.0)
+            tp = price + reward
         else:
             sl = price + risk
-            tp = price - (risk * 3.0)
+            tp = price - reward
 
-        return round(sl, 5), round(tp, 5)
+        return round(sl, 2), round(tp, 2)
 
     def check_circuit_breaker(self, initial_daily_equity):
         # 20% Daily Drawdown Limit
@@ -40,15 +36,7 @@ class RiskManagement:
         return False
 
     def check_micro_shield(self):
-        # 🔥 Micro-Account Shield: 15% drawdown on $5 base = $0.75
-        # If loss exceeds $0.75 from initial base + bot profit, trigger shield
-        current_profit = self.virtual_equity - self.base_capital
-
-        # Note: We track profit/loss from the $5 foundation.
-        # If floating drawdown on the account reaches -15% of current virtual equity, stop.
-        # Simplified: If current floating loss > 15% of $5 capital (scaled), stop.
-
-        # For the $5 core specifically, we enforce a strict $0.75 protection.
+        # Micro-Account Shield: 15% drawdown on $5 base = $0.75
         if self.virtual_equity < (self.base_capital * 0.85):
             return True
         return False

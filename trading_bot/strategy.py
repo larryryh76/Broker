@@ -29,10 +29,6 @@ class Strategy:
         true_range = np.max(ranges, axis=1)
         df['ATR'] = true_range.rolling(14).mean()
 
-        # Support and Resistance Levels
-        df['Support'] = df['low'].rolling(window=50).min()
-        df['Resistance'] = df['high'].rolling(window=50).max()
-
         return df
 
     def generate_signal(self, df, bullish_prob, bearish_prob, symbol="UNKNOWN"):
@@ -41,21 +37,13 @@ class Strategy:
 
         latest = df.iloc[-1]
 
-        # 🔥 Gold Sniper Logic: RSI Divergence + ATR Volatility
+        # 🔥 Money Machine Logic (Gold M1): AI Prediction > 75%
         if symbol == "XAUUSD":
-            # ATR check: Wait for ATR expansion (volatility boost)
-            atr_ma = df['ATR'].rolling(window=20).mean().iloc[-1]
-            vol_boost = latest['ATR'] > (atr_ma * 1.1)
-
-            # Simple RSI Divergence Check
-            rsi_oversold = latest['RSI'] < 30
-            rsi_overbought = latest['RSI'] > 70
-
-            # AI Confirmation + Divergence Context
-            if rsi_oversold and bullish_prob > 0.8 and vol_boost:
-                return "BUY", 10
-            if rsi_overbought and bearish_prob > 0.8 and vol_boost:
-                return "SELL", 10
+            # Probability threshold (75%) for a 20-point move
+            if bullish_prob >= 0.75:
+                return "BUY", bullish_prob * 10
+            if bearish_prob >= 0.75:
+                return "SELL", bearish_prob * 10
             return "WAIT", 0
 
         # Core Conditions for other symbols
@@ -68,15 +56,10 @@ class Strategy:
         ai_buy = bullish_prob > 0.65
         ai_sell = bearish_prob > 0.65
 
-        # Momentum confirmation
-        momentum_buy = latest['SMA_FAST'] > latest['SMA_SLOW']
-        momentum_sell = latest['SMA_FAST'] < latest['SMA_SLOW']
-
         # Weighted Scoring
-        score_bull = (2.0 if trend_buy else 0) + (1.5 if rsi_buy else 0) + (2.0 if ai_buy else 0) + (0.5 if momentum_buy else 0)
-        score_bear = (2.0 if trend_sell else 0) + (1.5 if rsi_sell else 0) + (2.0 if ai_sell else 0) + (0.5 if momentum_sell else 0)
+        score_bull = (2.0 if trend_buy else 0) + (1.5 if rsi_buy else 0) + (2.0 if ai_buy else 0)
+        score_bear = (2.0 if trend_sell else 0) + (1.5 if rsi_sell else 0) + (2.0 if ai_sell else 0)
 
-        # Threshold for execution: 4.5 (Requires AI) or 4.0 (Strong Technicals)
         if score_bull >= 3.5:
             return "BUY", score_bull
         if score_bear >= 3.5:

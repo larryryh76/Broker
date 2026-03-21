@@ -41,12 +41,20 @@ class Strategy:
 
         latest = df.iloc[-1]
 
-        # Sniper logic for Gold
+        # 🔥 Gold Sniper Logic: RSI Divergence + ATR Volatility
         if symbol == "XAUUSD":
-            # Strictly RSI extremes + High AI confidence
-            if latest['RSI'] < 30 and bullish_prob > 0.8:
+            # ATR check: Wait for ATR expansion (volatility boost)
+            atr_ma = df['ATR'].rolling(window=20).mean().iloc[-1]
+            vol_boost = latest['ATR'] > (atr_ma * 1.1)
+
+            # Simple RSI Divergence Check
+            rsi_oversold = latest['RSI'] < 30
+            rsi_overbought = latest['RSI'] > 70
+
+            # AI Confirmation + Divergence Context
+            if rsi_oversold and bullish_prob > 0.8 and vol_boost:
                 return "BUY", 10
-            if latest['RSI'] > 70 and bearish_prob > 0.8:
+            if rsi_overbought and bearish_prob > 0.8 and vol_boost:
                 return "SELL", 10
             return "WAIT", 0
 
@@ -69,7 +77,6 @@ class Strategy:
         score_bear = (2.0 if trend_sell else 0) + (1.5 if rsi_sell else 0) + (2.0 if ai_sell else 0) + (0.5 if momentum_sell else 0)
 
         # Threshold for execution: 4.5 (Requires AI) or 4.0 (Strong Technicals)
-        # Reduced to 3.5 to allow technical trading while AI is calibrating
         if score_bull >= 3.5:
             return "BUY", score_bull
         if score_bear >= 3.5:

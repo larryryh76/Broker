@@ -68,6 +68,14 @@ class TradingMachine:
             if not account: return
 
             risk_manager = RiskManagement(account, virtual_equity)
+
+            # 🔥 Micro-Account Shield Logic: Protection for the $5 core
+            if risk_manager.check_micro_shield():
+                self.log("MICRO-ACCOUNT SHIELD: Core drawdown reached ($0.75 / 15%). Closing all.")
+                for pos in self.connector.get_open_positions():
+                    self.connector.close_position(pos['ticket'])
+                return
+
             state = self.db.get_latest_state()
             daily_start_equity = state.get("daily_start_equity", virtual_equity) if state else virtual_equity
 

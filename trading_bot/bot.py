@@ -44,7 +44,8 @@ class TradingMachine:
         self.log("--- STARTING AUTONOMOUS TRADING CYCLE ---")
 
         # 🔥 Wait for the signal flag from pre_launch.ps1
-        flag_path = "C:\\mt5_terminal\\READY.flag"
+        workspace = os.getenv("GITHUB_WORKSPACE", os.getcwd())
+        flag_path = os.path.join(workspace, "terminal", "READY.flag")
         timeout = 120
         elapsed = 0
         while not os.path.exists(flag_path) and elapsed < timeout:

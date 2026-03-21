@@ -51,12 +51,21 @@ class TerminalConnector:
                 print(f"MT5 MACHINE: WARNING - Config path does not exist: {config.TERMINAL_PATH}")
 
         print("MT5 MACHINE: Searching dynamically for terminal64.exe...")
-        # 2. Search common drive roots (Shallow search first for performance)
+
+        # Priority 2: GITHUB_WORKSPACE (DevOps Path)
+        workspace = os.getenv("GITHUB_WORKSPACE")
+        if workspace:
+            ws_path = os.path.join(workspace, "terminal", "terminal64.exe")
+            if os.path.exists(ws_path):
+                print(f"MT5 MACHINE: Dynamic Discovery SUCCESS (Workspace): {ws_path}")
+                return ws_path
+
+        # 3. Search common drive roots (Shallow search first for performance)
         drives = ["C:\\", "D:\\"]
         for drive in drives:
             if not os.path.exists(drive): continue
             # Look in typical GHA install locations first
-            common_subdirs = ["mt5_terminal", "Program Files", "Program Files (x86)"]
+            common_subdirs = ["terminal", "mt5_terminal", "Program Files", "Program Files (x86)"]
             for sd in common_subdirs:
                 full_sd = os.path.join(drive, sd)
                 if not os.path.exists(full_sd): continue

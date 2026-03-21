@@ -25,17 +25,33 @@ jobs:
           pip install -r trading_bot/requirements.txt
           pip install MetaTrader5 psutil
 
-      - name: Install MT5
+      - name: Pre-Accept MT5 EULA
         shell: powershell
         run: |
-          $installPath = "C:\mt5_terminal"
+          Write-Host "Bypassing EULA Popup..."
+          $regPath = "HKCU:\Software\MetaQuotes Software Corp.\MetaTrader 5"
+          if (!(Test-Path $regPath)) { New-Item -Path $regPath -Force }
+          New-ItemProperty -Path $regPath -Name "AcceptEULA" -Value 1 -PropertyType DWord -Force
+          Write-Host "EULA Accepted in Registry."
+
+      - name: Install MT5 (Workspace)
+        shell: powershell
+        run: |
+          $installPath = "$env:GITHUB_WORKSPACE\terminal"
           if (!(Test-Path $installPath)) { New-Item -ItemType Directory -Path $installPath }
+
+          # Wait for network stability
+          Write-Host "Waiting 15s for network stability..."
+          Start-Sleep -Seconds 15
+
           $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $setupPath = "$env:TEMP\mt5setup.exe"
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
-          Write-Host "Installing MT5 Terminal..."
+
+          Write-Host "Installing MT5 Terminal to $installPath..."
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
           Start-Sleep -Seconds 10
+
           $mt5Path = "$installPath\terminal64.exe"
           if (!(Test-Path $mt5Path)) {
             Write-Error "MT5 installation failed: terminal64.exe not found."
@@ -62,14 +78,14 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          MT5_TERMINAL_PATH: 'C:\mt5_terminal\terminal64.exe'
+          MT5_TERMINAL_PATH: "${{ github.workspace }}\\terminal\\terminal64.exe"
 
       - name: Extract Artifacts
         if: always()
         shell: powershell
         run: |
           if (!(Test-Path "artifacts")) { New-Item -ItemType Directory -Path "artifacts" }
-          $mt5Dir = "C:\mt5_terminal"
+          $mt5Dir = "$env:GITHUB_WORKSPACE\terminal"
           if (Test-Path "$mt5Dir\MQL5\Logs") {
              Copy-Item -Path "$mt5Dir\MQL5\Logs\*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
           }

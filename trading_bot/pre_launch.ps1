@@ -10,7 +10,7 @@ $dataPath = "$installPath"
 $logPath = "$installPath\MQL5\Logs"
 $originFile = "$installPath\origin.txt"
 
-Write-Host "=== MT5 DEVOPS-HARDENED PRE-LAUNCH ==="
+Write-Host "=== MT5 GRAPHICS-EMULATED PRE-LAUNCH ==="
 
 # 🔥 Kill all existing processes
 taskkill /F /IM terminal64.exe 2>$null
@@ -60,18 +60,17 @@ function Launch-And-Watch {
     $timeout = 90
     $elapsed = 0
     while ($elapsed -lt $timeout) {
-        $logs = Get-ChildItem -Path $logPath -Filter *.log -ErrorAction SilentlyContinue
         $originExists = Test-Path $originFile
 
-        if ($logs -or $originExists) {
-            Write-Host "MT5 INITIALIZATION DETECTED (Logs: $(!!$logs), Origin: $originExists)."
+        if ($originExists) {
+            Write-Host "MT5 HEARTBEAT DETECTED (origin.txt exists)."
             Write-Host "TERMINAL READY."
             return $true
         }
 
         Start-Sleep -Seconds 5
         $elapsed += 5
-        Write-Host "Waiting for logs or origin.txt... ($elapsed sec)"
+        Write-Host "Waiting for origin.txt... ($elapsed sec)"
     }
     return $false
 }
@@ -80,7 +79,7 @@ $success = Launch-And-Watch
 
 # 🔥 Retry with /clear if no success
 if (-not $success) {
-    Write-Host "No initialization detected. Retrying with /clear..."
+    Write-Host "No heartbeat detected. Retrying with /clear..."
     taskkill /F /IM terminal64.exe 2>$null
     Start-Sleep -Seconds 5
     $success = Launch-And-Watch "/clear"
@@ -92,5 +91,9 @@ if ($success) {
     Write-Host "=== PRE-LAUNCH COMPLETE SUCCESS ==="
 } else {
     Write-Host "=== PRE-LAUNCH FAILED TO INITIALIZE ===."
+    Write-Host "--- DIAGNOSTIC DUMP: Environment Variables ---"
+    Get-ChildItem Env: | Select-Object Name, Value | Format-Table -AutoSize
+    Write-Host "--- DIAGNOSTIC DUMP: Path Content ---"
+    Get-ChildItem -Path $installPath -Recurse | Select-Object FullName
     exit 1
 }

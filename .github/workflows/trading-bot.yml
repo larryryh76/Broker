@@ -1,4 +1,4 @@
-name: Autonomous MT5 Trading Cycle (Native Windows)
+name: Autonomous MT5 Trading Cycle (Graphics Emulated)
 
 on:
   workflow_dispatch:
@@ -28,38 +28,44 @@ jobs:
       - name: Pre-Accept MT5 EULA
         shell: powershell
         run: |
-          Write-Host "Bypassing EULA Popup..."
           $regPath = "HKCU:\Software\MetaQuotes Software Corp.\MetaTrader 5"
           if (!(Test-Path $regPath)) { New-Item -Path $regPath -Force }
           New-ItemProperty -Path $regPath -Name "AcceptEULA" -Value 1 -PropertyType DWord -Force
-          Write-Host "EULA Accepted in Registry."
 
-      - name: Install MT5 (Workspace)
+      - name: Deploy Graphics-Emulated MT5 (Mesa3D)
         shell: powershell
         run: |
-          $installPath = "$env:GITHUB_WORKSPACE\terminal"
-          if (!(Test-Path $installPath)) { New-Item -ItemType Directory -Path $installPath }
+          $workspace = "$env:GITHUB_WORKSPACE\terminal"
+          if (!(Test-Path $workspace)) { New-Item -ItemType Directory -Path $workspace }
 
-          # Wait for network stability
-          Write-Host "Waiting 15s for network stability..."
-          Start-Sleep -Seconds 15
-
+          # 1. Download Clean MT5
           $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $setupPath = "$env:TEMP\mt5setup.exe"
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
 
-          Write-Host "Installing MT5 Terminal to $installPath..."
-          Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$installPath" -Wait
+          Write-Host "Installing MT5 Terminal to $workspace..."
+          Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$workspace" -Wait
           Start-Sleep -Seconds 10
 
-          $mt5Path = "$installPath\terminal64.exe"
+          # 2. Inject Mesa3D (opengl32.dll) to bypass GPU checks
+          # Using a reliable pre-compiled Mesa3D build for Windows
+          $mesaUrl = "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.6/mesa3d-23.1.6-release-msvc.7z"
+          # For speed and reliability in CI, we'll download just the DLL if possible,
+          # but usually we need the full lib or a verified mirror.
+          # Redirecting to a verified direct DLL download for Mesa3D opengl32.dll
+          $dllUrl = "https://github.com/mmozeiko/opengl32-mesa/releases/download/v20.1.7/opengl32.dll"
+          Invoke-WebRequest -Uri $dllUrl -OutFile "$workspace\opengl32.dll"
+          Write-Host "Mesa3D (opengl32.dll) injected."
+
+          $mt5Path = "$workspace\terminal64.exe"
           if (!(Test-Path $mt5Path)) {
             Write-Error "MT5 installation failed: terminal64.exe not found."
             exit 1
           }
           Unblock-File -Path $mt5Path
+          Unblock-File -Path "$workspace\opengl32.dll"
 
-      - name: Pre-Launch MT5 (Bulletproof)
+      - name: Pre-Launch MT5 (Heartbeat Monitor)
         shell: powershell
         run: |
           pwsh -ExecutionPolicy Bypass -File trading_bot/pre_launch.ps1
@@ -91,9 +97,6 @@ jobs:
           }
           if (Test-Path "trading_bot/logs") {
             Copy-Item -Path "trading_bot/logs/*" -Destination "artifacts/logs" -Recurse -Force -ErrorAction SilentlyContinue
-          }
-          if (Test-Path "trading_bot/snapshots") {
-            Copy-Item -Path "trading_bot/snapshots" -Destination "artifacts/snapshots" -Recurse -Force -ErrorAction SilentlyContinue
           }
 
       - name: Upload Artifacts

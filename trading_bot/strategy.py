@@ -35,13 +35,22 @@ class Strategy:
 
         return df
 
-    def generate_signal(self, df, bullish_prob, bearish_prob):
+    def generate_signal(self, df, bullish_prob, bearish_prob, symbol="UNKNOWN"):
         if df is None or df.empty or 'RSI' not in df.columns:
             return "WAIT", 0
 
         latest = df.iloc[-1]
 
-        # Core Conditions
+        # Sniper logic for Gold
+        if symbol == "XAUUSD":
+            # Strictly RSI extremes + High AI confidence
+            if latest['RSI'] < 30 and bullish_prob > 0.8:
+                return "BUY", 10
+            if latest['RSI'] > 70 and bearish_prob > 0.8:
+                return "SELL", 10
+            return "WAIT", 0
+
+        # Core Conditions for other symbols
         rsi_buy = latest['RSI'] < config.RSI_OVERSOLD
         rsi_sell = latest['RSI'] > config.RSI_OVERBOUGHT
 

@@ -6,6 +6,7 @@ from trading_bot.strategy import Strategy
 from trading_bot.ai_model import AIModel
 from trading_bot.risk_management import RiskManagement
 import os
+import time
 from datetime import datetime, timezone
 
 class TradingMachine:
@@ -41,6 +42,20 @@ class TradingMachine:
 
     def run_cycle(self):
         self.log("--- STARTING AUTONOMOUS TRADING CYCLE ---")
+
+        # 🔥 Wait for the signal flag from pre_launch.ps1
+        flag_path = "C:\\mt5_terminal\\READY.flag"
+        timeout = 120
+        elapsed = 0
+        while not os.path.exists(flag_path) and elapsed < timeout:
+            time.sleep(5)
+            elapsed += 5
+            self.log(f"Waiting for READY.flag... ({elapsed}s)")
+
+        if not os.path.exists(flag_path):
+            self.log("CRITICAL: READY.flag not found. MT5 failed to signal readiness.")
+            return
+
         if not self.connector.connect():
             self.log("CRITICAL: Bridge failed. Terminating.")
             return
@@ -73,7 +88,7 @@ class TradingMachine:
                 if df is not None:
                     df = self.strategy.calculate_indicators(df)
                     bull_prob, bear_prob = self.ai_model.predict(df)
-                    signal, _ = self.strategy.generate_signal(df, bull_prob, bear_prob)
+                    signal, _ = self.strategy.generate_signal(df, bull_prob, bear_prob, symbol=symbol)
 
                     if (pos['type'] == 0 and signal == "SELL") or (pos['type'] == 1 and signal == "BUY"):
                         self.connector.close_position(pos['ticket'])
@@ -87,7 +102,7 @@ class TradingMachine:
                     if df is None: continue
                     df = self.strategy.calculate_indicators(df)
                     bull_prob, bear_prob = self.ai_model.predict(df)
-                    signal, confidence = self.strategy.generate_signal(df, bull_prob, bear_prob)
+                    signal, confidence = self.strategy.generate_signal(df, bull_prob, bear_prob, symbol=symbol)
 
                     if signal in ["BUY", "SELL"]:
                         lot = risk_manager.calculate_lot_size(1)

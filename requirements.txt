@@ -1,0 +1,5 @@
+playwright
+playwright-stealth
+pymongo
+python-dotenv
+pytest

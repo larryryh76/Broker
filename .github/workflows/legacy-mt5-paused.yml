@@ -1,0 +1,11 @@
+name: Legacy MT5 Trading Cycle (PAUSED)
+
+on:
+  workflow_dispatch: # Manual only to preserve 'PAUSED' state
+
+jobs:
+  paused:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log Status
+        run: echo "This system is FULLY PAUSED and replaced by OMNI V3.5"

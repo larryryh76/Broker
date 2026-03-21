@@ -1,4 +1,4 @@
-name: Autonomous MT5 Trading Cycle (Graphics Emulated)
+name: Money Machine MT5 Trading Cycle
 
 on:
   workflow_dispatch:
@@ -31,8 +31,9 @@ jobs:
           $regPath = "HKCU:\Software\MetaQuotes Software Corp.\MetaTrader 5"
           if (!(Test-Path $regPath)) { New-Item -Path $regPath -Force }
           New-ItemProperty -Path $regPath -Name "AcceptEULA" -Value 1 -PropertyType DWord -Force
+          Write-Host "Registry EULA Accepted."
 
-      - name: Deploy Graphics-Emulated MT5 (Mesa3D)
+      - name: Deploy Graphics-Emulated MT5 (Mesa3D 24.3.0)
         shell: powershell
         run: |
           $workspace = "$env:GITHUB_WORKSPACE\terminal"
@@ -42,20 +43,15 @@ jobs:
           $setupUrl = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $setupPath = "$env:TEMP\mt5setup.exe"
           Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath
-
-          Write-Host "Installing MT5 Terminal to $workspace..."
+          Write-Host "Installing MT5 Terminal..."
           Start-Process -FilePath $setupPath -ArgumentList "/auto", "/path:$workspace" -Wait
-          Start-Sleep -Seconds 10
 
-          # 2. Inject Mesa3D (opengl32.dll) to bypass GPU checks
-          # Using a reliable pre-compiled Mesa3D build for Windows
-          $mesaUrl = "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.6/mesa3d-23.1.6-release-msvc.7z"
-          # For speed and reliability in CI, we'll download just the DLL if possible,
-          # but usually we need the full lib or a verified mirror.
-          # Redirecting to a verified direct DLL download for Mesa3D opengl32.dll
+          # 2. Download Mesa3D (opengl32.dll) via curl with retries
+          # Using a reliable direct download for the x64 opengl32.dll from Mesa-dist-win
+          # Mesa-dist-win latest version is usually hosted on GitHub or specific mirrors
           $dllUrl = "https://github.com/mmozeiko/opengl32-mesa/releases/download/v20.1.7/opengl32.dll"
-          Invoke-WebRequest -Uri $dllUrl -OutFile "$workspace\opengl32.dll"
-          Write-Host "Mesa3D (opengl32.dll) injected."
+          curl.exe --retry 5 -L -o "$workspace\opengl32.dll" "$dllUrl"
+          Write-Host "Mesa3D opengl32.dll injected into $workspace"
 
           $mt5Path = "$workspace\terminal64.exe"
           if (!(Test-Path $mt5Path)) {
@@ -65,7 +61,7 @@ jobs:
           Unblock-File -Path $mt5Path
           Unblock-File -Path "$workspace\opengl32.dll"
 
-      - name: Pre-Launch MT5 (Heartbeat Monitor)
+      - name: Pre-Launch MT5 (Liveness Heartbeat)
         shell: powershell
         run: |
           pwsh -ExecutionPolicy Bypass -File trading_bot/pre_launch.ps1
@@ -74,7 +70,7 @@ jobs:
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
 
-      - name: Run Trading Bot
+      - name: Run Money Machine Bot
         shell: powershell
         run: |
           $env:PYTHONPATH = "."

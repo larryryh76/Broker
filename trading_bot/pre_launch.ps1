@@ -8,9 +8,8 @@ $installPath = "$workspace\terminal"
 $exePath = "$installPath\terminal64.exe"
 $dataPath = "$installPath"
 $logPath = "$installPath\MQL5\Logs"
-$originFile = "$installPath\origin.txt"
 
-Write-Host "=== MT5 GRAPHICS-EMULATED PRE-LAUNCH ==="
+Write-Host "=== MT5 MONEY MACHINE PRE-LAUNCH ==="
 
 # 🔥 Kill all existing processes
 taskkill /F /IM terminal64.exe 2>$null
@@ -50,7 +49,7 @@ $startupIni | Out-File -Encoding ASCII "$installPath\startup.ini"
 
 Write-Host "Config injected into $installPath\startup.ini"
 
-# Function to launch and watch
+# Function to launch and watch for logs
 function Launch-And-Watch {
     param([string]$extraArgs = "")
 
@@ -60,24 +59,24 @@ function Launch-And-Watch {
     $timeout = 90
     $elapsed = 0
     while ($elapsed -lt $timeout) {
-        $originExists = Test-Path $originFile
+        $logs = Get-ChildItem -Path $logPath -Filter *.log -ErrorAction SilentlyContinue
 
-        if ($originExists) {
-            Write-Host "MT5 HEARTBEAT DETECTED (origin.txt exists)."
+        if ($logs) {
+            Write-Host "MT5 HEARTBEAT DETECTED (New .log file created in MQL5\Logs)."
             Write-Host "TERMINAL READY."
             return $true
         }
 
         Start-Sleep -Seconds 5
         $elapsed += 5
-        Write-Host "Waiting for origin.txt... ($elapsed sec)"
+        Write-Host "Waiting for heartbeat (.log)... ($elapsed sec)"
     }
     return $false
 }
 
 $success = Launch-And-Watch
 
-# 🔥 Retry with /clear if no success
+# 🔥 Retry with /clear if no heartbeat
 if (-not $success) {
     Write-Host "No heartbeat detected. Retrying with /clear..."
     taskkill /F /IM terminal64.exe 2>$null
@@ -91,9 +90,5 @@ if ($success) {
     Write-Host "=== PRE-LAUNCH COMPLETE SUCCESS ==="
 } else {
     Write-Host "=== PRE-LAUNCH FAILED TO INITIALIZE ===."
-    Write-Host "--- DIAGNOSTIC DUMP: Environment Variables ---"
-    Get-ChildItem Env: | Select-Object Name, Value | Format-Table -AutoSize
-    Write-Host "--- DIAGNOSTIC DUMP: Path Content ---"
-    Get-ChildItem -Path $installPath -Recurse | Select-Object FullName
     exit 1
 }

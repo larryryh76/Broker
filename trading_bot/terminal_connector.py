@@ -103,11 +103,11 @@ class TerminalConnector:
                 else:
                     print(f"MT5 MACHINE: WARNING - No recent activity in {log_dir}")
 
-            # Attempt A: Path-less init (Prioritize attaching to pre-launched terminal)
-            # Attempt B: Explicit Path init
-            success = self.mt5.initialize()
+            # Attempt A: Explicit Path init (Ensures we attach to the correctly initialized process)
+            # Attempt B: Path-less init fallback
+            success = self.mt5.initialize(path=path)
             if not success:
-                success = self.mt5.initialize(path=path)
+                success = self.mt5.initialize()
 
             if success:
                 print(f"MT5 MACHINE: IPC Bridge Online. Version: {self.mt5.version()}")

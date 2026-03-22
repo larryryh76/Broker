@@ -9,15 +9,15 @@ class DecisionExecutor:
         self.risk = risk_engine
 
     def compute_ev(self, win_prob: float, stake: float) -> float:
-        """EV = (prob_win * payout) - (prob_loss * stake)"""
-        # Football.com Spin da Bottle payout is 1.95x stake (profit is 0.95x)
+        """EV = (P_win * payout) - (P_loss * stake)"""
+        p_loss = 1.0 - win_prob
+        # Football.com payout assumed 1.95x stake (profit 0.95x)
         payout = stake * 1.95
-        prob_loss = 1.0 - win_prob
-        ev = (win_prob * payout) - (prob_loss * stake)
+        ev = (win_prob * payout) - (p_loss * stake)
         return ev
 
     def decide(self, outcomes: List[str]) -> Optional[Dict]:
-        """Main decision logic: Calculate prob -> EV -> Thresholds -> Execution."""
+        """Main decision engine: Observe -> EV -> Confidence -> Decision."""
         # 1. Prediction (Ensemble Brain)
         probs = self.brain.predict(outcomes)
 
@@ -26,58 +26,35 @@ class DecisionExecutor:
         win_prob = probs[direction]
 
         # 2. Confidence Calculation (Normalized)
-        # 0.5 is no information, 1.0 is full information
-        confidence = abs(probs["U"] - probs["D"]) * 2.0
+        # 0.5 is no info, 1.0 is full info
+        confidence = abs(win_prob - 0.5) * 2.0
 
-        # 3. Dynamic Threshold Calculation
-        # The dynamic threshold decreases as we get more history, or based on mode
-        min_prob_threshold = 0.55
-        dynamic_conf_threshold = 0.15 if self.risk.state["mode"] == "TUITION" else 0.25
-
-        # 4. Stake Calculation (Risk Engine)
+        # 3. Dynamic Staking (Kelly-inspired)
         stake = self.risk.calculate_stake(win_prob, confidence)
 
-        # 5. Strict Expected Value (EV) Check
+        # 4. Expected Value (EV) Engine
         ev = self.compute_ev(win_prob, stake) if stake > 0 else 0
 
-        print(f"Decision Engine Analysis: {direction} | Prob: {win_prob:.2f} | Conf: {confidence:.2f} | EV: {ev:.2f}")
+        print(f"DECISION: Analysing {direction} | Prob: {win_prob:.2f} | Conf: {confidence:.2f} | EV: {ev:.2f}")
 
-        # 6. Final Execution Decision
-        if ev > 0 and win_prob >= min_prob_threshold and confidence >= dynamic_conf_threshold:
-            print(f"DECISION: EXECUTE BET ({direction})")
+        # 5. EXECUTION RULE: EV > 0 AND Prob > 0.55 AND confidence > dynamic threshold
+        # Threshold: 0.15 for tuition, 0.25 for sniper
+        dynamic_threshold = 0.15 if self.risk.state["mode"] == "TUITION" else 0.25
 
-            # Exploration logic (20% explore other directions or wait)
-            if random.random() < 0.2:
-                # 20% explore wait or alt direction
-                if random.random() < 0.5:
-                    print("Exploration Mode: Skipping Bet")
-                    return {"action": "WAIT", "reason": "Exploration SKIP", "confidence": confidence, "ev": ev}
-
-                alt_direction = "D" if direction == "U" else "U"
-                print(f"Exploration Mode: ALT BET ({alt_direction})")
-                return {
-                    "action": "BET",
-                    "direction": alt_direction,
-                    "amount": 10.0, # Explore with minimum stake
-                    "prob": probs[alt_direction],
-                    "confidence": confidence,
-                    "ev": self.compute_ev(probs[alt_direction], 10.0),
-                    "mode": "EXPLORE"
-                }
-
+        if ev > 0 and win_prob >= 0.55 and confidence >= dynamic_threshold:
+            print(f"EXECUTION: BET ₦{stake} on {direction}")
             return {
                 "action": "BET",
                 "direction": direction,
                 "amount": stake,
                 "prob": win_prob,
                 "confidence": confidence,
-                "ev": ev,
-                "mode": "EXPLOIT"
+                "ev": ev
             }
 
-        # SKIP LOGIC
-        reason = "EV <= 0" if ev <= 0 else "Low Confidence/Prob"
-        print(f"DECISION: SKIP ({reason})")
+        # Observation/Skip mode
+        reason = "EV <= 0" if ev <= 0 else "Low confidence/probability"
+        print(f"SKIP: {reason}")
         return {
             "action": "WAIT",
             "reason": reason,

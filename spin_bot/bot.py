@@ -8,12 +8,12 @@ from spin_bot.executor import DecisionExecutor
 from spin_bot.playwright_client import PlaywrightClient
 from datetime import datetime, timezone
 
-class OmniMachineV35:
+class OmniMachineV4:
     def __init__(self):
-        # 1. Initialize MongoDB Intelligence Layer
+        # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
 
-        # 2. Reconstruct State (Load Session)
+        # 2. Reconstruct System State
         self.session_state = self.memory.load_session() or {
             "bankroll": 300.0,
             "mode": "TUITION",
@@ -21,69 +21,92 @@ class OmniMachineV35:
             "peak_equity": 300.0,
             "consecutive_losses": 0,
             "vault_locked": False,
-            "history": []
+            "history": [],
+            "selectors": {}
         }
 
-        # 3. Initialize Model weights
+        # 3. Model Weight Loading
         weights = self.memory.load_model_weights()
         self.brain = EnsembleBrain(weights)
 
-        # 4. Financial engine & Risk Layer
+        # 4. Risk Engine & Staking Logic
         self.risk = RiskEngine(self.session_state["bankroll"], self.session_state)
 
-        # 5. Prediction orchestrator
+        # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE ({self.session_state['mode']}) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V4 ({self.session_state['mode']}) ---")
 
-        # Failsafe around the entire cycle
+        # Failsafe around entire execution
         try:
-            # 1. Observation Phase (Scrape recent history)
+            # 1. Observation Phase
             client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
             try:
                 client.navigate_to_spin_game()
-                outcomes = client.get_latest_outcomes()
 
-                # Update Memory Graph with latest outcomes
+                # 2. Self-Healing Scraping
+                # IF selector exists → use it | IF fails → fallback to auto-detection
+                history_selector = self.session_state.get("selectors", {}).get("history", "")
+                outcomes = []
+
+                # Try existing selector
+                if history_selector:
+                    try:
+                        items = client.page.query_selector_all(history_selector)
+                        outcomes = [el.inner_text().strip().upper()[0] for el in items if el.inner_text().strip()]
+                    except:
+                        pass
+
+                # Fallback to pattern detection
+                if not outcomes:
+                    outcomes = client.detect_repeating_patterns()
+                    if outcomes:
+                        # Store pattern for future use if it was robust (pseudo-code for selector generation)
+                        self.session_state["selectors"]["history"] = ".history-item" # Hypothetical robust selector
+
+                # 3. Intelligence Phase
                 if outcomes:
-                    print(f"Observed: {''.join(outcomes)}")
-                    for outcome in outcomes:
-                        self.memory.log_spin(outcome)
+                    print(f"Observed outcomes: {''.join(outcomes)}")
+                    for o in outcomes: self.memory.log_spin(o)
 
-                # Fetch full history for intelligence
-                full_history = self.memory.get_latest_spins(100)
+                    full_history = self.memory.get_latest_spins(100)
+                    decision = self.executor.decide(full_history)
 
-                # 2. Decision Engine (Calculate edge + probabilities)
-                decision = self.executor.decide(full_history)
+                    if decision["action"] == "BET":
+                        # Detect betting elements for execution
+                        ui = client.detect_betting_elements()
+                        if ui["up"] and ui["down"] and ui["amount"]:
+                            print(f"Executing Bet: ₦{decision['amount']} on {decision['direction']}")
 
-                if decision["action"] == "BET":
-                    print(f"Executing Bet: ₦{decision['amount']} on {decision['direction']} (EV: {decision['ev']:.2f})")
+                            # Interaction with jitter
+                            ui["amount"].click()
+                            ui["amount"].fill(str(decision["amount"]))
+                            target = ui["up"] if decision["direction"] == "U" else ui["down"]
+                            target.hover()
+                            target.click()
 
-                    # Execution with browser interaction
-                    client.place_bet(decision["amount"], decision["direction"])
+                            # Wait for result and update models
+                            time.sleep(15)
+                            new_outcomes = client.detect_repeating_patterns()
+                            if new_outcomes:
+                                actual = new_outcomes[-1]
+                                win = (actual == decision["direction"])
+                                print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
 
-                    # Wait for results
-                    time.sleep(15)
-                    new_outcomes = client.get_latest_outcomes()
-
-                    if new_outcomes:
-                        actual = new_outcomes[-1]
-                        win = (actual == decision["direction"])
-                        print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
-
-                        # 3. Adaptation Phase (Reward/Penalize models)
-                        if len(full_history) >= 5:
-                            seq = "".join(full_history[-5:])
-                            self.memory.update_sequence(seq, actual, win)
-
-                        # Softmax Update
-                        self.brain.update_weights(full_history, actual)
-
-                        # 4. Financial Status Update
-                        payout = decision["amount"] * 1.95 if win else 0
-                        self.risk.bankroll += (payout - decision["amount"])
-                        self.risk.update_result(win)
+                                # Adaptation
+                                self.brain.update_weights(full_history, actual)
+                                payout = decision["amount"] * 1.95 if win else 0
+                                self.risk.bankroll += (payout - decision["amount"])
+                                self.risk.update_result(win)
+                        else:
+                            print("CRITICAL: Betting elements not found. Switching to Observation Mode.")
+                            client.take_screenshot("ui_detection_failure")
+                    else:
+                        print(f"SKIP: {decision['reason']}")
+                else:
+                    print("CRITICAL: Scraper failed to identify history. Logging error.")
+                    client.take_screenshot("scraping_failure")
 
             except Exception as e:
                 print(f"Error during browser interaction: {e}")
@@ -92,9 +115,9 @@ class OmniMachineV35:
                 client.close()
 
         except Exception as e:
-            print(f"CRITICAL ERROR in Cycle: {e}")
+            print(f"CRITICAL ERROR in Run Cycle: {e}")
         finally:
-            # 5. Full Persistence Phase (Guaranteed save)
+            # 4. Permanent Persistence Phase (Save State)
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)
@@ -102,5 +125,5 @@ class OmniMachineV35:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV35()
+    machine = OmniMachineV4()
     machine.run_cycle()

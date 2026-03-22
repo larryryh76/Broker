@@ -1,4 +1,4 @@
-from trading_bot import config
+from legacy_mt5.trading_bot import config
 
 class RiskManagement:
     def __init__(self, account_info, virtual_equity):

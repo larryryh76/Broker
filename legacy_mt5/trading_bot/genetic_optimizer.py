@@ -1,4 +1,4 @@
-from trading_bot import config
+from legacy_mt5.trading_bot import config
 from strategy_generator import StrategyGenerator
 from backtest_engine import BacktestEngine
 

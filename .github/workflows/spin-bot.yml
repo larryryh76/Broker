@@ -1,4 +1,4 @@
-name: Omni-Recursive Money Machine Cycle (V4 - Hardened)
+name: Omni-Recursive Money Machine Cycle (V4.1 - Network Intelligence)
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
           playwright install chromium --with-deps
 
       - name: Create Artifacts Folder
-        run: mkdir -p artifacts
+        run: mkdir -p artifacts || true
 
       - name: Execute Money Machine Cycle
         run: |
@@ -36,17 +36,16 @@ jobs:
           SPIN_URL: ${{ secrets.SPIN_URL }}
           FOOTBALL_NG_LOGIN: ${{ secrets.FOOTBALL_NG_LOGIN }}
           FOOTBALL_NG_PASS: ${{ secrets.FOOTBALL_NG_PASS }}
-          SELECTOR_HISTORY: ${{ secrets.SELECTOR_HISTORY }}
-          SELECTOR_AMOUNT: ${{ secrets.SELECTOR_AMOUNT }}
-          SELECTOR_UP: ${{ secrets.SELECTOR_UP }}
-          SELECTOR_DOWN: ${{ secrets.SELECTOR_DOWN }}
-          SELECTOR_LOGIN: ${{ secrets.SELECTOR_LOGIN }}
-          SELECTOR_PASS: ${{ secrets.SELECTOR_PASS }}
-          SELECTOR_SUBMIT: ${{ secrets.SELECTOR_SUBMIT }}
+
+      - name: Extract Artifacts (State Logs)
+        if: always()
+        run: |
+          mkdir -p artifacts
+          cp *.log artifacts/ 2>/dev/null || true
 
       - name: Upload Logs & Screenshots
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: spin-logs-v4-${{ github.run_id }}
+          name: spin-logs-v4.1-${{ github.run_id }}
           path: artifacts/

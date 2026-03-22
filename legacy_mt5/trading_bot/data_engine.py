@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from trading_bot import config
+from legacy_mt5.trading_bot import config
 from datetime import datetime
 
 class DataEngine:

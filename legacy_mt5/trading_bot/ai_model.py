@@ -4,7 +4,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 import joblib
 import os
 import io
-from trading_bot import config
+from legacy_mt5.trading_bot import config
 
 class AIModel:
     def __init__(self, db_client=None, model_name="forex_ai_machine"):

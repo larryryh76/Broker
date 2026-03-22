@@ -7,13 +7,14 @@ class MemoryGraph:
     def __init__(self, uri: str):
         # 1. Connect to MongoDB Atlas
         self.client = pymongo.MongoClient(uri)
-        self.db = self.client["omni_v35"]
+        self.db = self.client["omni_v4"]
 
         # 2. Collection definitions
         self.spins = self.db["spins"]           # Raw spin outcomes
         self.sequences = self.db["sequences"]   # Pattern intelligence nodes
         self.models = self.db["models"]         # Ensemble model weights and performance
-        self.sessions = self.db["sessions"]     # Global bankroll and session state
+        self.sessions = self.db["sessions"]     # Global bankroll and system state
+        self.selectors = self.db["selectors"]   # Self-healed CSS selectors
 
     def log_spin(self, outcome: str):
         """outcome: 'U' (Up) or 'D' (Down)"""
@@ -40,13 +41,10 @@ class MemoryGraph:
         }
         self.sequences.update_one({"sequence": sequence}, update, upsert=True)
 
-    def get_sequence_node(self, sequence: str) -> Optional[Dict]:
-        return self.sequences.find_one({"sequence": sequence})
-
     def save_session(self, state: Dict):
         state["last_sync"] = datetime.now(timezone.utc)
         self.sessions.update_one({"id": "current"}, {"$set": state}, upsert=True)
-        print(f"Session state saved: {state['bankroll']:.2f} | Mode: {state['mode']}")
+        print(f"Session state saved: ₦{state['bankroll']:.2f} | Mode: {state['mode']}")
 
     def load_session(self) -> Optional[Dict]:
         return self.sessions.find_one({"id": "current"})
@@ -61,6 +59,17 @@ class MemoryGraph:
     def load_model_weights(self) -> Optional[Dict]:
         doc = self.models.find_one({"id": "ensemble"})
         return doc["weights"] if doc else None
+
+    def save_selector(self, key: str, value: str):
+        self.selectors.update_one(
+            {"key": key},
+            {"$set": {"selector": value, "last_detected": datetime.now(timezone.utc)}},
+            upsert=True
+        )
+
+    def get_selector(self, key: str) -> Optional[str]:
+        doc = self.selectors.find_one({"key": key})
+        return doc["selector"] if doc else None
 
     def close(self):
         self.client.close()

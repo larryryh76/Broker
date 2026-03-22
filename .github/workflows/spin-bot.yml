@@ -1,4 +1,4 @@
-name: Omni-Recursive Money Machine Cycle (V3.5)
+name: Omni-Recursive Money Machine Cycle (V4 - Hardened)
 
 on:
   workflow_dispatch:
@@ -25,6 +25,9 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
+      - name: Create Artifacts Folder
+        run: mkdir -p artifacts
+
       - name: Execute Money Machine Cycle
         run: |
           python -m spin_bot.bot
@@ -41,15 +44,9 @@ jobs:
           SELECTOR_PASS: ${{ secrets.SELECTOR_PASS }}
           SELECTOR_SUBMIT: ${{ secrets.SELECTOR_SUBMIT }}
 
-      - name: Extract Artifacts (State Logs)
-        if: always()
-        run: |
-          mkdir artifacts
-          cp *.log artifacts/ 2>/dev/null || true
-
       - name: Upload Logs & Screenshots
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: spin-logs-${{ github.run_id }}
+          name: spin-logs-v4-${{ github.run_id }}
           path: artifacts/

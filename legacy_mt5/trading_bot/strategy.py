@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from trading_bot import config
+from legacy_mt5.trading_bot import config
 
 class Strategy:
     def __init__(self):

@@ -1,10 +1,10 @@
-from trading_bot import config
-from trading_bot.terminal_connector import TerminalConnector
-from trading_bot.db_client import DBClient
-from trading_bot.data_engine import DataEngine
-from trading_bot.strategy import Strategy
-from trading_bot.ai_model import AIModel
-from trading_bot.risk_management import RiskManagement
+from legacy_mt5.trading_bot import config
+from legacy_mt5.trading_bot.terminal_connector import TerminalConnector
+from legacy_mt5.trading_bot.db_client import DBClient
+from legacy_mt5.trading_bot.data_engine import DataEngine
+from legacy_mt5.trading_bot.strategy import Strategy
+from legacy_mt5.trading_bot.ai_model import AIModel
+from legacy_mt5.trading_bot.risk_management import RiskManagement
 import os
 import time
 from datetime import datetime, timezone

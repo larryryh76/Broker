@@ -4,7 +4,7 @@ import psutil
 import subprocess
 import MetaTrader5 as mt5
 import pandas as pd
-from trading_bot import config
+from legacy_mt5.trading_bot import config
 from datetime import datetime, timedelta
 
 class TerminalConnector:

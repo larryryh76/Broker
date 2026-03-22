@@ -8,7 +8,7 @@ from spin_bot.executor import DecisionExecutor
 from spin_bot.playwright_client import PlaywrightClient
 from datetime import datetime, timezone
 
-class OmniMachineV4:
+class OmniMachineV41:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -36,38 +36,28 @@ class OmniMachineV4:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V4 ({self.session_state['mode']}) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V4.1 ({self.session_state['mode']}) ---")
 
         # Failsafe around entire execution
         try:
-            # 1. Observation Phase
+            # 1. Observation Phase (Multi-Source Intelligence)
             client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
             try:
                 client.navigate_to_spin_game()
+                client.take_screenshot("initial_observation")
 
-                # 2. Self-Healing Scraping
-                # IF selector exists → use it | IF fails → fallback to auto-detection
-                history_selector = self.session_state.get("selectors", {}).get("history", "")
-                outcomes = []
+                # 2. Intelligence Hierarchy: V4.1 Priority Logic
+                # 2a. Primary Source: Network Intelligence (JSON/XHR)
+                outcomes = client.extract_from_network()
 
-                # Try existing selector
-                if history_selector:
-                    try:
-                        items = client.page.query_selector_all(history_selector)
-                        outcomes = [el.inner_text().strip().upper()[0] for el in items if el.inner_text().strip()]
-                    except:
-                        pass
-
-                # Fallback to pattern detection
+                # 2b. Secondary Source: Hardened DOM Scraper (Pattern Detection)
                 if not outcomes:
+                    print("DEBUG: Network Extraction failed. Switching to Hardened DOM Scraper...")
                     outcomes = client.detect_repeating_patterns()
-                    if outcomes:
-                        # Store pattern for future use if it was robust (pseudo-code for selector generation)
-                        self.session_state["selectors"]["history"] = ".history-item" # Hypothetical robust selector
 
-                # 3. Intelligence Phase
+                # 3. Execution Phase
                 if outcomes:
-                    print(f"Observed outcomes: {''.join(outcomes)}")
+                    print(f"Observed Intelligence: {''.join(outcomes)}")
                     for o in outcomes: self.memory.log_spin(o)
 
                     full_history = self.memory.get_latest_spins(100)
@@ -88,7 +78,7 @@ class OmniMachineV4:
 
                             # Wait for result and update models
                             time.sleep(15)
-                            new_outcomes = client.detect_repeating_patterns()
+                            new_outcomes = client.extract_from_network() or client.detect_repeating_patterns()
                             if new_outcomes:
                                 actual = new_outcomes[-1]
                                 win = (actual == decision["direction"])
@@ -100,13 +90,13 @@ class OmniMachineV4:
                                 self.risk.bankroll += (payout - decision["amount"])
                                 self.risk.update_result(win)
                         else:
-                            print("CRITICAL: Betting elements not found. Switching to Observation Mode.")
+                            print("CRITICAL: Betting elements not found. Skipping to Observation Mode.")
                             client.take_screenshot("ui_detection_failure")
                     else:
                         print(f"SKIP: {decision['reason']}")
                 else:
-                    print("CRITICAL: Scraper failed to identify history. Logging error.")
-                    client.take_screenshot("scraping_failure")
+                    print("CRITICAL: Multi-Source extraction FAILED. Skipping execution safely.")
+                    client.take_screenshot("extraction_failure")
 
             except Exception as e:
                 print(f"Error during browser interaction: {e}")
@@ -125,5 +115,5 @@ class OmniMachineV4:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV4()
+    machine = OmniMachineV41()
     machine.run_cycle()

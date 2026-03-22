@@ -5,12 +5,15 @@ from typing import List, Dict, Optional
 
 class MemoryGraph:
     def __init__(self, uri: str):
+        # 1. Connect to MongoDB Atlas
         self.client = pymongo.MongoClient(uri)
         self.db = self.client["omni_v35"]
-        self.spins = self.db["spins"]
-        self.sequences = self.db["sequences"]
-        self.models = self.db["models"]
-        self.sessions = self.db["sessions"]
+
+        # 2. Collection definitions
+        self.spins = self.db["spins"]           # Raw spin outcomes
+        self.sequences = self.db["sequences"]   # Pattern intelligence nodes
+        self.models = self.db["models"]         # Ensemble model weights and performance
+        self.sessions = self.db["sessions"]     # Global bankroll and session state
 
     def log_spin(self, outcome: str):
         """outcome: 'U' (Up) or 'D' (Down)"""
@@ -19,7 +22,7 @@ class MemoryGraph:
             "timestamp": datetime.now(timezone.utc)
         })
 
-    def get_latest_spins(self, limit=50) -> List[str]:
+    def get_latest_spins(self, limit=100) -> List[str]:
         cursor = self.spins.find().sort("timestamp", -1).limit(limit)
         return [doc["outcome"] for doc in list(cursor)][::-1]
 
@@ -43,6 +46,7 @@ class MemoryGraph:
     def save_session(self, state: Dict):
         state["last_sync"] = datetime.now(timezone.utc)
         self.sessions.update_one({"id": "current"}, {"$set": state}, upsert=True)
+        print(f"Session state saved: {state['bankroll']:.2f} | Mode: {state['mode']}")
 
     def load_session(self) -> Optional[Dict]:
         return self.sessions.find_one({"id": "current"})
@@ -57,3 +61,6 @@ class MemoryGraph:
     def load_model_weights(self) -> Optional[Dict]:
         doc = self.models.find_one({"id": "ensemble"})
         return doc["weights"] if doc else None
+
+    def close(self):
+        self.client.close()

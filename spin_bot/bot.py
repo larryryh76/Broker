@@ -93,7 +93,18 @@ class OmniMachineV44:
                                 payout = decision["amount"] * 1.95 if win else 0
                                 self.risk.bankroll += (payout - decision["amount"])
                                 self.risk.update_result(win)
+                        except Exception as e:
+                            print(f"DEBUG: Betting execution failed: {e}")
+                            client.take_screenshot("bet_execution_error")
                         else:
+                            # Note: The 'else' here belongs to the 'if decision["action"] == "BET":' block logically
+                            # but the user had a misplaced try block.
+                            # If no betting elements were found, log and screenshot.
+                            # Fixing logic to properly close the try and handle the else.
+                            pass
+
+                        # Re-implementing the else logic correctly after the try/except
+                        if not (ui["up"].is_visible() and ui["down"].is_visible() and ui["amount"].is_visible()):
                             print("CRITICAL: Betting elements not found. Skipping to Observation Mode.")
                             client.take_screenshot("ui_detection_failure")
                     else:

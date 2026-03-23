@@ -37,13 +37,6 @@ class PlaywrightClient:
         self.page.on("response", self._handle_response)
         self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-        # Selectors (Configurable via Environment)
-        self.SEL_LOGIN_BTN = os.getenv("SELECTOR_LOGIN_BTN", "text=Login, button:has-text('Login')")
-        self.SEL_USER_INPUT = os.getenv("SELECTOR_USER_INPUT", "input[type='text'], input[type='tel'], input[placeholder*='Mobile']")
-        self.SEL_PASS_INPUT = os.getenv("SELECTOR_PASS_INPUT", "input[type='password']")
-        self.SEL_SUBMIT_BTN = os.getenv("SELECTOR_SUBMIT_BTN", "button[type='submit'], button:has-text('Sign in'), .login-button")
-        self.SEL_VERIFY_SUCCESS = os.getenv("SELECTOR_VERIFY_SUCCESS", ".user-balance, .profile-icon")
-
     def _handle_response(self, response: Response):
         try:
             url = response.url.lower()
@@ -54,96 +47,103 @@ class PlaywrightClient:
                 except: pass
         except: pass
 
-    def _handle_cookies(self):
-        """Attempts to clear cookie popups if present."""
-        try:
-            cookie_btn = self.page.query_selector("text='Accept', text='Allow cookies', text='I Agree'")
-            if cookie_btn and cookie_btn.is_visible():
-                cookie_btn.click()
-                print("DEBUG: Cookie popup dismissed.")
-        except: pass
-
-    def _verify_login_success(self) -> bool:
-        """Returns True if the session is authenticated."""
-        try:
-            # Method 1: Check for success indicator (balance, profile)
-            if self.page.locator(self.SEL_VERIFY_SUCCESS).first.is_visible():
-                return True
-
-            # Method 2: Check if Login button is GONE
-            # We assume if the login trigger is no longer visible, we are in.
-            login_trigger = self.page.locator(self.SEL_LOGIN_BTN).first
-            if not login_trigger.is_visible():
-                return True
-
-            return False
-        except:
-            return False
-
     def login(self):
-        """Robust Automated Login Logic with retries and verification."""
+        """Robust Modal-Based Login Logic for Football.com Nigeria."""
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw:
             print("WARNING: Login credentials missing in environment.")
             return
 
-        max_retries = 3
-        for attempt in range(1, max_retries + 1):
-            print(f"DEBUG: Login Attempt {attempt}/{max_retries} for {user}...")
+        max_retries = 2
+        for attempt in range(1, max_retries + 2):
+            print(f"DEBUG: Login Attempt {attempt}/{max_retries + 1}...")
             try:
-                self.take_screenshot(f"login_attempt_{attempt}_pre")
-                self._handle_cookies()
+                # 1. WAIT FOR PAGE LOAD
+                self.page.wait_for_selector("body", timeout=15000)
+                self.take_screenshot(f"login_step1_load_{attempt}")
 
-                # 1. Trigger Login Modal/Page
-                login_btn = self.page.locator(self.SEL_LOGIN_BTN).first
-                if login_btn.is_visible():
-                    login_btn.click()
-                    time.sleep(random.uniform(1.5, 3.0))
+                # 2. HANDLE COOKIE POPUP (VERY IMPORTANT)
+                try:
+                    for text in ["Accept", "Allow", "Agree", "Got it"]:
+                        btn = self.page.locator(f"text={text}").first
+                        if btn.is_visible(timeout=1000):
+                            btn.click()
+                            print(f"DEBUG: Cookie popup '{text}' dismissed.")
+                except: pass
 
-                # 2. Wait for Form
-                self.page.wait_for_selector(self.SEL_PASS_INPUT, state="visible", timeout=10000)
-                self.take_screenshot(f"login_attempt_{attempt}_form")
+                # 3. CLICK LOGIN BUTTON FIRST (Trigger Modal)
+                self.take_screenshot(f"login_step2_pre_click_{attempt}")
+                try:
+                    # Resilient selectors
+                    self.page.locator("text=Login").first.click(timeout=5000)
+                except:
+                    try:
+                        self.page.locator("button:has-text('Login')").click(timeout=5000)
+                    except:
+                        # Fallback for mobile/other variations
+                        self.page.locator(".login-button, .login-trigger, [data-testid='login-button']").first.click(timeout=5000)
 
-                # 3. Fill safely with jitter
-                user_input = self.page.locator(self.SEL_USER_INPUT).first
-                pass_input = self.page.locator(self.SEL_PASS_INPUT).first
+                print("DEBUG: Login trigger clicked.")
+                self.take_screenshot(f"login_step3_post_click_{attempt}")
 
-                user_input.click()
-                time.sleep(random.uniform(0.5, 1.5))
-                user_input.fill(user)
+                # 4. WAIT FOR LOGIN MODAL
+                # Ensure input field for password is ready
+                self.page.wait_for_selector("input[type='password']", timeout=15000)
+                print("DEBUG: Login modal visible.")
+                self.take_screenshot(f"login_step4_modal_ready_{attempt}")
 
-                time.sleep(random.uniform(1.0, 2.0))
-
-                pass_input.click()
-                time.sleep(random.uniform(0.5, 1.5))
-                pass_input.fill(pw)
-
+                # 5. HUMAN-LIKE DELAY BEFORE TYPING
                 time.sleep(random.uniform(1.5, 3.0))
 
-                # 4. Submit
-                submit_btn = self.page.locator(self.SEL_SUBMIT_BTN).first
-                submit_btn.click()
+                # 6. FILL FORM SAFELY
+                user_field = self.page.locator("input[type='text'], input[type='tel'], input[placeholder*='Mobile'], input[placeholder*='Phone']").first
+                user_field.fill(user)
+                time.sleep(random.uniform(0.5, 1.2))
 
-                # 5. Wait for transition
-                print("DEBUG: Form submitted. Waiting for authentication...")
-                time.sleep(7)
+                self.page.fill("input[type='password']", pw)
+                print("DEBUG: Credentials filled.")
+                self.take_screenshot(f"login_step5_form_filled_{attempt}")
 
-                # 6. Verify
-                if self._verify_login_success():
-                    print("DEBUG: LOGIN SUCCESS confirmed.")
-                    self.take_screenshot(f"login_success_attempt_{attempt}")
-                    return
+                # 7. CLICK SUBMIT
+                try:
+                    # In modal systems, the last button with 'Login' text is usually the submit button
+                    self.page.locator("button:has-text('Login')").last.click(timeout=5000)
+                except:
+                    # Fallback submits
+                    self.page.locator("button:has-text('Sign in'), button[type='submit'], .login-submit").last.click(timeout=5000)
+
+                print("DEBUG: Submit clicked.")
+                self.take_screenshot(f"login_step6_after_submit_{attempt}")
+
+                # 8. VERIFY LOGIN SUCCESS (MANDATORY)
+                print("DEBUG: Waiting for authentication verification (5-10s)...")
+                time.sleep(random.uniform(5.0, 10.0))
+
+                # If Login text is still visible, we likely failed
+                is_login_visible = False
+                try:
+                    is_login_visible = self.page.locator("text=Login").first.is_visible(timeout=3000)
+                except: pass
+
+                if is_login_visible:
+                    print(f"DEBUG: Login verification FAILED on attempt {attempt}. Login button still visible.")
+                    self.take_screenshot(f"login_failed_verification_{attempt}")
+                    if attempt > max_retries:
+                        raise Exception("LOGIN FAILED: Verification failed after all retries.")
+                    continue # Retry loop
                 else:
-                    print(f"DEBUG: Login verification failed on attempt {attempt}.")
-                    self.take_screenshot(f"login_failed_attempt_{attempt}")
+                    print("DEBUG: LOGIN SUCCESS confirmed.")
+                    self.take_screenshot(f"login_final_success_{attempt}")
+                    return # Exit success
 
             except Exception as e:
                 print(f"DEBUG: Login interaction error on attempt {attempt}: {e}")
-                self.take_screenshot(f"login_error_attempt_{attempt}")
+                self.take_screenshot(f"login_exception_{attempt}")
+                if attempt > max_retries:
+                    raise e
 
-        # If we reach here, all retries failed
-        raise Exception(f"CRITICAL: Failed to login after {max_retries} attempts.")
+        raise Exception("CRITICAL: Failed to login after multiple attempts.")
 
     def extract_from_network(self) -> List[str]:
         outcomes = []

@@ -37,6 +37,13 @@ class PlaywrightClient:
         self.page.on("response", self._handle_response)
         self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
+        # Selectors (Configurable via Environment)
+        self.SEL_LOGIN_BTN = os.getenv("SELECTOR_LOGIN_BTN", "text=Login, button:has-text('Login')")
+        self.SEL_USER_INPUT = os.getenv("SELECTOR_USER_INPUT", "input[type='text'], input[type='tel'], input[placeholder*='Mobile']")
+        self.SEL_PASS_INPUT = os.getenv("SELECTOR_PASS_INPUT", "input[type='password']")
+        self.SEL_SUBMIT_BTN = os.getenv("SELECTOR_SUBMIT_BTN", "button[type='submit'], button:has-text('Sign in'), .login-button")
+        self.SEL_VERIFY_SUCCESS = os.getenv("SELECTOR_VERIFY_SUCCESS", ".user-balance, .profile-icon")
+
     def _handle_response(self, response: Response):
         try:
             url = response.url.lower()
@@ -47,31 +54,96 @@ class PlaywrightClient:
                 except: pass
         except: pass
 
+    def _handle_cookies(self):
+        """Attempts to clear cookie popups if present."""
+        try:
+            cookie_btn = self.page.query_selector("text='Accept', text='Allow cookies', text='I Agree'")
+            if cookie_btn and cookie_btn.is_visible():
+                cookie_btn.click()
+                print("DEBUG: Cookie popup dismissed.")
+        except: pass
+
+    def _verify_login_success(self) -> bool:
+        """Returns True if the session is authenticated."""
+        try:
+            # Method 1: Check for success indicator (balance, profile)
+            if self.page.locator(self.SEL_VERIFY_SUCCESS).first.is_visible():
+                return True
+
+            # Method 2: Check if Login button is GONE
+            # We assume if the login trigger is no longer visible, we are in.
+            login_trigger = self.page.locator(self.SEL_LOGIN_BTN).first
+            if not login_trigger.is_visible():
+                return True
+
+            return False
+        except:
+            return False
+
     def login(self):
-        """Automated Login Logic for Football.com Nigeria."""
+        """Robust Automated Login Logic with retries and verification."""
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
-        if not user or not pw: return
+        if not user or not pw:
+            print("WARNING: Login credentials missing in environment.")
+            return
 
-        print(f"DEBUG: Attempting login for {user}...")
-        try:
-            # Heuristic Login Detection
-            login_btn = self.page.query_selector("text='Login', text='Sign In'")
-            if login_btn: login_btn.click()
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            print(f"DEBUG: Login Attempt {attempt}/{max_retries} for {user}...")
+            try:
+                self.take_screenshot(f"login_attempt_{attempt}_pre")
+                self._handle_cookies()
 
-            time.sleep(2)
-            user_input = self.page.query_selector("input[type='text'], input[type='tel'], input[placeholder*='Mobile']")
-            pass_input = self.page.query_selector("input[type='password']")
+                # 1. Trigger Login Modal/Page
+                login_btn = self.page.locator(self.SEL_LOGIN_BTN).first
+                if login_btn.is_visible():
+                    login_btn.click()
+                    time.sleep(random.uniform(1.5, 3.0))
 
-            if user_input and pass_input:
+                # 2. Wait for Form
+                self.page.wait_for_selector(self.SEL_PASS_INPUT, state="visible", timeout=10000)
+                self.take_screenshot(f"login_attempt_{attempt}_form")
+
+                # 3. Fill safely with jitter
+                user_input = self.page.locator(self.SEL_USER_INPUT).first
+                pass_input = self.page.locator(self.SEL_PASS_INPUT).first
+
+                user_input.click()
+                time.sleep(random.uniform(0.5, 1.5))
                 user_input.fill(user)
+
+                time.sleep(random.uniform(1.0, 2.0))
+
+                pass_input.click()
+                time.sleep(random.uniform(0.5, 1.5))
                 pass_input.fill(pw)
-                submit = self.page.query_selector("button[type='submit'], .login-button")
-                if submit: submit.click()
-                time.sleep(5)
-                print("DEBUG: Login form submitted.")
-        except Exception as e:
-            print(f"DEBUG: Login failed: {e}")
+
+                time.sleep(random.uniform(1.5, 3.0))
+
+                # 4. Submit
+                submit_btn = self.page.locator(self.SEL_SUBMIT_BTN).first
+                submit_btn.click()
+
+                # 5. Wait for transition
+                print("DEBUG: Form submitted. Waiting for authentication...")
+                time.sleep(7)
+
+                # 6. Verify
+                if self._verify_login_success():
+                    print("DEBUG: LOGIN SUCCESS confirmed.")
+                    self.take_screenshot(f"login_success_attempt_{attempt}")
+                    return
+                else:
+                    print(f"DEBUG: Login verification failed on attempt {attempt}.")
+                    self.take_screenshot(f"login_failed_attempt_{attempt}")
+
+            except Exception as e:
+                print(f"DEBUG: Login interaction error on attempt {attempt}: {e}")
+                self.take_screenshot(f"login_error_attempt_{attempt}")
+
+        # If we reach here, all retries failed
+        raise Exception(f"CRITICAL: Failed to login after {max_retries} attempts.")
 
     def extract_from_network(self) -> List[str]:
         outcomes = []
@@ -133,10 +205,14 @@ class PlaywrightClient:
 
     def navigate_to_spin_game(self):
         try:
+            print(f"DEBUG: Navigating to {self.login_url}...")
             self.page.goto(self.login_url, wait_until="networkidle", timeout=60000)
+            self.take_screenshot("navigation_start")
             self.login()
             time.sleep(5)
-        except: pass
+        except Exception as e:
+            print(f"CRITICAL: Navigation/Login failed: {e}")
+            raise e
 
     def close(self):
         try:

@@ -5,7 +5,7 @@ The **Omni-Recursive Money Machine V3.5** is a production-grade, stateful, proba
 ## 🧠 PRODUCTION UPGRADES (V3.5)
 
 ### 1. Hardened Anti-Detection (Playwright)
-- **Stealth Integration:** Fixed `playwright-stealth` to bypass modern bot detection (Failsafe `stealth(page)` logic).
+- **Native Anti-Detection:** Uses native Playwright hardening (navigator.webdriver spoofing) to bypass modern bot detection without fragile library dependencies.
 - **Fingerprint Randomization:** Randomized User-Agents, realistic viewport settings, and `--disable-blink-features=AutomationControlled` browser flags.
 - **Human Emulation:** Implemented timing jitter (0.8s-2.5s), non-instant clicks, and random hover/click offsets.
 

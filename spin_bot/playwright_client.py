@@ -123,8 +123,8 @@ class PlaywrightClient:
             raise e
 
     def navigate_to_spin_game(self):
-        """V4.5 Pattern-Based Controlled Navigation."""
-        max_page_retries = 2
+        """V4.6 SPA-Aware Guided Navigation."""
+        max_page_retries = 3
 
         for p_attempt in range(max_page_retries + 1):
             try:
@@ -135,6 +135,9 @@ class PlaywrightClient:
                 # 1. PAGE LOAD HANDLING
                 self.page.wait_for_load_state("networkidle")
                 time.sleep(random.uniform(2.0, 4.0)) # Human delay
+
+                # V4.6 PRE-NAVIGATION UNLOCK
+                self._unlock_ui()
 
                 # 2. TARGET IDENTIFICATION (CONTROLLED SEARCH)
                 print("DEBUG: Identifying target game candidates...")
@@ -304,6 +307,43 @@ class PlaywrightClient:
             os.makedirs("artifacts", exist_ok=True)
             self.page.screenshot(path=f"artifacts/{name}_{int(time.time())}.png")
         except: pass
+
+    def _unlock_ui(self) -> bool:
+        """V4.6 Pre-Navigation Unlock: Triggers hidden game menus (AZ/Games/Lobby)."""
+        print("DEBUG: Identifying UI unlock triggers (AZ/Menu/Games)...")
+        triggers = ["AZ", "Menu", "Games", "Lobby", "All Games"]
+
+        pre_count = len(self.page.locator("*").all())
+
+        for t in triggers:
+            try:
+                # Find buttons, divs, or spans matching the menu keywords
+                selector = f"text={t}, button:has-text('{t}'), div:has-text('{t}'), span:has-text('{t}')"
+                el = self.page.locator(selector).first
+                if el.is_visible():
+                    print(f"DEBUG: Found unlock trigger: '{t}'. Activating...")
+                    el.scroll_into_view_if_needed()
+                    time.sleep(random.uniform(0.5, 1.5))
+                    el.click()
+
+                    # Wait for content expansion
+                    self.page.wait_for_load_state("networkidle")
+                    time.sleep(random.uniform(2.0, 5.0))
+
+                    post_count = len(self.page.locator("*").all())
+                    print(f"DEBUG: DOM count change: {pre_count} -> {post_count}")
+                    if post_count > pre_count:
+                        print(f"DEBUG: UI UNLOCKED via '{t}'. Content expanded.")
+                        return True
+            except: continue
+
+        print("DEBUG: No menu triggers activated. Attempting slow scroll fallback...")
+        # Simulate human scrolling to trigger lazy loading
+        for _ in range(3):
+            self.page.mouse.wheel(0, 500)
+            time.sleep(1.0)
+
+        return False
 
     def dump_dom(self, name: str):
         """Dumps the full DOM snapshot for debugging navigation failures."""

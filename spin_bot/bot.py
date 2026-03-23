@@ -8,7 +8,7 @@ from spin_bot.executor import DecisionExecutor
 from spin_bot.playwright_client import PlaywrightClient
 from datetime import datetime, timezone
 
-class OmniMachineV45:
+class OmniMachineV46:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -36,7 +36,7 @@ class OmniMachineV45:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V4.5 ({self.session_state['mode']}) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V4.6 ({self.session_state['mode']}) ---")
 
         # Failsafe around entire execution
         try:
@@ -131,5 +131,5 @@ class OmniMachineV45:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV45()
+    machine = OmniMachineV46()
     machine.run_cycle()

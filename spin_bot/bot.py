@@ -8,7 +8,7 @@ from spin_bot.executor import DecisionExecutor
 from spin_bot.playwright_client import PlaywrightClient
 from datetime import datetime, timezone
 
-class OmniMachineV41:
+class OmniMachineV43:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -36,7 +36,7 @@ class OmniMachineV41:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V4.1 ({self.session_state['mode']}) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V4.3 ({self.session_state['mode']}) ---")
 
         # Failsafe around entire execution
         try:
@@ -66,7 +66,8 @@ class OmniMachineV41:
                     if decision["action"] == "BET":
                         # Detect betting elements for execution
                         ui = client.detect_betting_elements()
-                        if ui["up"] and ui["down"] and ui["amount"]:
+                        # V4.3 Robust Check: Verify visibility as Locators are always truthy
+                        if ui["up"].is_visible(timeout=5000) and ui["down"].is_visible(timeout=5000) and ui["amount"].is_visible(timeout=5000):
                             print(f"Executing Bet: ₦{decision['amount']} on {decision['direction']}")
 
                             # Interaction with jitter
@@ -95,8 +96,9 @@ class OmniMachineV41:
                     else:
                         print(f"SKIP: {decision['reason']}")
                 else:
-                    print("CRITICAL: Multi-Source extraction FAILED. Skipping execution safely.")
+                    print("CRITICAL: Multi-Source extraction FAILED. No outcomes found in Network or DOM. Aborting cycle.")
                     client.take_screenshot("extraction_failure")
+                    return # Exit cycle cleanly as per V4.3
 
             except Exception as e:
                 print(f"Error during browser interaction: {e}")
@@ -115,5 +117,5 @@ class OmniMachineV41:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV41()
+    machine = OmniMachineV43()
     machine.run_cycle()

@@ -1,5 +1,6 @@
 playwright
 pymongo
+dnspython
 python-dotenv
 pytest
 scikit-learn

@@ -18,10 +18,10 @@ class PlaywrightClient:
         self.network_responses = []
         self.ws_messages = []
 
-        # V4.7 REAL HUMAN CHROME USER AGENT
+        # V4.8 REAL HUMAN CHROME USER AGENT
         REAL_CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
 
-        # V4.7 Hardened Launch Arguments
+        # V4.8 Hardened Launch Arguments (Forcing JS Execution)
         launch_args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
@@ -29,16 +29,19 @@ class PlaywrightClient:
             "--disable-web-security",
             "--disable-features=IsolateOrigins,site-per-process",
             "--window-position=0,0",
-            "--headless=new" # Use modern headless shell
+            "--headless=new", # Modern headless shell
+            "--enable-javascript"
         ]
 
         self.browser = self.playwright.chromium.launch(
-            headless=True,
-            args=launch_args
+            headless=True, # Handled by --headless=new in args
+            args=launch_args,
+            channel="chrome" # Use real Chrome for better JS compatibility
         )
 
-        # V4.7 REAL BROWSER CONTEXT
+        # V4.8 REAL BROWSER CONTEXT
         self.context = self.browser.new_context(
+            java_script_enabled=True,
             user_agent=REAL_CHROME_UA,
             viewport={"width": 1366, "height": 768},
             locale="en-US",
@@ -48,6 +51,12 @@ class PlaywrightClient:
         )
 
         self.page = self.context.new_page()
+
+        # V4.8 Increase Default Timeout for JS-heavy rendering
+        self.page.set_default_timeout(60000)
+
+        # V4.8 Capture Browser Console Logs (JS Error Discovery)
+        self.page.on("console", lambda msg: print(f"BROWSER CONSOLE [{msg.type}]: {msg.text}"))
 
         # V4.7 FULL STEALTH
         if stealth:
@@ -87,6 +96,11 @@ class PlaywrightClient:
         """V4.7 Block Detection: Checks if the site is serving a restricted UI."""
         print("DEBUG: Checking for bot detection indicators...")
 
+        # V4.8 Detect JS failure string in content
+        if "Please turn JavaScript on" in self.page.content():
+            print("CRITICAL: JS RUNTIME FAILURE DETECTED. Site requires JavaScript.")
+            return True
+
         clickable_count = len(self.page.locator("button, a, [role='button']").all())
         has_game_text = self.page.locator("text=Spin, text=Bottle").first.is_visible()
 
@@ -99,7 +113,7 @@ class PlaywrightClient:
         return False
 
     def get_active_context(self) -> Union[Page, 'FrameLocator']:
-        """V4.3 Iframe Handling: Detects if game is inside an iframe."""
+        """V4.3 Iframe Handling."""
         try:
             iframes = self.page.query_selector_all("iframe")
             for frame in iframes:
@@ -118,7 +132,6 @@ class PlaywrightClient:
 
         print("DEBUG: Initiating Login flow...")
         try:
-            # Human Delay before interaction
             time.sleep(random.uniform(2.0, 5.0))
             self.page.wait_for_selector("body", timeout=15000)
 
@@ -152,35 +165,36 @@ class PlaywrightClient:
             raise e
 
     def navigate_to_spin_game(self):
-        """V4.7 Anti-Detection SPA Navigation."""
+        """V4.8 Anti-Detection SPA Navigation."""
         max_page_retries = 2
 
         for p_attempt in range(max_page_retries + 1):
             try:
                 print(f"DEBUG: Navigation Attempt {p_attempt + 1}...")
                 self.page.goto(self.login_url, wait_until="networkidle", timeout=60000)
+
+                # V4.8 Wait for full JS hydration (node count > 1000)
+                try:
+                    self.page.wait_for_function("() => document.querySelectorAll('*').length > 1000", timeout=30000)
+                    print(f"DEBUG: DOM hydrated. Node count: {len(self.page.locator('*').all())}")
+                except:
+                    print("WARNING: DOM hydration function timed out.")
+
                 if p_attempt == 0: self.login()
 
-                # Human Delay before validation
                 time.sleep(random.uniform(3.0, 6.0))
-
-                # V4.7 Audit DOM stats
-                print(f"DEBUG: Node Count: {len(self.page.locator('*').all())}, HTML Length: {len(self.page.content())}")
 
                 if self._detect_blocking():
                     print("DEBUG: Attempting Alternative Navigation Route...")
                     try:
-                        # Try direct route
                         self.page.goto(self.login_url.split('/ng')[0] + "/ng/games/spin", wait_until="networkidle")
                     except:
-                        # Try keyboard navigation unlock
                         self.page.keyboard.press("Tab")
                         time.sleep(0.5)
                         self.page.keyboard.press("Enter")
 
                 self._unlock_ui()
 
-                # TARGET IDENTIFICATION (CONTROLLED SEARCH)
                 candidates = self.page.locator("a, button, div[class*='card'], div[class*='game']").all()
                 matches = []
                 for el in candidates:
@@ -221,7 +235,7 @@ class PlaywrightClient:
 
         self.take_screenshot("navigation_failure")
         self.dump_dom("navigation_failure_dom")
-        raise Exception("V4.7 NAVIGATION FAILED.")
+        raise Exception("V4.8 NAVIGATION FAILED.")
 
     def extract_from_network(self) -> List[str]:
         """Multi-Source Intelligence: XHR + WebSocket."""
@@ -250,7 +264,7 @@ class PlaywrightClient:
         return outcomes
 
     def detect_repeating_patterns(self) -> List[str]:
-        """V4.3 Hardened DOM Scraper."""
+        """Hardened DOM Scraper."""
         ctx = self.get_active_context()
         for sel in ["div[class*='history']", "span:has-text('UP')", "xpath=//div[contains(@class,'item')][1]"]:
             try:

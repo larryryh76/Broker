@@ -8,6 +8,7 @@ try:
 except ImportError:
     stealth = None
 from typing import List, Optional, Dict, Union
+from spin_bot.api_client import normalize_url
 
 class PlaywrightClient:
     def __init__(self, login_url: str):
@@ -17,7 +18,7 @@ class PlaywrightClient:
         # V5.1 Network Discovery Buffer
         self.network_log = []
 
-        # V5.1 Dynamic Endpoint Discovery
+        # V5.3 Dynamic Endpoint Discovery (Normalized)
         self.endpoints = {
             "history": None,
             "bet": None,
@@ -87,13 +88,13 @@ class PlaywrightClient:
                 }
                 self.network_log.append(entry)
 
-                # V5.1 Discovery Logic (Auto-Classify)
+                # V5.3 Discovery Logic (Normalized)
                 if "bet" in url and request.method == "POST":
-                    self.endpoints["bet"] = request.url
+                    self.endpoints["bet"] = normalize_url(request.url)
                 elif any(x in url for x in ["history", "spins", "results"]):
-                    self.endpoints["history"] = request.url
+                    self.endpoints["history"] = normalize_url(request.url)
                 elif "balance" in url:
-                    self.endpoints["balance"] = request.url
+                    self.endpoints["balance"] = normalize_url(request.url)
         except: pass
 
     def _log_response(self, response: Response):
@@ -117,13 +118,13 @@ class PlaywrightClient:
                 }
                 self.network_log.append(entry)
 
-                # V5.1 Discovery Classifiers (Response-Based)
+                # V5.3 Discovery Classifiers (Normalized)
                 if body:
                     raw_body = str(body).lower()
                     if any(x in raw_body for x in ["history", "results"]) and self.endpoints["history"] is None:
-                        self.endpoints["history"] = response.url
+                        self.endpoints["history"] = normalize_url(response.url)
                     if any(x in raw_body for x in ["balance", "wallet"]) and self.endpoints["balance"] is None:
-                        self.endpoints["balance"] = response.url
+                        self.endpoints["balance"] = normalize_url(response.url)
         except: pass
 
     def save_network_logs(self):
@@ -132,7 +133,7 @@ class PlaywrightClient:
             os.makedirs("artifacts", exist_ok=True)
             with open("artifacts/network_log.json", "w", encoding="utf-8") as f:
                 json.dump(self.network_log, f, indent=2)
-            print(f"DEBUG: V5.1 Discovery log saved with {len(self.network_log)} entries.")
+            print(f"DEBUG: V5.1 Discovery log saved.")
         except: pass
 
     def login(self):
@@ -221,7 +222,7 @@ class PlaywrightClient:
                         break
                 except: continue
 
-            print(f"DEBUG: V5.1 Discovery Traffic Triggered. Endpoints Found: {len([k for k,v in self.endpoints.items() if v])}")
+            print(f"DEBUG: V5.3 Discovery Traffic Triggered. Endpoints Found: {len([k for k,v in self.endpoints.items() if v])}")
         except Exception as e:
             print(f"DEBUG: Discovery Navigation Error: {e}")
 

@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import asyncio
 from typing import List, Dict, Optional, Any
 from spin_bot.memory import MemoryGraph
 from spin_bot.models import EnsembleBrain
@@ -10,7 +11,7 @@ from spin_bot.playwright_client import PlaywrightClient
 from spin_bot.api_client import OmniAPIClient, normalize_url
 from datetime import datetime, timezone
 
-class OmniMachineV53:
+class OmniMachineV54:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -37,15 +38,16 @@ class OmniMachineV53:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-        # 6. API Client (V5.3 Normalization)
+        # 6. API Client (V5.4 Async Discovery)
         self.api_client = OmniAPIClient()
 
-    def _refresh_session(self):
-        """V5.3 Fallback to Browser for Normalized Discovery."""
-        print("DEBUG: Refreshing Session via Normalized Discovery (V5.3)...")
+    async def _async_discovery_cycle(self):
+        """V5.4 Async Discovery Cycle Wrapper."""
+        print("DEBUG: Initiating Async Discovery Cycle (V5.4)...")
         client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
         try:
-            client.navigate_to_spin_game()
+            await client.setup()
+            await client.navigate_to_spin_game()
             client.save_network_logs()
 
             # Extract session data from logs
@@ -58,7 +60,6 @@ class OmniMachineV53:
                 if entry["type"] == "REQUEST":
                     headers = entry.get("headers", {})
                     if "authorization" in headers or "cookie" in headers:
-                        # V5.3 Normalize all discovered endpoints before persistence
                         normalized_endpoints = {
                             k: normalize_url(v) if v else None
                             for k, v in client.endpoints.items()
@@ -69,18 +70,28 @@ class OmniMachineV53:
                             "endpoints": normalized_endpoints
                         }
                         break
-
-            if auth_data:
-                self.memory.save_session_tokens(auth_data)
-                self.api_client.apply_session(auth_data)
-                print(f"DEBUG: V5.3 Session refreshed and normalized.")
-            else:
-                print("CRITICAL: Failed to discover auth data in network logs.")
+            return auth_data
+        except Exception as e:
+            print(f"CRITICAL: Async Discovery Cycle FAILED: {e}")
+            return None
         finally:
-            client.close()
+            await client.close()
+
+    def _refresh_session(self):
+        """V5.4 Fallback to Async Discovery."""
+        print("DEBUG: Refreshing Session via V5.4 Async Discovery...")
+        # Run the async loop to completion
+        auth_data = asyncio.run(self._async_discovery_cycle())
+
+        if auth_data:
+            self.memory.save_session_tokens(auth_data)
+            self.api_client.apply_session(auth_data)
+            print("DEBUG: Session successfully refreshed and persisted via Async Engine.")
+        else:
+            print("CRITICAL: Failed to discover auth data during async cycle.")
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V5.3 (404 FIX) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V5.4 (CONTENT CAPTURE) ---")
 
         try:
             # 1. Load Session Tokens
@@ -137,7 +148,7 @@ class OmniMachineV53:
                 print("CRITICAL: API Observation FAILED even after refresh.")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.3 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.4 Cycle: {e}")
         finally:
             # 4. Permanent Persistence Phase
             self.session_state["bankroll"] = self.risk.bankroll
@@ -147,5 +158,5 @@ class OmniMachineV53:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV53()
+    machine = OmniMachineV54()
     machine.run_cycle()

@@ -83,7 +83,7 @@ class PlaywrightClient:
     def _log_request(self, request: Request):
         try:
             url = request.url.lower()
-            if any(x in url for x in ["game", "spin", "bet", "api", "order", "history", "result", "balance", "facts"]):
+            if any(x in url for x in ["game", "spin", "bet", "api", "order", "history", "result", "balance", "facts", "draw"]):
                 entry = {
                     "type": "REQUEST",
                     "url": request.url,
@@ -107,7 +107,7 @@ class PlaywrightClient:
         """V5.4 Async Response Capture with Body Extraction."""
         try:
             url = response.url.lower()
-            if any(x in url for x in ["game", "spin", "bet", "api", "order", "history", "result", "balance", "facts"]):
+            if any(x in url for x in ["game", "spin", "bet", "api", "order", "history", "result", "balance", "facts", "draw"]):
                 content_type = response.headers.get("content-type", "").lower()
                 body = None
 
@@ -221,6 +221,46 @@ class PlaywrightClient:
                 await asyncio.sleep(5)
             except: pass
 
+    async def _force_game_interaction(self):
+        """V5.5 FORCE GAME ENGINE TO LOAD AND TRIGGER APIs."""
+        print("DEBUG: Initiating Forced Game Engine Interaction (V5.5)...")
+        try:
+            # 1. Wait for game iframe
+            frame = self.page.frame_locator("iframe").first
+            try:
+                await frame.locator("body").wait_for(timeout=15000)
+                print("DEBUG: Game iframe detected and ready.")
+            except Exception as e:
+                print(f"DEBUG: Game iframe timeout/not found: {e}")
+                return
+
+            # 2. Force interaction inside iframe
+            await frame.locator("body").click(timeout=5000)
+            print("DEBUG: Clicked iframe body to activate runtime.")
+
+            # 3. Auto-click common game buttons
+            selectors = ["button", ".start", ".play", ".spin", ".bet", ".start-btn", ".spin-btn"]
+            for sel in selectors:
+                try:
+                    elements = await frame.locator(sel).all()
+                    for el in elements:
+                        if await el.is_visible():
+                            await el.click(timeout=2000)
+                            print(f"DEBUG: Successfully clicked {sel}")
+                            await asyncio.sleep(1)
+                except: pass
+
+            # 4. Random click fallback
+            await frame.locator("body").click(position={"x": 300, "y": 400})
+            print("DEBUG: Random mouse click performed at (300, 400).")
+
+            # 5. Wait for network activity
+            await asyncio.sleep(5)
+            print("DEBUG: Post-interaction network wait complete.")
+
+        except Exception as e:
+            print(f"DEBUG: Forced interaction failed: {e}")
+
     async def navigate_to_spin_game(self):
         try:
             await self.page.goto(self.login_url, wait_until="networkidle", timeout=60000)
@@ -239,10 +279,13 @@ class PlaywrightClient:
                         await cand.scroll_into_view_if_needed()
                         await cand.click()
                         await asyncio.sleep(10)
+
+                        # V5.5 FORCE GAME INTERACTION
+                        await self._force_game_interaction()
                         break
                 except: continue
 
-            print(f"DEBUG: V5.4 Discovery Traffic Triggered. Endpoints Found: {len([k for k,v in self.endpoints.items() if v])}")
+            print(f"DEBUG: V5.5 Discovery Traffic Triggered. Endpoints Found: {len([k for k,v in self.endpoints.items() if v])}")
         except Exception as e:
             print(f"DEBUG: Discovery Navigation Error: {e}")
 

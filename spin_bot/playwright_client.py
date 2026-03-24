@@ -2,7 +2,7 @@ import os
 import random
 import time
 import json
-from playwright.sync_api import sync_playwright, Page, ElementHandle, Response, WebSocket
+from playwright.sync_api import sync_playwright, Page, ElementHandle, Response, Request, WebSocket
 try:
     from playwright_stealth import stealth
 except ImportError:
@@ -14,14 +14,19 @@ class PlaywrightClient:
         self.login_url = login_url
         self.playwright = sync_playwright().start()
 
-        # V4.3 Intelligence Buffers
-        self.network_responses = []
-        self.ws_messages = []
+        # V4.9 Network Analysis Buffers
+        self.captured_requests = []
+        self.captured_responses = []
+        self.ws_urls = []
 
-        # V4.8 REAL HUMAN CHROME USER AGENT
+        # V4.9 Target Endpoints (Discovery Mode)
+        self.BET_ENDPOINT = None
+        self.SPIN_ENDPOINT = None
+
+        # REAL HUMAN CHROME USER AGENT
         REAL_CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
 
-        # V4.8 Hardened Launch Arguments (Forcing JS Execution)
+        # Hardened Launch Arguments (Forcing modern headless shell)
         launch_args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
@@ -29,17 +34,17 @@ class PlaywrightClient:
             "--disable-web-security",
             "--disable-features=IsolateOrigins,site-per-process",
             "--window-position=0,0",
-            "--headless=new", # Modern headless shell
+            "--headless=new",
             "--enable-javascript"
         ]
 
         self.browser = self.playwright.chromium.launch(
-            headless=True, # Handled by --headless=new in args
+            headless=True,
             args=launch_args,
-            channel="chrome" # Use real Chrome for better JS compatibility
+            channel="chrome"
         )
 
-        # V4.8 REAL BROWSER CONTEXT
+        # Context Setup with Lagos Metadata
         self.context = self.browser.new_context(
             java_script_enabled=True,
             user_agent=REAL_CHROME_UA,
@@ -51,66 +56,80 @@ class PlaywrightClient:
         )
 
         self.page = self.context.new_page()
-
-        # V4.8 Increase Default Timeout for JS-heavy rendering
         self.page.set_default_timeout(60000)
 
-        # V4.8 Capture Browser Console Logs (JS Error Discovery)
+        # Enable Browser Console Logging
         self.page.on("console", lambda msg: print(f"BROWSER CONSOLE [{msg.type}]: {msg.text}"))
 
-        # V4.7 FULL STEALTH
+        # 1. ENABLE FULL NETWORK INTERCEPTION
+        self.page.on("request", self._log_request)
+        self.page.on("response", self._log_response)
+        self.page.on("websocket", self._log_ws)
+
+        # FULL STEALTH
         if stealth:
             try:
                 stealth(self.page)
                 print("DEBUG: Full Stealth Applied.")
             except: pass
 
-        # Activate Interceptors BEFORE navigation
-        self.page.on("response", self._handle_response)
-        self.page.on("websocket", self._handle_ws)
-
         self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-    def _handle_response(self, response: Response):
+    def _log_request(self, request: Request):
         try:
-            url = response.url.lower()
-            if any(x in url for x in ["spin", "result", "game", "round", "history"]):
+            url = request.url.lower()
+            if any(x in url for x in ["game", "spin", "bet", "campaign", "socket", "api"]):
+                data = {
+                    "url": request.url,
+                    "method": request.method,
+                    "headers": request.headers,
+                    "post_data": request.post_data,
+                    "timestamp": time.time()
+                }
+                self.captured_requests.append(data)
+
+                if "bet" in url:
+                    self.BET_ENDPOINT = request.url
+                    print(f"DEBUG: FOUND BET ENDPOINT: {request.url}")
+                elif any(x in url for x in ["history", "spin"]):
+                    self.SPIN_ENDPOINT = request.url
+                    print(f"DEBUG: FOUND SPIN ENDPOINT: {request.url}")
+        except: pass
+
+    def _log_response(self, response: Response):
+        try:
+            content_type = response.headers.get("content-type", "").lower()
+            if "application/json" in content_type:
                 try:
                     body = response.json()
-                    self.network_responses.append({"url": url, "data": body, "timestamp": time.time()})
+                    data = {
+                        "url": response.url,
+                        "status": response.status,
+                        "data": body,
+                        "timestamp": time.time()
+                    }
+                    self.captured_responses.append(data)
                 except: pass
         except: pass
 
-    def _handle_ws(self, ws: WebSocket):
+    def _log_ws(self, ws: WebSocket):
         print(f"DEBUG: WebSocket opened: {ws.url}")
-        ws.on("frame_received", lambda payload: self._parse_ws_message(payload))
+        self.ws_urls.append(ws.url)
 
-    def _parse_ws_message(self, payload):
+    def save_network_logs(self):
+        """Persists captured network intelligence to artifacts."""
         try:
-            if isinstance(payload, str) and ("{" in payload):
-                data = json.loads(payload)
-                self.ws_messages.append({"data": data, "timestamp": time.time()})
-        except: pass
+            os.makedirs("artifacts", exist_ok=True)
 
-    def _detect_blocking(self) -> bool:
-        """V4.7 Block Detection: Checks if the site is serving a restricted UI."""
-        print("DEBUG: Checking for bot detection indicators...")
+            with open("artifacts/network_requests.json", "w", encoding="utf-8") as f:
+                json.dump(self.captured_requests, f, indent=2)
 
-        # V4.8 Detect JS failure string in content
-        if "Please turn JavaScript on" in self.page.content():
-            print("CRITICAL: JS RUNTIME FAILURE DETECTED. Site requires JavaScript.")
-            return True
+            with open("artifacts/network_responses.json", "w", encoding="utf-8") as f:
+                json.dump(self.captured_responses, f, indent=2)
 
-        clickable_count = len(self.page.locator("button, a, [role='button']").all())
-        has_game_text = self.page.locator("text=Spin, text=Bottle").first.is_visible()
-
-        print(f"DEBUG: Clickable Elements: {clickable_count}, Game Text: {has_game_text}")
-
-        if clickable_count < 10 or not has_game_text:
-            print("CRITICAL: BOT DETECTION SUSPECTED. Page content withheld.")
-            self.take_screenshot("detection_state")
-            return True
-        return False
+            print("DEBUG: Network Intelligence persisted to artifacts/.")
+        except Exception as e:
+            print(f"DEBUG: Failed to save network logs: {e}")
 
     def get_active_context(self) -> Union[Page, 'FrameLocator']:
         """V4.3 Iframe Handling."""
@@ -132,6 +151,7 @@ class PlaywrightClient:
 
         print("DEBUG: Initiating Login flow...")
         try:
+            # V4.9 Human Delay before interaction
             time.sleep(random.uniform(2.0, 5.0))
             self.page.wait_for_selector("body", timeout=15000)
 
@@ -165,7 +185,7 @@ class PlaywrightClient:
             raise e
 
     def navigate_to_spin_game(self):
-        """V4.8 Anti-Detection SPA Navigation."""
+        """V4.9 Anti-Detection SPA Navigation."""
         max_page_retries = 2
 
         for p_attempt in range(max_page_retries + 1):
@@ -173,7 +193,7 @@ class PlaywrightClient:
                 print(f"DEBUG: Navigation Attempt {p_attempt + 1}...")
                 self.page.goto(self.login_url, wait_until="networkidle", timeout=60000)
 
-                # V4.8 Wait for full JS hydration (node count > 1000)
+                # V4.8 Wait for full DOM hydration
                 try:
                     self.page.wait_for_function("() => document.querySelectorAll('*').length > 1000", timeout=30000)
                     print(f"DEBUG: DOM hydrated. Node count: {len(self.page.locator('*').all())}")
@@ -184,14 +204,11 @@ class PlaywrightClient:
 
                 time.sleep(random.uniform(3.0, 6.0))
 
-                if self._detect_blocking():
-                    print("DEBUG: Attempting Alternative Navigation Route...")
-                    try:
-                        self.page.goto(self.login_url.split('/ng')[0] + "/ng/games/spin", wait_until="networkidle")
-                    except:
-                        self.page.keyboard.press("Tab")
-                        time.sleep(0.5)
-                        self.page.keyboard.press("Enter")
+                # Proactive Block Detection
+                if "Please turn JavaScript on" in self.page.content():
+                    print("CRITICAL: JS RUNTIME FAILURE DETECTED.")
+                    self.take_screenshot("js_failure")
+                    raise Exception("JS DISABLED")
 
                 self._unlock_ui()
 
@@ -235,21 +252,12 @@ class PlaywrightClient:
 
         self.take_screenshot("navigation_failure")
         self.dump_dom("navigation_failure_dom")
-        raise Exception("V4.8 NAVIGATION FAILED.")
+        raise Exception("V4.9 NAVIGATION FAILED.")
 
     def extract_from_network(self) -> List[str]:
         """Multi-Source Intelligence: XHR + WebSocket."""
         outcomes = []
-        for msg in reversed(self.ws_messages):
-            try:
-                data = msg["data"]
-                val = data.get("result") or data.get("outcome")
-                if val: outcomes.append(str(val).upper()[0])
-                if outcomes: break
-            except: continue
-        if outcomes: return outcomes
-
-        for packet in reversed(self.network_responses):
+        for packet in reversed(self.captured_responses):
             data = packet["data"]
             try:
                 if isinstance(data, dict):

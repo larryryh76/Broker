@@ -7,10 +7,10 @@ from spin_bot.models import EnsembleBrain
 from spin_bot.risk import RiskEngine
 from spin_bot.executor import DecisionExecutor
 from spin_bot.playwright_client import PlaywrightClient
-from spin_bot.api_client import OmniAPIClient
+from spin_bot.api_client import OmniAPIClient, normalize_url
 from datetime import datetime, timezone
 
-class OmniMachineV52:
+class OmniMachineV53:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -37,12 +37,12 @@ class OmniMachineV52:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-        # 6. API Client (V5.2 Normalization)
+        # 6. API Client (V5.3 Normalization)
         self.api_client = OmniAPIClient()
 
     def _refresh_session(self):
-        """V5.1 Fallback to Browser for Forced Discovery."""
-        print("DEBUG: Refreshing Session via Forced Discovery (V5.1)...")
+        """V5.3 Fallback to Browser for Normalized Discovery."""
+        print("DEBUG: Refreshing Session via Normalized Discovery (V5.3)...")
         client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
         try:
             client.navigate_to_spin_game()
@@ -58,24 +58,29 @@ class OmniMachineV52:
                 if entry["type"] == "REQUEST":
                     headers = entry.get("headers", {})
                     if "authorization" in headers or "cookie" in headers:
+                        # V5.3 Normalize all discovered endpoints before persistence
+                        normalized_endpoints = {
+                            k: normalize_url(v) if v else None
+                            for k, v in client.endpoints.items()
+                        }
                         auth_data = {
                             "headers": headers,
                             "cookies": entry.get("cookies", []),
-                            "endpoints": client.endpoints
+                            "endpoints": normalized_endpoints
                         }
                         break
 
             if auth_data:
                 self.memory.save_session_tokens(auth_data)
                 self.api_client.apply_session(auth_data)
-                print(f"DEBUG: V5.1 Session refreshed. Endpoints Found: {client.endpoints}")
+                print(f"DEBUG: V5.3 Session refreshed and normalized.")
             else:
                 print("CRITICAL: Failed to discover auth data in network logs.")
         finally:
             client.close()
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V5.2 (NORMALIZATION) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V5.3 (404 FIX) ---")
 
         try:
             # 1. Load Session Tokens
@@ -102,7 +107,6 @@ class OmniMachineV52:
             # 3. Prediction & Execution Phase
             if outcomes:
                 print(f"Observed Intelligence (API): {''.join(outcomes[:10])}...")
-                # V5.2 Log unique new spins in correct order
                 for o in outcomes: self.memory.log_spin(o)
 
                 full_history = self.memory.get_latest_spins(100)
@@ -114,16 +118,13 @@ class OmniMachineV52:
 
                     if "error" not in result:
                         print(f"API Bet Success: {result}")
-
-                        # V5.2 Robust result verification: Wait for new spin
                         time.sleep(15)
                         new_outcomes = self.api_client.get_spin_history()
                         if new_outcomes:
-                            actual = new_outcomes[0] # The most recent result
+                            actual = new_outcomes[0]
                             win = (actual == decision["direction"])
                             print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
 
-                            # Update models and risk
                             self.brain.update_weights(full_history, actual)
                             payout = decision["amount"] * 1.95 if win else 0
                             self.risk.bankroll += (payout - decision["amount"])
@@ -136,7 +137,7 @@ class OmniMachineV52:
                 print("CRITICAL: API Observation FAILED even after refresh.")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.2 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.3 Cycle: {e}")
         finally:
             # 4. Permanent Persistence Phase
             self.session_state["bankroll"] = self.risk.bankroll
@@ -146,5 +147,5 @@ class OmniMachineV52:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV52()
+    machine = OmniMachineV53()
     machine.run_cycle()

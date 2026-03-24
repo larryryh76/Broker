@@ -1,5 +1,6 @@
 import os
 import pymongo
+import hashlib
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 
@@ -17,12 +18,25 @@ class MemoryGraph:
         self.selectors = self.db["selectors"]   # Self-healed CSS selectors
         self.tokens = self.db["session_tokens"] # V5.0 API Session Metadata
 
-    def log_spin(self, outcome: str):
-        """outcome: 'U' (Up) or 'D' (Down)"""
-        self.spins.insert_one({
-            "outcome": outcome,
-            "timestamp": datetime.now(timezone.utc)
-        })
+    def log_spin(self, outcome: str, timestamp: Optional[datetime] = None):
+        """outcome: 'U' (Up) or 'D' (Down). V5.2 Includes deduplication."""
+        ts = timestamp or datetime.now(timezone.utc)
+
+        # Generate a deterministic hash for deduplication
+        # Use outcome + timestamp to ensure we don't duplicate the same result
+        unique_id = hashlib.md5(f"{outcome}-{ts.isoformat()}".encode()).hexdigest()
+
+        try:
+            self.spins.update_one(
+                {"unique_id": unique_id},
+                {"$setOnInsert": {
+                    "outcome": outcome,
+                    "timestamp": ts,
+                    "unique_id": unique_id
+                }},
+                upsert=True
+            )
+        except: pass
 
     def get_latest_spins(self, limit=100) -> List[str]:
         cursor = self.spins.find().sort("timestamp", -1).limit(limit)

@@ -10,7 +10,7 @@ from spin_bot.playwright_client import PlaywrightClient
 from spin_bot.api_client import OmniAPIClient
 from datetime import datetime, timezone
 
-class OmniMachineV51:
+class OmniMachineV52:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -37,7 +37,7 @@ class OmniMachineV51:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-        # 6. API Client (V5.1 Primary Path)
+        # 6. API Client (V5.2 Normalization)
         self.api_client = OmniAPIClient()
 
     def _refresh_session(self):
@@ -75,7 +75,7 @@ class OmniMachineV51:
             client.close()
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V5.1 (FORCED DISCOVERY) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V5.2 (NORMALIZATION) ---")
 
         try:
             # 1. Load Session Tokens
@@ -102,6 +102,7 @@ class OmniMachineV51:
             # 3. Prediction & Execution Phase
             if outcomes:
                 print(f"Observed Intelligence (API): {''.join(outcomes[:10])}...")
+                # V5.2 Log unique new spins in correct order
                 for o in outcomes: self.memory.log_spin(o)
 
                 full_history = self.memory.get_latest_spins(100)
@@ -113,12 +114,20 @@ class OmniMachineV51:
 
                     if "error" not in result:
                         print(f"API Bet Success: {result}")
-                        actual = result.get("outcome", outcomes[0])
-                        win = (actual == decision["direction"])
-                        self.brain.update_weights(full_history, actual)
-                        payout = decision["amount"] * 1.95 if win else 0
-                        self.risk.bankroll += (payout - decision["amount"])
-                        self.risk.update_result(win)
+
+                        # V5.2 Robust result verification: Wait for new spin
+                        time.sleep(15)
+                        new_outcomes = self.api_client.get_spin_history()
+                        if new_outcomes:
+                            actual = new_outcomes[0] # The most recent result
+                            win = (actual == decision["direction"])
+                            print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
+
+                            # Update models and risk
+                            self.brain.update_weights(full_history, actual)
+                            payout = decision["amount"] * 1.95 if win else 0
+                            self.risk.bankroll += (payout - decision["amount"])
+                            self.risk.update_result(win)
                     else:
                         print(f"API Bet FAILED: {result}")
                 else:
@@ -127,7 +136,7 @@ class OmniMachineV51:
                 print("CRITICAL: API Observation FAILED even after refresh.")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.1 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.2 Cycle: {e}")
         finally:
             # 4. Permanent Persistence Phase
             self.session_state["bankroll"] = self.risk.bankroll
@@ -137,5 +146,5 @@ class OmniMachineV51:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV51()
+    machine = OmniMachineV52()
     machine.run_cycle()

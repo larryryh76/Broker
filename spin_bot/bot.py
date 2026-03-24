@@ -8,7 +8,7 @@ from spin_bot.executor import DecisionExecutor
 from spin_bot.playwright_client import PlaywrightClient
 from datetime import datetime, timezone
 
-class OmniMachineV48:
+class OmniMachineV49:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -36,7 +36,9 @@ class OmniMachineV48:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V4.8 ({self.session_state['mode']}) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V4.9 ({self.session_state['mode']}) ---")
+
+        passive_mode = os.getenv("PASSIVE_MODE", "false").lower() == "true"
 
         # Failsafe around entire execution
         try:
@@ -45,6 +47,12 @@ class OmniMachineV48:
             try:
                 client.navigate_to_spin_game()
                 client.take_screenshot("initial_observation")
+
+                # V4.9 Passive Discovery Mode: Idle and capture traffic
+                if passive_mode:
+                    print("DEBUG: PASSIVE MODE ENABLED. Idling 20s to capture intelligence...")
+                    time.sleep(20)
+                    return
 
                 # 2. Intelligence Hierarchy: V4.1 Priority Logic
                 # 2a. Primary Source: Network Intelligence (JSON/XHR)
@@ -127,9 +135,14 @@ class OmniMachineV48:
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)
+
+            # V4.9 Save Reverse-Engineering Logs
+            if 'client' in locals():
+                client.save_network_logs()
+
             self.memory.close()
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV48()
+    machine = OmniMachineV49()
     machine.run_cycle()

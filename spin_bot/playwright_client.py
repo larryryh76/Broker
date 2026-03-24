@@ -3,6 +3,7 @@ import random
 import asyncio
 import time
 import json
+import gzip
 from playwright.async_api import async_playwright, Page, ElementHandle, Response, Request, WebSocket
 try:
     from playwright_stealth import stealth_async as stealth
@@ -104,43 +105,50 @@ class PlaywrightClient:
         except: pass
 
     async def _log_response(self, response: Response):
-        """V5.4 Async Response Capture with Body Extraction."""
+        """V5.6 FORCE READ RAW RESPONSE BODY."""
         try:
             url = response.url.lower()
             if any(x in url for x in ["game", "spin", "bet", "api", "order", "history", "result", "balance", "facts", "draw"]):
-                content_type = response.headers.get("content-type", "").lower()
+                status = response.status
+                headers = response.headers
                 body = None
 
-                # V5.4 Explicit Async Content Capture
+                # V5.6 Raw Byte Extraction
                 try:
-                    if "application/json" in content_type:
-                        body = await response.json()
-                    elif "text" in content_type:
-                        body = await response.text()
+                    raw = await response.body()
+                    if raw:
+                        # Attempt manual decode with fallback to string representation
+                        try:
+                            # Advanced: Handle GZIP if detected in headers but not handled by engine
+                            if headers.get("content-encoding") == "gzip":
+                                body = gzip.decompress(raw).decode("utf-8", errors="ignore")
+                            else:
+                                body = raw.decode("utf-8", errors="ignore")
+                        except:
+                            body = str(raw)
                 except Exception as e:
-                    print(f"DEBUG: Failed to read response body for {response.url}: {e}")
+                    print(f"DEBUG: Raw body read failed for {response.url}: {e}")
 
                 # Size limit
-                body_str = str(body)
-                if len(body_str) > 2000:
-                    body_str = body_str[:2000] + "... [TRUNCATED]"
+                if body and len(body) > 2000:
+                    body = body[:2000] + "... [TRUNCATED]"
 
                 entry = {
                     "type": "RESPONSE",
                     "url": response.url,
-                    "status": response.status,
-                    "headers": dict(response.headers),
-                    "response": body_str,
+                    "status": status,
+                    "headers": dict(headers),
+                    "response": body,
                     "timestamp": time.time()
                 }
                 self.network_log.append(entry)
 
                 print(f"DEBUG: Captured response -> {response.url}")
-                print(f"DEBUG: Sample -> {body_str[:200]}")
+                print(f"DEBUG: Sample -> {body[:200] if body else 'EMPTY'}")
 
                 # V5.3/V5.4 Discovery Classifiers (Response-Based)
                 if body:
-                    raw_body = str(body).lower()
+                    raw_body = body.lower()
                     if any(x in raw_body for x in ["history", "results"]) and self.endpoints["history"] is None:
                         self.endpoints["history"] = normalize_url(response.url)
                     if any(x in raw_body for x in ["balance", "wallet"]) and self.endpoints["balance"] is None:
@@ -153,7 +161,7 @@ class PlaywrightClient:
             os.makedirs("artifacts", exist_ok=True)
             with open("artifacts/network_log.json", "w", encoding="utf-8") as f:
                 json.dump(self.network_log, f, indent=2)
-            print(f"DEBUG: V5.4 Discovery log saved with {len(self.network_log)} entries.")
+            print(f"DEBUG: V5.6 Discovery log saved with {len(self.network_log)} entries.")
         except: pass
 
     async def login(self):

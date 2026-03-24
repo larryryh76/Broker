@@ -10,7 +10,7 @@ from spin_bot.playwright_client import PlaywrightClient
 from spin_bot.api_client import OmniAPIClient
 from datetime import datetime, timezone
 
-class OmniMachineV50:
+class OmniMachineV51:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -37,12 +37,12 @@ class OmniMachineV50:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-        # 6. API Client (V5.0 Primary Path)
+        # 6. API Client (V5.1 Primary Path)
         self.api_client = OmniAPIClient()
 
     def _refresh_session(self):
-        """V5.0 Fallback to Browser for Session Discovery."""
-        print("DEBUG: Refreshing Session via Browser Discovery (V5.0)...")
+        """V5.1 Fallback to Browser for Forced Discovery."""
+        print("DEBUG: Refreshing Session via Forced Discovery (V5.1)...")
         client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
         try:
             client.navigate_to_spin_game()
@@ -52,14 +52,15 @@ class OmniMachineV50:
             with open("artifacts/network_log.json", "r") as f:
                 logs = json.load(f)
 
-            # Simple heuristic to find a valid authenticated request
+            # Find a valid authenticated request
             auth_data = {}
-            for entry in logs:
-                if entry["type"] == "REQUEST" and any(x in entry["url"] for x in ["api", "game"]):
-                    if "headers" in entry and ("authorization" in entry["headers"] or "cookie" in entry["headers"]):
+            for entry in reversed(logs):
+                if entry["type"] == "REQUEST":
+                    headers = entry.get("headers", {})
+                    if "authorization" in headers or "cookie" in headers:
                         auth_data = {
-                            "headers": entry["headers"],
-                            "cookies": entry["cookies"],
+                            "headers": headers,
+                            "cookies": entry.get("cookies", []),
                             "endpoints": client.endpoints
                         }
                         break
@@ -67,14 +68,14 @@ class OmniMachineV50:
             if auth_data:
                 self.memory.save_session_tokens(auth_data)
                 self.api_client.apply_session(auth_data)
-                print(f"DEBUG: Session successfully refreshed. Discovered Endpoints: {client.endpoints}")
+                print(f"DEBUG: V5.1 Session refreshed. Endpoints Found: {client.endpoints}")
             else:
                 print("CRITICAL: Failed to discover auth data in network logs.")
         finally:
             client.close()
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V5.0 (API-DRIVEN) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V5.1 (FORCED DISCOVERY) ---")
 
         try:
             # 1. Load Session Tokens
@@ -94,7 +95,7 @@ class OmniMachineV50:
 
             # Fallback if history endpoint is missing or returns 403
             if not outcomes:
-                print("DEBUG: API fetch failed. Attempting one-time session refresh...")
+                print("DEBUG: API fetch failed or history endpoint missing. Refreshing...")
                 self._refresh_session()
                 outcomes = self.api_client.get_spin_history()
 
@@ -123,10 +124,10 @@ class OmniMachineV50:
                 else:
                     print(f"SKIP: {decision['reason']}")
             else:
-                print("CRITICAL: API Observation FAILED. Session might be invalid.")
+                print("CRITICAL: API Observation FAILED even after refresh.")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.0 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.1 Cycle: {e}")
         finally:
             # 4. Permanent Persistence Phase
             self.session_state["bankroll"] = self.risk.bankroll
@@ -136,5 +137,5 @@ class OmniMachineV50:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV50()
+    machine = OmniMachineV51()
     machine.run_cycle()

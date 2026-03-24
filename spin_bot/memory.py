@@ -1,7 +1,7 @@
 import os
 import pymongo
 from datetime import datetime, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 class MemoryGraph:
     def __init__(self, uri: str):
@@ -15,6 +15,7 @@ class MemoryGraph:
         self.models = self.db["models"]         # Ensemble model weights and performance
         self.sessions = self.db["sessions"]     # Global bankroll and system state
         self.selectors = self.db["selectors"]   # Self-healed CSS selectors
+        self.tokens = self.db["session_tokens"] # V5.0 API Session Metadata
 
     def log_spin(self, outcome: str):
         """outcome: 'U' (Up) or 'D' (Down)"""
@@ -59,6 +60,17 @@ class MemoryGraph:
     def load_model_weights(self) -> Optional[Dict]:
         doc = self.models.find_one({"id": "ensemble"})
         return doc["weights"] if doc else None
+
+    # V5.0 Session Token Management
+    def save_session_tokens(self, tokens: Dict[str, Any]):
+        """Persists API session metadata (headers, cookies)."""
+        tokens["last_updated"] = datetime.now(timezone.utc)
+        self.tokens.update_one({"id": "active_session"}, {"$set": tokens}, upsert=True)
+        print("DEBUG: API Session tokens persisted to MongoDB.")
+
+    def load_session_tokens(self) -> Optional[Dict[str, Any]]:
+        """Loads API session metadata from MongoDB."""
+        return self.tokens.find_one({"id": "active_session"})
 
     def save_selector(self, key: str, value: str):
         self.selectors.update_one(

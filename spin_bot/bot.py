@@ -1,14 +1,16 @@
 import os
 import time
-from typing import List, Dict, Optional
+import json
+from typing import List, Dict, Optional, Any
 from spin_bot.memory import MemoryGraph
 from spin_bot.models import EnsembleBrain
 from spin_bot.risk import RiskEngine
 from spin_bot.executor import DecisionExecutor
 from spin_bot.playwright_client import PlaywrightClient
+from spin_bot.api_client import OmniAPIClient
 from datetime import datetime, timezone
 
-class OmniMachineV49:
+class OmniMachineV50:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -35,114 +37,104 @@ class OmniMachineV49:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-    def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V4.9 ({self.session_state['mode']}) ---")
+        # 6. API Client (V5.0 Primary Path)
+        self.api_client = OmniAPIClient()
 
-        passive_mode = os.getenv("PASSIVE_MODE", "false").lower() == "true"
-
-        # Failsafe around entire execution
+    def _refresh_session(self):
+        """V5.0 Fallback to Browser for Session Discovery."""
+        print("DEBUG: Refreshing Session via Browser Discovery (V5.0)...")
+        client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
         try:
-            # 1. Observation Phase (Multi-Source Intelligence)
-            client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
-            try:
-                client.navigate_to_spin_game()
-                client.take_screenshot("initial_observation")
+            client.navigate_to_spin_game()
+            client.save_network_logs()
 
-                # V4.9 Passive Discovery Mode: Idle and capture traffic
-                if passive_mode:
-                    print("DEBUG: PASSIVE MODE ENABLED. Idling 20s to capture intelligence...")
-                    time.sleep(20)
-                    return
+            # Extract session data from logs
+            with open("artifacts/network_log.json", "r") as f:
+                logs = json.load(f)
 
-                # 2. Intelligence Hierarchy: V4.1 Priority Logic
-                # 2a. Primary Source: Network Intelligence (JSON/XHR)
-                outcomes = client.extract_from_network()
+            # Simple heuristic to find a valid authenticated request
+            auth_data = {}
+            for entry in logs:
+                if entry["type"] == "REQUEST" and any(x in entry["url"] for x in ["api", "game"]):
+                    if "headers" in entry and ("authorization" in entry["headers"] or "cookie" in entry["headers"]):
+                        auth_data = {
+                            "headers": entry["headers"],
+                            "cookies": entry["cookies"],
+                            "endpoints": client.endpoints
+                        }
+                        break
 
-                # 2b. Secondary Source: Hardened DOM Scraper (Pattern Detection)
-                if not outcomes:
-                    print("DEBUG: Network Extraction failed. Switching to Hardened DOM Scraper...")
-                    outcomes = client.detect_repeating_patterns()
+            if auth_data:
+                self.memory.save_session_tokens(auth_data)
+                self.api_client.apply_session(auth_data)
+                print(f"DEBUG: Session successfully refreshed. Discovered Endpoints: {client.endpoints}")
+            else:
+                print("CRITICAL: Failed to discover auth data in network logs.")
+        finally:
+            client.close()
 
-                # 3. Execution Phase
-                if outcomes:
-                    print(f"Observed Intelligence: {''.join(outcomes)}")
-                    for o in outcomes: self.memory.log_spin(o)
+    def run_cycle(self):
+        print(f"--- STARTING OMNI MACHINE CYCLE V5.0 (API-DRIVEN) ---")
 
-                    full_history = self.memory.get_latest_spins(100)
-                    decision = self.executor.decide(full_history)
+        try:
+            # 1. Load Session Tokens
+            tokens = self.memory.load_session_tokens()
+            if not tokens:
+                self._refresh_session()
+                tokens = self.memory.load_session_tokens()
 
-                    if decision["action"] == "BET":
-                        # Detect betting elements for execution
-                        ui = client.detect_betting_elements()
-                        # V4.3 Robust Check: Verify visibility as Locators are always truthy
-                        try:
-                            # Wait for buttons to be visible before check
-                            ui["up"].wait_for(state="visible", timeout=5000)
-                            if ui["up"].is_visible() and ui["down"].is_visible() and ui["amount"].is_visible():
-                                print(f"Executing Bet: ₦{decision['amount']} on {decision['direction']}")
+            if tokens:
+                self.api_client.apply_session(tokens)
+            else:
+                print("CRITICAL: No valid session tokens available. Aborting.")
+                return
 
-                            # Interaction with jitter
-                            ui["amount"].click()
-                            ui["amount"].fill(str(decision["amount"]))
-                            target = ui["up"] if decision["direction"] == "U" else ui["down"]
-                            target.hover()
-                            target.click()
+            # 2. API-Based Observation
+            outcomes = self.api_client.get_spin_history()
 
-                            # Wait for result and update models
-                            time.sleep(15)
-                            new_outcomes = client.extract_from_network() or client.detect_repeating_patterns()
-                            if new_outcomes:
-                                actual = new_outcomes[-1]
-                                win = (actual == decision["direction"])
-                                print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
+            # Fallback if history endpoint is missing or returns 403
+            if not outcomes:
+                print("DEBUG: API fetch failed. Attempting one-time session refresh...")
+                self._refresh_session()
+                outcomes = self.api_client.get_spin_history()
 
-                                # Adaptation
-                                self.brain.update_weights(full_history, actual)
-                                payout = decision["amount"] * 1.95 if win else 0
-                                self.risk.bankroll += (payout - decision["amount"])
-                                self.risk.update_result(win)
-                        except Exception as e:
-                            print(f"DEBUG: Betting execution failed: {e}")
-                            client.take_screenshot("bet_execution_error")
-                        else:
-                            # Note: The 'else' here belongs to the 'if decision["action"] == "BET":' block logically
-                            # but the user had a misplaced try block.
-                            # If no betting elements were found, log and screenshot.
-                            # Fixing logic to properly close the try and handle the else.
-                            pass
+            # 3. Prediction & Execution Phase
+            if outcomes:
+                print(f"Observed Intelligence (API): {''.join(outcomes[:10])}...")
+                for o in outcomes: self.memory.log_spin(o)
 
-                        # Re-implementing the else logic correctly after the try/except
-                        if not (ui["up"].is_visible() and ui["down"].is_visible() and ui["amount"].is_visible()):
-                            print("CRITICAL: Betting elements not found. Skipping to Observation Mode.")
-                            client.take_screenshot("ui_detection_failure")
+                full_history = self.memory.get_latest_spins(100)
+                decision = self.executor.decide(full_history)
+
+                if decision["action"] == "BET":
+                    print(f"Executing Bet via API: ₦{decision['amount']} on {decision['direction']}")
+                    result = self.api_client.place_bet(decision["direction"], decision["amount"])
+
+                    if "error" not in result:
+                        print(f"API Bet Success: {result}")
+                        actual = result.get("outcome", outcomes[0])
+                        win = (actual == decision["direction"])
+                        self.brain.update_weights(full_history, actual)
+                        payout = decision["amount"] * 1.95 if win else 0
+                        self.risk.bankroll += (payout - decision["amount"])
+                        self.risk.update_result(win)
                     else:
-                        print(f"SKIP: {decision['reason']}")
+                        print(f"API Bet FAILED: {result}")
                 else:
-                    print("CRITICAL: Multi-Source extraction FAILED. No outcomes found in Network or DOM. Aborting cycle.")
-                    client.take_screenshot("extraction_failure")
-                    return # Exit cycle cleanly as per V4.3
-
-            except Exception as e:
-                print(f"Error during browser interaction: {e}")
-                client.take_screenshot("interaction_failure")
-            finally:
-                client.close()
+                    print(f"SKIP: {decision['reason']}")
+            else:
+                print("CRITICAL: API Observation FAILED. Session might be invalid.")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in Run Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.0 Cycle: {e}")
         finally:
-            # 4. Permanent Persistence Phase (Save State)
+            # 4. Permanent Persistence Phase
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)
-
-            # V4.9 Save Reverse-Engineering Logs
-            if 'client' in locals():
-                client.save_network_logs()
-
             self.memory.close()
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV49()
+    machine = OmniMachineV50()
     machine.run_cycle()

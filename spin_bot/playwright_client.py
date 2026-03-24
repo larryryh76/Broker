@@ -3,6 +3,10 @@ import random
 import time
 import json
 from playwright.sync_api import sync_playwright, Page, ElementHandle, Response, WebSocket
+try:
+    from playwright_stealth import stealth
+except ImportError:
+    stealth = None
 from typing import List, Optional, Dict, Union
 
 class PlaywrightClient:
@@ -14,14 +18,18 @@ class PlaywrightClient:
         self.network_responses = []
         self.ws_messages = []
 
-        # Hardened Launch Arguments
+        # V4.7 REAL HUMAN CHROME USER AGENT
+        REAL_CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+
+        # V4.7 Hardened Launch Arguments
         launch_args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--disable-web-security",
             "--disable-features=IsolateOrigins,site-per-process",
-            "--window-position=0,0"
+            "--window-position=0,0",
+            "--headless=new" # Use modern headless shell
         ]
 
         self.browser = self.playwright.chromium.launch(
@@ -29,12 +37,24 @@ class PlaywrightClient:
             args=launch_args
         )
 
+        # V4.7 REAL BROWSER CONTEXT
         self.context = self.browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 720}
+            user_agent=REAL_CHROME_UA,
+            viewport={"width": 1366, "height": 768},
+            locale="en-US",
+            timezone_id="Africa/Lagos",
+            geolocation={"latitude": 6.5244, "longitude": 3.3792},
+            permissions=["geolocation"]
         )
 
         self.page = self.context.new_page()
+
+        # V4.7 FULL STEALTH
+        if stealth:
+            try:
+                stealth(self.page)
+                print("DEBUG: Full Stealth Applied.")
+            except: pass
 
         # Activate Interceptors BEFORE navigation
         self.page.on("response", self._handle_response)
@@ -58,16 +78,29 @@ class PlaywrightClient:
 
     def _parse_ws_message(self, payload):
         try:
-            # Check if payload is string and looks like JSON
             if isinstance(payload, str) and ("{" in payload):
                 data = json.loads(payload)
                 self.ws_messages.append({"data": data, "timestamp": time.time()})
         except: pass
 
+    def _detect_blocking(self) -> bool:
+        """V4.7 Block Detection: Checks if the site is serving a restricted UI."""
+        print("DEBUG: Checking for bot detection indicators...")
+
+        clickable_count = len(self.page.locator("button, a, [role='button']").all())
+        has_game_text = self.page.locator("text=Spin, text=Bottle").first.is_visible()
+
+        print(f"DEBUG: Clickable Elements: {clickable_count}, Game Text: {has_game_text}")
+
+        if clickable_count < 10 or not has_game_text:
+            print("CRITICAL: BOT DETECTION SUSPECTED. Page content withheld.")
+            self.take_screenshot("detection_state")
+            return True
+        return False
+
     def get_active_context(self) -> Union[Page, 'FrameLocator']:
         """V4.3 Iframe Handling: Detects if game is inside an iframe."""
         try:
-            # Check for common iframe selectors
             iframes = self.page.query_selector_all("iframe")
             for frame in iframes:
                 src = frame.get_attribute("src") or ""
@@ -81,22 +114,20 @@ class PlaywrightClient:
         """Robust Modal-Based Login Logic."""
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
-        if not user or not pw:
-            print("WARNING: Login credentials missing.")
-            return
+        if not user or not pw: return
 
         print("DEBUG: Initiating Login flow...")
         try:
+            # Human Delay before interaction
+            time.sleep(random.uniform(2.0, 5.0))
             self.page.wait_for_selector("body", timeout=15000)
 
-            # Handle cookies
             try:
                 for t in ["Accept", "Allow", "Agree"]:
                     btn = self.page.locator(f"text={t}").first
                     if btn.is_visible(): btn.click()
             except: pass
 
-            # Click Login trigger
             try:
                 self.page.locator("text=Login").first.click(timeout=5000)
             except:
@@ -111,136 +142,99 @@ class PlaywrightClient:
 
             self.page.locator("button:has-text('Login')").last.click()
 
-            # Verify Success
             time.sleep(7)
             if self.page.locator("text=Login").first.is_visible():
                 raise Exception("Login Verification FAILED.")
             print("DEBUG: LOGIN SUCCESSFUL.")
-            self.take_screenshot("post_login_success")
         except Exception as e:
             print(f"DEBUG: Login Error: {e}")
             self.take_screenshot("login_failure")
             raise e
 
     def navigate_to_spin_game(self):
-        """V4.6 SPA-Aware Guided Navigation."""
-        max_page_retries = 3
+        """V4.7 Anti-Detection SPA Navigation."""
+        max_page_retries = 2
 
         for p_attempt in range(max_page_retries + 1):
             try:
-                print(f"DEBUG: Navigation Attempt {p_attempt + 1}/{max_page_retries + 1}...")
+                print(f"DEBUG: Navigation Attempt {p_attempt + 1}...")
                 self.page.goto(self.login_url, wait_until="networkidle", timeout=60000)
                 if p_attempt == 0: self.login()
 
-                # 1. PAGE LOAD HANDLING
-                self.page.wait_for_load_state("networkidle")
-                time.sleep(random.uniform(2.0, 4.0)) # Human delay
+                # Human Delay before validation
+                time.sleep(random.uniform(3.0, 6.0))
 
-                # V4.6 PRE-NAVIGATION UNLOCK
+                # V4.7 Audit DOM stats
+                print(f"DEBUG: Node Count: {len(self.page.locator('*').all())}, HTML Length: {len(self.page.content())}")
+
+                if self._detect_blocking():
+                    print("DEBUG: Attempting Alternative Navigation Route...")
+                    try:
+                        # Try direct route
+                        self.page.goto(self.login_url.split('/ng')[0] + "/ng/games/spin", wait_until="networkidle")
+                    except:
+                        # Try keyboard navigation unlock
+                        self.page.keyboard.press("Tab")
+                        time.sleep(0.5)
+                        self.page.keyboard.press("Enter")
+
                 self._unlock_ui()
 
-                # 2. TARGET IDENTIFICATION (CONTROLLED SEARCH)
-                print("DEBUG: Identifying target game candidates...")
-                # Search within likely containers
-                candidates = self.page.locator("a, button, div[class*='card'], div[class*='game'], div[class*='item']").all()
-
+                # TARGET IDENTIFICATION (CONTROLLED SEARCH)
+                candidates = self.page.locator("a, button, div[class*='card'], div[class*='game']").all()
                 matches = []
                 for el in candidates:
                     try:
                         if not el.is_visible(): continue
-                        text = el.inner_text().strip()
-                        text_lower = text.lower()
-
+                        text = el.inner_text().strip().lower()
                         rank = 0
-                        if "spin da bottle" in text_lower: rank = 3
-                        elif "spin" in text_lower and "bottle" in text_lower: rank = 2
-                        elif "spin" in text_lower: rank = 1
-
-                        if rank > 0:
-                            matches.append({"element": el, "text": text, "rank": rank})
+                        if "spin da bottle" in text: rank = 3
+                        elif "spin" in text and "bottle" in text: rank = 2
+                        elif "spin" in text: rank = 1
+                        if rank > 0: matches.append({"element": el, "text": text, "rank": rank})
                     except: continue
 
-                # Sort by rank descending
                 matches.sort(key=lambda x: x["rank"], reverse=True)
-                print(f"DEBUG: Found {len(matches)} potential game candidates.")
-
                 for match in matches:
                     el = match["element"]
-                    text = match["text"]
-                    print(f"DEBUG: Attempting to click match: '{text}' (Rank: {match['rank']})")
-
-                    # 4. SAFE CLICK EXECUTION
                     try:
                         el.scroll_into_view_if_needed()
-                        time.sleep(random.uniform(0.5, 1.5))
-                        # Click with slight random offset
+                        time.sleep(random.uniform(1.0, 2.0))
                         box = el.bounding_box()
                         if box:
-                            self.page.mouse.click(
-                                box['x'] + box['width']/2 + random.uniform(-5, 5),
-                                box['y'] + box['height']/2 + random.uniform(-5, 5)
-                            )
-                        else:
-                            el.click()
+                            self.page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+                        else: el.click()
 
-                        print("DEBUG: Click executed. Waiting for validation...")
-                        time.sleep(5) # Wait for initial transition
-
-                        # 5. GAME LOAD VALIDATION
-                        validation_selectors = [
-                            "div[class*='history']",
-                            "div[class*='result']",
-                            "button:has-text('UP')",
-                            "button:has-text('DOWN')",
-                            "canvas",
-                            "iframe"
-                        ]
-
+                        time.sleep(5)
                         ctx = self.get_active_context()
-                        for sel in validation_selectors:
+                        for sel in ["div[class*='history']", "button:has-text('UP')", "canvas"]:
                             try:
-                                # We check both the main page and the context (iframe aware)
                                 if ctx.locator(sel).first.is_visible():
                                     print(f"DEBUG: Game environment VALIDATED via: {sel}")
-                                    self.take_screenshot("game_load_success")
-                                    return # SUCCESS
+                                    return
                             except: continue
+                    except: continue
 
-                        print(f"DEBUG: Validation failed for match: '{text}'.")
-                    except Exception as e:
-                        print(f"DEBUG: Click interaction failed: {e}")
-
-                # 6. FALLBACK: Page refresh if attempt failed
-                if p_attempt < max_page_retries:
-                    print("DEBUG: Discovery failed on this page state. Refreshing...")
-                    self.page.reload()
+                if p_attempt < max_page_retries: self.page.reload()
             except Exception as e:
-                print(f"DEBUG: Navigation attempt error: {e}")
+                print(f"DEBUG: Navigation error: {e}")
 
-        # 7. FAILURE HANDLING
-        print("CRITICAL: All discovery and navigation strategies FAILED.")
         self.take_screenshot("navigation_failure")
         self.dump_dom("navigation_failure_dom")
-        raise Exception("PATTERN-BASED NAVIGATION FAILED: Could not reach game.")
+        raise Exception("V4.7 NAVIGATION FAILED.")
 
     def extract_from_network(self) -> List[str]:
         """Multi-Source Intelligence: XHR + WebSocket."""
         outcomes = []
-
-        # Priority 1: Check WebSocket messages
         for msg in reversed(self.ws_messages):
             try:
                 data = msg["data"]
                 val = data.get("result") or data.get("outcome")
                 if val: outcomes.append(str(val).upper()[0])
-                if outcomes:
-                    print("DEBUG: Intelligence derived from WebSocket.")
-                    break
+                if outcomes: break
             except: continue
-
         if outcomes: return outcomes
 
-        # Priority 2: Check XHR/Fetch responses
         for packet in reversed(self.network_responses):
             data = packet["data"]
             try:
@@ -251,28 +245,14 @@ class PlaywrightClient:
                     for item in data:
                         if isinstance(item, str) and item.upper() in ["U", "D"]:
                             outcomes.append(item.upper()[0])
-                if outcomes:
-                    print("DEBUG: Intelligence derived from Network XHR.")
-                    break
+                if outcomes: break
             except: continue
-
         return outcomes
 
     def detect_repeating_patterns(self) -> List[str]:
-        """V4.3 Hardened DOM Scraper (Inside Game/Iframe)."""
+        """V4.3 Hardened DOM Scraper."""
         ctx = self.get_active_context()
-        print("DEBUG: Hardened Scraper: Scanning active context...")
-
-        # Expanded selectors for V4.3
-        game_selectors = [
-            "div[class*='history']",
-            "div[class*='result']",
-            "span:has-text('UP')",
-            "span:has-text('DOWN')",
-            "xpath=//div[contains(@class,'item')][1]"
-        ]
-
-        for sel in game_selectors:
+        for sel in ["div[class*='history']", "span:has-text('UP')", "xpath=//div[contains(@class,'item')][1]"]:
             try:
                 elements = ctx.locator(sel).all()
                 if elements:
@@ -281,25 +261,19 @@ class PlaywrightClient:
                         text = el.inner_text().strip().upper()
                         if "UP" in text or "U" in text: outcomes.append("U")
                         elif "DOWN" in text or "D" in text: outcomes.append("D")
-                    if outcomes:
-                        print(f"DEBUG: Scraper SUCCESS via: {sel}")
-                        return outcomes
+                    if outcomes: return outcomes
             except: continue
-
         return []
 
     def detect_betting_elements(self) -> Dict[str, Optional[ElementHandle]]:
-        """Identify interaction points in the active context (Iframe aware)."""
+        """Identify interaction points."""
         ctx = self.get_active_context()
         res = {"up": None, "down": None, "amount": None}
-
-        # Use locator().first for better robustness in V4.3
         try:
             res["up"] = ctx.locator("button:has-text('UP'), button:has-text('BUY'), .up-btn").first
             res["down"] = ctx.locator("button:has-text('DOWN'), button:has-text('SELL'), .down-btn").first
             res["amount"] = ctx.locator("input[type='number'], input[placeholder*='Bet']").first
         except: pass
-
         return res
 
     def take_screenshot(self, name: str):
@@ -309,50 +283,27 @@ class PlaywrightClient:
         except: pass
 
     def _unlock_ui(self) -> bool:
-        """V4.6 Pre-Navigation Unlock: Triggers hidden game menus (AZ/Games/Lobby)."""
-        print("DEBUG: Identifying UI unlock triggers (AZ/Menu/Games)...")
-        triggers = ["AZ", "Menu", "Games", "Lobby", "All Games"]
-
+        """V4.6 Pre-Navigation Unlock."""
+        triggers = ["AZ", "Menu", "Games", "Lobby"]
         pre_count = len(self.page.locator("*").all())
-
         for t in triggers:
             try:
-                # Find buttons, divs, or spans matching the menu keywords
-                selector = f"text={t}, button:has-text('{t}'), div:has-text('{t}'), span:has-text('{t}')"
+                selector = f"text={t}, button:has-text('{t}')"
                 el = self.page.locator(selector).first
                 if el.is_visible():
-                    print(f"DEBUG: Found unlock trigger: '{t}'. Activating...")
                     el.scroll_into_view_if_needed()
                     time.sleep(random.uniform(0.5, 1.5))
                     el.click()
-
-                    # Wait for content expansion
-                    self.page.wait_for_load_state("networkidle")
-                    time.sleep(random.uniform(2.0, 5.0))
-
-                    post_count = len(self.page.locator("*").all())
-                    print(f"DEBUG: DOM count change: {pre_count} -> {post_count}")
-                    if post_count > pre_count:
-                        print(f"DEBUG: UI UNLOCKED via '{t}'. Content expanded.")
-                        return True
+                    time.sleep(5)
+                    if len(self.page.locator("*").all()) > pre_count: return True
             except: continue
-
-        print("DEBUG: No menu triggers activated. Attempting slow scroll fallback...")
-        # Simulate human scrolling to trigger lazy loading
-        for _ in range(3):
-            self.page.mouse.wheel(0, 500)
-            time.sleep(1.0)
-
         return False
 
     def dump_dom(self, name: str):
-        """Dumps the full DOM snapshot for debugging navigation failures."""
         try:
             os.makedirs("artifacts", exist_ok=True)
-            content = self.page.content()
             with open(f"artifacts/{name}.html", "w", encoding="utf-8") as f:
-                f.write(content)
-            print(f"DEBUG: DOM snapshot dumped: artifacts/{name}.html")
+                f.write(self.page.content())
         except: pass
 
     def close(self):

@@ -37,23 +37,28 @@ class OmniMachineV30Accuracy:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V3.0 Alpha: 98% Accuracy Protocol Loop (N > 200)."""
+        """V3.0 Alpha: 98% Accuracy Protocol Loop."""
         print(f"--- OMNI MACHINE CYCLE V3.0 (ACCURACY PROTOCOL) ---")
+        # User Prompt: Go to: 'https://www.football.com'
         client = PlaywrightClient("https://www.football.com")
 
         try:
             await client.setup()
 
-            # 1. STRICT LOGIN SEQUENCE (Mobile)
+            # 1. STRICT LOGIN SEQUENCE
             await client.login()
 
-            # 2. REACH GAME AND SCRAPE HISTORY
-            if not await client.enter_game_environment():
+            # 2. PATTERN DETECTION (The Brain)
+            # User Prompt: Switch to Iframe: 'frame = page.frame_locator("iframe[src*='sportygames']")'
+            if not await client.navigate_to_game():
                 print("CRITICAL: Failed to reach Game Environment.")
                 return
 
+            # Scrape last 20 results
+            # User Prompt: Use 'frame.locator(".history_ball").all_inner_texts()'
             scraped = await client.capture_history_texts()
             for s in scraped:
+                # Save to Mongo
                 self.memory.log_spin(s, unique_key=f"round-{int(time.time())}-{random.randint(1000,9999)}")
 
             # 3. 98% ACCURACY PROTOCOL CHECK
@@ -66,6 +71,7 @@ class OmniMachineV30Accuracy:
             win_prob = probs[direction]
             confidence = abs(win_prob - 0.5) * 2.0
 
+            # User Prompt: The bot is FORBIDDEN from betting until MongoDB contains > 200 spins.
             if spin_count < 200:
                 self.session_state["mode"] = "LEARNING_MODE"
                 print(f"98% PROTOCOL: LEARNING_MODE active. ({spin_count}/200 spins captured)")
@@ -73,14 +79,14 @@ class OmniMachineV30Accuracy:
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 print(f"98% PROTOCOL: ELITE_EXECUTION active. (N={spin_count})")
 
-            # Final System Status
+            # User Prompt: PRINT "STATE UPDATED: [X] spins recorded. Confidence: [Y]%"
             status_msg = f"STATE UPDATED: {spin_count} spins recorded. Confidence: {confidence*100:.1f}%"
             print(status_msg)
 
             # 4. EXECUTION
             if self.session_state["mode"] == "ELITE_EXECUTION":
                 decision = self.executor.decide(all_spins)
-                # Elite accuracy requirements
+                # Elite accuracy requirements (98% Edge)
                 if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.8:
                     print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']} (98% Edge)")
                     success = await client.place_ui_bet(decision["direction"], decision["amount"])
@@ -98,9 +104,9 @@ class OmniMachineV30Accuracy:
                 else:
                     print(f"SKIP: No 98% Edge detected. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
             else:
-                print("LEARNING_MODE: Capturing patterns for ensemble calibration...")
+                print("OBSERVATION ONLY: Capturing patterns for ensemble calibration...")
 
-            # V3.0 Alpha Log Artifact
+            # Artifacts (User Prompt: Output 'artifacts/cycle_logs.txt')
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:

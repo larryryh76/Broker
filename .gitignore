@@ -12,3 +12,6 @@ mt5_terminal/
 data/
 logs/
 models/
+artifacts/
+*.png
+*.html

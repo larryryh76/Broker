@@ -29,8 +29,6 @@ class PlaywrightClient:
 
     async def setup(self):
         self.playwright = await async_playwright().start()
-
-        # V3.0 MOBILE EMULATION CONFIG
         launch_args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
@@ -39,18 +37,13 @@ class PlaywrightClient:
             "--disable-features=IsolateOrigins,site-per-process",
             "--headless=new"
         ]
-
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
-
-        # USE IPHONE 13 PROFILE
         iphone_13 = self.playwright.devices["iPhone 13"]
         self.context = await self.browser.new_context(**iphone_13, locale="en-US", timezone_id="Africa/Lagos")
-
         self.page = await self.context.new_page()
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
-
         if stealth:
             try:
                 await stealth(self.page)
@@ -60,7 +53,7 @@ class PlaywrightClient:
     async def _log_request(self, request: Request):
         try:
             url = request.url.lower()
-            if any(x in url for x in ["game", "spin", "bet", "api", "history", "draw"]):
+            if any(x in url for x in ["game", "spin", "bet", "api", "history"]):
                 entry = {"type": "REQUEST", "url": request.url, "method": request.method, "timestamp": time.time()}
                 self.network_log.append(entry)
         except: pass
@@ -83,9 +76,8 @@ class PlaywrightClient:
             os.makedirs("artifacts", exist_ok=True)
             log_path = "artifacts/cycle_logs.txt"
             with open(log_path, "w", encoding="utf-8") as f:
-                f.write(f"=== OMNI MACHINE V3.0 AUDIT ===\n")
-                f.write(f"Confidence Level: {confidence*100:.1f}%\n")
-                f.write(f"Spins in DB: {spins}\n")
+                f.write(f"=== OMNI MACHINE V3.0 ACCURACY AUDIT ===\n")
+                f.write(f"STATE UPDATED: {spins} spins recorded. Confidence: {confidence*100:.1f}%\n")
                 f.write("-" * 30 + "\n\n")
                 f.write("--- EXECUTION STEPS ---\n")
                 for step in self.execution_log: f.write(f"{step}\n")
@@ -96,38 +88,26 @@ class PlaywrightClient:
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
 
-        self._log_execution(f"DEBUG: V3.0 Mobile Login -> {self.login_url}")
+        # 1. BYPASS HOMEPAGE SEQUENCE
+        self._log_execution(f"DEBUG: V3.0 Login Sequence -> {self.login_url}")
         try:
-            # DIRECT MOBILE ACCESS
-            await self.page.goto(self.login_url, wait_until="domcontentloaded")
+            # User Prompt: page.goto("https://www.football.com", wait_until="networkidle")
+            await self.page.goto("https://www.football.com", wait_until="networkidle")
             await self._handle_overlays()
 
-            # Trigger login modal/page
-            try:
-                await self.page.locator("text=Login").first.click(timeout=5000)
+            try: await self.page.locator("text=Login").first.click(timeout=5000)
             except:
-                try:
-                    await self.page.locator("button:has-text('Login')").click(timeout=5000)
+                try: await self.page.locator("button:has-text('Login')").click(timeout=5000)
                 except: pass
 
-            # V3.0 SIMPLIFIED SELECTORS
-            await self.page.locator("input[type='text']").first.fill(user)
+            # 2. HANDLE MULTIPLE INPUTS (Strict User Prompt Selectors)
+            await self.page.locator("input[type='tel'], input[placeholder*='Mobile']").first.fill(user)
             await self.page.locator("input[type='password']").first.fill(pw)
 
-            # SUBMIT MOBILE
-            await self.page.locator("button.m-login-button, .m-btn-full").first.click()
+            # SUBMIT
+            await self.page.locator("button[type='submit'], .m-login-button").first.click()
             await asyncio.sleep(7)
             await self._handle_overlays()
-
-            # Verification Artifact
-            os.makedirs("artifacts", exist_ok=True)
-            with open("artifacts/status.txt", "w") as f:
-                if await self.page.locator("text=Login").first.is_visible():
-                    f.write("LOGIN FAILED - SCREENSHOT TAKEN")
-                    await self.page.screenshot(path="artifacts/error.png")
-                else:
-                    f.write("LOGIN SUCCESS")
-
         except Exception as e:
             self._log_execution(f"CRITICAL: Login UI Error: {e}")
             await self.page.screenshot(path="artifacts/error.png")
@@ -140,27 +120,29 @@ class PlaywrightClient:
                 if await btn.is_visible(): await btn.click(timeout=2000)
             except: pass
 
-    async def enter_game_environment(self) -> bool:
+    async def navigate_to_game(self) -> bool:
+        """V3.0 Pattern Detection Access."""
         try:
-            lobby_url = "https://www.football.com/ng/games/lobby"
-            await self.page.goto(lobby_url, wait_until="networkidle")
-            await self._handle_overlays()
+            # User Prompt: Go to: 'https://www.football.com'
+            await self.page.goto("https://www.football.com", wait_until="networkidle")
+            await asyncio.sleep(5)
 
-            candidates = await self.page.locator("div[class*='game'], a:has-text('Spin')").all()
-            for cand in candidates:
-                text = await cand.inner_text()
-                if "spin" in text.lower():
-                    await cand.click()
-                    await asyncio.sleep(10)
-                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-                    self._log_execution("DEBUG: Switched to Game Frame.")
-                    return True
+            # If not directly on main page, try lobby
+            if not await self.page.locator("iframe[src*='sportygames']").count():
+                 await self.page.goto("https://www.football.com/ng/games/lobby", wait_until="networkidle")
+
+            # Switch to Iframe
+            self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+            self._log_execution("DEBUG: Switched to Game Frame.")
+            return True
         except: pass
         return False
 
     async def capture_history_texts(self) -> List[str]:
+        """V3.0 Scrape History."""
         try:
             if not self.game_frame: return []
+            # User Prompt: Use 'frame.locator(".history_ball").all_inner_texts()'
             items = await self.game_frame.locator(".history_ball").all_inner_texts()
             outcomes = []
             for text in items:

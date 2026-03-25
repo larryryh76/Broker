@@ -11,7 +11,7 @@ from spin_bot.playwright_client import PlaywrightClient
 from spin_bot.api_client import OmniAPIClient, normalize_url
 from datetime import datetime, timezone
 
-class OmniMachineV54:
+class OmniMachineV57:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -38,21 +38,20 @@ class OmniMachineV54:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-        # 6. API Client (V5.4 Async Discovery)
+        # 6. API Client (V5.7 Payload Capture)
         self.api_client = OmniAPIClient()
 
     async def _async_discovery_cycle(self):
-        """V5.4 Async Discovery Cycle Wrapper."""
-        print("DEBUG: Initiating Async Discovery Cycle (V5.4)...")
+        """V5.7 Async Discovery Cycle with Direct Log Access."""
+        print("DEBUG: Initiating Async Discovery Cycle (V5.7)...")
         client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
         try:
             await client.setup()
             await client.navigate_to_spin_game()
             client.save_network_logs()
 
-            # Extract session data from logs
-            with open("artifacts/network_log.json", "r") as f:
-                logs = json.load(f)
+            # V5.7 Access log directly from client to avoid file read race
+            logs = client.network_log
 
             # Find a valid authenticated request
             auth_data = {}
@@ -78,20 +77,19 @@ class OmniMachineV54:
             await client.close()
 
     def _refresh_session(self):
-        """V5.4 Fallback to Async Discovery."""
-        print("DEBUG: Refreshing Session via V5.4 Async Discovery...")
-        # Run the async loop to completion
+        """V5.7 Fallback to Async Discovery."""
+        print("DEBUG: Refreshing Session via V5.7 Async Discovery...")
         auth_data = asyncio.run(self._async_discovery_cycle())
 
         if auth_data:
             self.memory.save_session_tokens(auth_data)
             self.api_client.apply_session(auth_data)
-            print("DEBUG: Session successfully refreshed and persisted via Async Engine.")
+            print("DEBUG: Session successfully refreshed and persisted via V5.7 Engine.")
         else:
             print("CRITICAL: Failed to discover auth data during async cycle.")
 
     def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V5.4 (CONTENT CAPTURE) ---")
+        print(f"--- STARTING OMNI MACHINE CYCLE V5.7 (PAYLOAD CAPTURE) ---")
 
         try:
             # 1. Load Session Tokens
@@ -109,9 +107,9 @@ class OmniMachineV54:
             # 2. API-Based Observation
             outcomes = self.api_client.get_spin_history()
 
-            # Fallback if history endpoint is missing or returns 403
+            # Fallback
             if not outcomes:
-                print("DEBUG: API fetch failed or history endpoint missing. Refreshing...")
+                print("DEBUG: API fetch failed. Refreshing...")
                 self._refresh_session()
                 outcomes = self.api_client.get_spin_history()
 
@@ -148,7 +146,7 @@ class OmniMachineV54:
                 print("CRITICAL: API Observation FAILED even after refresh.")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.4 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.7 Cycle: {e}")
         finally:
             # 4. Permanent Persistence Phase
             self.session_state["bankroll"] = self.risk.bankroll
@@ -158,5 +156,5 @@ class OmniMachineV54:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV54()
+    machine = OmniMachineV57()
     machine.run_cycle()

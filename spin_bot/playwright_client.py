@@ -20,7 +20,7 @@ class PlaywrightClient:
         self.context = None
         self.page = None
 
-        # V5.1 Network Discovery Buffer
+        # V5.7 Network Discovery Buffer (Unified)
         self.network_log = []
 
         # V5.3 Dynamic Endpoint Discovery (Normalized)
@@ -69,7 +69,7 @@ class PlaywrightClient:
         self.page = await self.context.new_page()
         self.page.set_default_timeout(60000)
 
-        # V5.4 ASYNC NETWORK INTERCEPTION
+        # V5.7 FULL ASYNC NETWORK INTERCEPTION
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
 
@@ -81,24 +81,39 @@ class PlaywrightClient:
 
         await self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-    def _log_request(self, request: Request):
+    async def _log_request(self, request: Request):
+        """V5.7 Async Request Capture with Payload Extraction."""
         try:
             url = request.url.lower()
+            # V5.7 Filter for critical reverse-engineering targets
             if any(x in url for x in ["game", "spin", "bet", "api", "order", "history", "result", "balance", "facts", "draw"]):
+                method = request.method
+                headers = request.headers
+                post_data = None
+
+                if method == "POST":
+                    try:
+                        post_data = request.post_data
+                    except: pass
+
                 entry = {
                     "type": "REQUEST",
                     "url": request.url,
-                    "method": request.method,
-                    "headers": dict(request.headers),
-                    "post_data": request.post_data,
+                    "method": method,
+                    "headers": dict(headers),
+                    "payload": post_data,
                     "timestamp": time.time()
                 }
                 self.network_log.append(entry)
 
-                # Discovery logic
-                if "bet" in url and request.method == "POST":
+                print(f"DEBUG: Captured REQUEST -> {method} {request.url}")
+                if post_data:
+                    print(f"DEBUG: Payload captured: {str(post_data)[:100]}")
+
+                # Discovery logic (Normalized)
+                if "bet" in url and method == "POST":
                     self.endpoints["bet"] = normalize_url(request.url)
-                elif any(x in url for x in ["history", "spins", "results"]):
+                elif any(x in url for x in ["history", "spins", "results", "orders"]):
                     self.endpoints["history"] = normalize_url(request.url)
                 elif "balance" in url:
                     self.endpoints["balance"] = normalize_url(request.url)
@@ -117,9 +132,7 @@ class PlaywrightClient:
                 try:
                     raw = await response.body()
                     if raw:
-                        # Attempt manual decode with fallback to string representation
                         try:
-                            # Advanced: Handle GZIP if detected in headers but not handled by engine
                             if headers.get("content-encoding") == "gzip":
                                 body = gzip.decompress(raw).decode("utf-8", errors="ignore")
                             else:
@@ -157,12 +170,36 @@ class PlaywrightClient:
             print(f"DEBUG: Response intercept error: {e}")
 
     def save_network_logs(self):
+        """V5.7 Human-Readable Text Log Persistence."""
         try:
             os.makedirs("artifacts", exist_ok=True)
-            with open("artifacts/network_log.json", "w", encoding="utf-8") as f:
-                json.dump(self.network_log, f, indent=2)
-            print(f"DEBUG: V5.6 Discovery log saved with {len(self.network_log)} entries.")
-        except: pass
+            log_path = "artifacts/network_log.txt"
+
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(f"--- OMNI V5.7 NETWORK INTELLIGENCE LOG (Generated: {time.ctime()}) ---\n\n")
+
+                for entry in self.network_log:
+                    f.write(f"[{entry['type']}] {entry.get('method', '')} {entry['url']}\n")
+                    f.write(f"Timestamp: {entry['timestamp']}\n")
+
+                    if "status" in entry:
+                        f.write(f"Status: {entry['status']}\n")
+
+                    f.write("Headers:\n")
+                    for k, v in entry['headers'].items():
+                        f.write(f"  {k}: {v}\n")
+
+                    if entry.get("payload"):
+                        f.write(f"Payload:\n{entry['payload']}\n")
+
+                    if entry.get("response"):
+                        f.write(f"Response:\n{entry['response']}\n")
+
+                    f.write("-" * 80 + "\n\n")
+
+            print(f"DEBUG: Human-readable intelligence saved to {log_path}")
+        except Exception as e:
+            print(f"DEBUG: Failed to save text logs: {e}")
 
     async def login(self):
         user = os.getenv("FOOTBALL_NG_LOGIN")
@@ -194,7 +231,6 @@ class PlaywrightClient:
         trigger_script = """
         (async () => {
             try {
-                // Common API endpoints
                 const targets = [
                     '/api/ng/games/games-campaign/v1/campaign',
                     '/api/ng/orders/config/cutbet',
@@ -220,10 +256,7 @@ class PlaywrightClient:
             }
         })();
         """
-
-        # Retry loop for active discovery
         for i in range(3):
-            print(f"DEBUG: Active Discovery Pass {i+1}/3...")
             try:
                 await self.page.evaluate(trigger_script)
                 await asyncio.sleep(5)
@@ -233,20 +266,12 @@ class PlaywrightClient:
         """V5.5 FORCE GAME ENGINE TO LOAD AND TRIGGER APIs."""
         print("DEBUG: Initiating Forced Game Engine Interaction (V5.5)...")
         try:
-            # 1. Wait for game iframe
             frame = self.page.frame_locator("iframe").first
             try:
                 await frame.locator("body").wait_for(timeout=15000)
-                print("DEBUG: Game iframe detected and ready.")
-            except Exception as e:
-                print(f"DEBUG: Game iframe timeout/not found: {e}")
-                return
+            except: return
 
-            # 2. Force interaction inside iframe
             await frame.locator("body").click(timeout=5000)
-            print("DEBUG: Clicked iframe body to activate runtime.")
-
-            # 3. Auto-click common game buttons
             selectors = ["button", ".start", ".play", ".spin", ".bet", ".start-btn", ".spin-btn"]
             for sel in selectors:
                 try:
@@ -254,31 +279,20 @@ class PlaywrightClient:
                     for el in elements:
                         if await el.is_visible():
                             await el.click(timeout=2000)
-                            print(f"DEBUG: Successfully clicked {sel}")
                             await asyncio.sleep(1)
                 except: pass
 
-            # 4. Random click fallback
             await frame.locator("body").click(position={"x": 300, "y": 400})
-            print("DEBUG: Random mouse click performed at (300, 400).")
-
-            # 5. Wait for network activity
             await asyncio.sleep(5)
-            print("DEBUG: Post-interaction network wait complete.")
-
-        except Exception as e:
-            print(f"DEBUG: Forced interaction failed: {e}")
+        except: pass
 
     async def navigate_to_spin_game(self):
         try:
             await self.page.goto(self.login_url, wait_until="networkidle", timeout=60000)
             await self.login()
             await asyncio.sleep(5)
-
-            # V5.1 FORCE ACTIVE DISCOVERY
             await self._trigger_active_discovery()
 
-            # Find and click the specific Spin game
             candidates = await self.page.locator("div[class*='game'], .game-item, div:has-text('Spin')").all()
             for cand in candidates:
                 try:
@@ -287,13 +301,11 @@ class PlaywrightClient:
                         await cand.scroll_into_view_if_needed()
                         await cand.click()
                         await asyncio.sleep(10)
-
-                        # V5.5 FORCE GAME INTERACTION
                         await self._force_game_interaction()
                         break
                 except: continue
 
-            print(f"DEBUG: V5.5 Discovery Traffic Triggered. Endpoints Found: {len([k for k,v in self.endpoints.items() if v])}")
+            print(f"DEBUG: V5.7 Discovery Traffic Triggered. Endpoints Found: {len([k for k,v in self.endpoints.items() if v])}")
         except Exception as e:
             print(f"DEBUG: Discovery Navigation Error: {e}")
 

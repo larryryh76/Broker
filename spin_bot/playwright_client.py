@@ -42,9 +42,16 @@ class PlaywrightClient:
 
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
 
-        # iPhone 13 Emulation
+        # High-Fidelity iPhone 13 Emulation
+        IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
         iphone_13 = self.playwright.devices["iPhone 13"]
-        self.context = await self.browser.new_context(**iphone_13, locale="en-US", timezone_id="Africa/Lagos")
+
+        self.context = await self.browser.new_context(
+            **iphone_13,
+            user_agent=IPHONE_UA,
+            locale="en-US",
+            timezone_id="Africa/Lagos"
+        )
 
         if cookies:
             await self.context.add_cookies(cookies)
@@ -55,7 +62,7 @@ class PlaywrightClient:
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
 
-        # V3.0 Anti-Captcha Stealth
+        # EMERGENCY REPAIR: Stealth before navigation
         if stealth:
             try:
                 await stealth(self.page)
@@ -84,24 +91,33 @@ class PlaywrightClient:
                 self.network_log.append(entry)
         except: pass
 
+    def save_cycle_logs(self, confidence: float, spins: int):
+        try:
+            os.makedirs("artifacts", exist_ok=True)
+            log_path = "artifacts/cycle_logs.txt"
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(f"=== OMNI MACHINE V3.0 ACCURACY AUDIT ===\n")
+                f.write(f"STATE UPDATED: {spins} spins recorded. Confidence: {confidence*100:.1f}%\n")
+                f.write("-" * 30 + "\n\n")
+                f.write("--- EXECUTION STEPS ---\n")
+                for step in self.execution_log: f.write(f"{step}\n")
+        except: pass
+
     async def login(self):
-        """V3.0 Mobile-Native Login."""
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
 
-        self._log_execution(f"DEBUG: V3.0 Redirecting to Gaming Platform -> {self.login_url}")
+        self._log_execution(f"DEBUG: Redirecting for UI login...")
         try:
-            await self.page.goto(self.login_url, wait_until="domcontentloaded")
+            await self.page.goto(self.login_url, wait_until="networkidle")
             await self._handle_overlays()
 
-            # Click 'More' at bottom right (Football.com Mobile Pattern)
             try:
                 await self.page.click("text=More", timeout=5000)
-                await asyncio.sleep(random.uniform(1.0, 2.5))
+                await asyncio.sleep(2)
                 await self.page.click("text=Login / Register", timeout=5000)
             except:
-                # Fallback to direct button
                 try: await self.page.locator("button.m-login-button, .m-btn-full").first.click(timeout=5000)
                 except: pass
 
@@ -119,17 +135,23 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def _handle_overlays(self):
+        """EMERGENCY REPAIR: Recursive overlay check with forced clicks."""
         selectors = ["button.close-icon", ".modal-close", "[aria-label='Close']", ".close-btn"]
         for sel in selectors:
             try:
-                btn = self.page.locator(sel).first
-                if await btn.is_visible():
-                    await asyncio.sleep(random.uniform(0.5, 1.2))
-                    await btn.click(timeout=2000)
+                # Use recursive check to clear multiple layers
+                while True:
+                    btn = self.page.locator(sel).first
+                    if await btn.is_visible():
+                        self._log_execution(f"DEBUG: Clearing overlay layer ({sel})")
+                        await btn.click(timeout=2000, force=True) # Bypass invisible overlays
+                        await asyncio.sleep(1)
+                    else:
+                        break
             except: pass
 
-    async def enter_game_environment(self) -> bool:
-        """V3.0 Iframe & Navigation Surgery."""
+    async def navigate_to_game(self) -> bool:
+        """V3.0 Refined Iframe & Navigation."""
         try:
             lobby_url = "https://www.football.com/ng/games/lobby"
             await self.page.goto(lobby_url, wait_until="networkidle")
@@ -140,17 +162,24 @@ class PlaywrightClient:
                 text = await cand.inner_text()
                 if "spin" in text.lower():
                     await cand.click()
-                    await asyncio.sleep(random.uniform(8.0, 12.0))
-                    # V3.0 Target sportygames iframe
+                    await asyncio.sleep(5)
+
+                    # EMERGENCY REPAIR: Explicit Wait for Iframe
+                    self._log_execution("DEBUG: Waiting for SportyGames iframe...")
+                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=30000)
+
+                    # V3.0 Switch to Game Frame
                     self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-                    # Ensure frame is ready
+                    # Ensure frame internal state is ready
                     await self.game_frame.locator(".history_ball").first.wait_for(timeout=20000)
                     self._log_execution("DEBUG: Switched to Game Frame (SportyGames).")
                     return True
-        except: pass
+        except Exception as e:
+            self._log_execution(f"DEBUG: Navigation Error: {e}")
         return False
 
     async def capture_history_texts(self) -> List[str]:
+        """V3.0 Scraping Fix: Target .history_ball."""
         try:
             if not self.game_frame: return []
             items = await self.game_frame.locator(".history_ball").all_inner_texts()
@@ -165,16 +194,18 @@ class PlaywrightClient:
         return []
 
     async def place_ui_bet(self, direction: str, amount: float):
+        """EMERGENCY REPAIR: Text-based button selectors."""
         try:
             if not self.game_frame: return False
             stake_input = self.game_frame.locator('input[type="number"]').first
             await stake_input.fill(str(amount))
-            await asyncio.sleep(random.uniform(1.0, 2.0))
 
-            target = self.game_frame.locator("button", has_text="UP" if direction == "U" else "DOWN").first
+            # Use specific button text mapping
+            target_text = "UP" if direction == "U" else "DOWN"
+            target = self.game_frame.locator("button", has_text=target_text).first
+
             await target.hover()
-            await asyncio.sleep(random.uniform(0.5, 1.5))
-            await target.click()
+            await target.click(force=True)
             await asyncio.sleep(random.uniform(2.5, 6.8))
             return True
         except: return False

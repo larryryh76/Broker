@@ -19,16 +19,21 @@ class PlaywrightClient:
         self.browser = None
         self.context = None
         self.page = None
+        self.game_frame = None
+        self.execution_log = []
+
+        # V5.9 Target Metadata
+        self.INDEPENDENT_LOGIN_URL = "https://www.football.com/ng/m/independent_login"
 
         # V5.7 Network Discovery Buffer
         self.network_log = []
 
         # V5.3 Dynamic Endpoint Discovery
-        self.endpoints = {
-            "history": None,
-            "bet": None,
-            "balance": None
-        }
+        self.endpoints = {"history": None, "bet": None, "balance": None}
+
+    def _log_execution(self, message: str):
+        print(message)
+        self.execution_log.append(f"[{time.ctime()}] {message}")
 
     async def setup(self):
         self.playwright = await async_playwright().start()
@@ -67,20 +72,13 @@ class PlaywrightClient:
                 method = request.method
                 post_data = request.post_data if method == "POST" else None
                 entry = {
-                    "type": "REQUEST",
-                    "url": request.url,
-                    "method": method,
-                    "headers": dict(request.headers),
-                    "payload": post_data,
-                    "timestamp": time.time()
+                    "type": "REQUEST", "url": request.url, "method": method,
+                    "headers": dict(request.headers), "payload": post_data, "timestamp": time.time()
                 }
                 self.network_log.append(entry)
-                if "bet" in url and method == "POST":
-                    self.endpoints["bet"] = normalize_url(request.url)
-                elif any(x in url for x in ["history", "spins", "results", "orders"]):
-                    self.endpoints["history"] = normalize_url(request.url)
-                elif "balance" in url:
-                    self.endpoints["balance"] = normalize_url(request.url)
+                if "bet" in url and method == "POST": self.endpoints["bet"] = normalize_url(request.url)
+                elif any(x in url for x in ["history", "spins", "results", "orders"]): self.endpoints["history"] = normalize_url(request.url)
+                elif "balance" in url: self.endpoints["balance"] = normalize_url(request.url)
         except: pass
 
     async def _log_response(self, response: Response):
@@ -100,12 +98,8 @@ class PlaywrightClient:
                 except: pass
                 if body and len(body) > 2000: body = body[:2000] + "... [TRUNCATED]"
                 entry = {
-                    "type": "RESPONSE",
-                    "url": response.url,
-                    "status": status,
-                    "headers": dict(headers),
-                    "response": body,
-                    "timestamp": time.time()
+                    "type": "RESPONSE", "url": response.url, "status": status,
+                    "headers": dict(headers), "response": body, "timestamp": time.time()
                 }
                 self.network_log.append(entry)
                 if body:
@@ -117,111 +111,136 @@ class PlaywrightClient:
         except: pass
 
     def save_network_logs(self):
+        """V5.9 Unified Human-Readable Execution and Network Audit."""
         try:
             os.makedirs("artifacts", exist_ok=True)
-            log_path = "artifacts/network_log.txt"
+            log_path = "artifacts/execution_log.txt"
             with open(log_path, "w", encoding="utf-8") as f:
-                f.write(f"--- OMNI V5.8 NETWORK AUDIT ({time.ctime()}) ---\n\n")
+                f.write("=== OMNI V5.9 EXECUTION AND INTELLIGENCE AUDIT ===\n\n")
+                f.write("--- EXECUTION STEPS ---\n")
+                for step in self.execution_log: f.write(f"{step}\n")
+                f.write("\n" + "="*80 + "\n\n")
+                f.write("--- NETWORK CAPTURE ---\n")
                 for entry in self.network_log:
                     f.write(f"[{entry['type']}] {entry.get('method', '')} {entry['url']}\n")
-                    f.write(f"Headers: {json.dumps(entry['headers'], indent=2)}\n")
                     if entry.get("payload"): f.write(f"Payload: {entry['payload']}\n")
                     if entry.get("response"): f.write(f"Response: {entry['response']}\n")
-                    f.write("-" * 80 + "\n")
+                    f.write("-" * 40 + "\n")
+            self._log_execution(f"DEBUG: V5.9 Audit saved to {log_path}")
         except: pass
 
     async def login(self):
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        print("DEBUG: Executing UI Login Flow...")
+
+        self._log_execution(f"DEBUG: Bypassing pop-ups via direct login -> {self.INDEPENDENT_LOGIN_URL}")
         try:
-            await self.page.goto(self.login_url, wait_until="networkidle")
-            await self.page.wait_for_selector("body")
-            # Trigger modal
-            try: await self.page.locator("text=Login").first.click(timeout=5000)
-            except: await self.page.locator("button:has-text('Login')").click(timeout=5000)
-            # Fill credentials
-            await self.page.locator("input[type='text'], input[type='tel'], input[placeholder*='Mobile']").first.fill(user)
+            await self.page.goto(self.INDEPENDENT_LOGIN_URL, wait_until="networkidle")
+            await self.page.wait_for_selector("input[type='password']", timeout=15000)
+
+            user_field = self.page.locator("input[type='text'], input[type='tel'], input[placeholder*='Mobile']").first
+            await user_field.fill(user)
             await self.page.fill("input[type='password']", pw)
             await self.page.locator("button:has-text('Login')").last.click()
-            await asyncio.sleep(random.uniform(5.0, 7.0))
+            await asyncio.sleep(7)
+
+            # V5.9 Handle Post-Login Overlays
+            await self._handle_overlays()
+            self._log_execution("DEBUG: Login Successful.")
         except Exception as e:
-            print(f"DEBUG: Login UI Error: {e}")
+            self._log_execution(f"CRITICAL: Login UI Error: {e}")
+
+    async def _handle_overlays(self):
+        """V5.9 Close 'Download App' or 'Welcome' modals."""
+        selectors = ["button.close-icon", ".modal-close", "[aria-label='Close']", ".close-btn"]
+        for sel in selectors:
+            try:
+                btn = self.page.locator(sel).first
+                if await btn.is_visible():
+                    await btn.click(timeout=2000)
+                    self._log_execution(f"DEBUG: Closed overlay via {sel}")
+            except: pass
+
+    async def _switch_to_game_frame(self) -> bool:
+        """V5.9 Fix Game Access: The Iframe Issue."""
+        try:
+            self._log_execution("DEBUG: Searching for game iframe (sportygames)...")
+            # Wait for frame element
+            frame_element = await self.page.wait_for_selector('iframe[src*="sportygames"]', timeout=20000)
+            if frame_element:
+                self.game_frame = await frame_element.content_frame()
+                self._log_execution("DEBUG: Switched to Game Frame.")
+                return True
+        except Exception as e:
+            self._log_execution(f"DEBUG: Failed to find game frame: {e}")
+        return False
 
     async def navigate_to_game_lobby(self):
-        """V5.8 Pivot to /lobby architecture."""
         try:
             lobby_url = "https://www.football.com/ng/games/lobby"
-            print(f"DEBUG: Navigating to Game Lobby -> {lobby_url}")
+            self._log_execution(f"DEBUG: Navigating to Game Lobby -> {lobby_url}")
             await self.page.goto(lobby_url, wait_until="networkidle")
-            await asyncio.sleep(random.uniform(2.0, 4.0))
+            await self._handle_overlays()
         except: pass
 
     async def select_spin_game(self):
-        """Specifically target 'Spin da Bottle' in the UI."""
         try:
-            # Look for Spin da Bottle card
             candidates = await self.page.locator("div[class*='game'], a:has-text('Spin')").all()
             for cand in candidates:
                 text = await cand.inner_text()
                 if "spin" in text.lower():
                     await cand.scroll_into_view_if_needed()
                     await cand.click()
-                    print("DEBUG: Spin da Bottle game selected.")
-                    await asyncio.sleep(random.uniform(5.0, 8.0))
-                    return True
+                    self._log_execution("DEBUG: Spin da Bottle game selected.")
+                    await asyncio.sleep(10)
+                    return await self._switch_to_game_frame()
         except: pass
         return False
 
-    async def enable_one_tap_bet(self):
-        """Activate 'One-Tap Bet' in game menu for seamless automation."""
-        try:
-            frame = self.page.frame_locator("iframe").first
-            # Open menu (Ham)
-            menu_trigger = frame.locator(".menu-trigger, .icon-menu, .ham-menu").first
-            if await menu_trigger.is_visible():
-                await menu_trigger.click()
-                await asyncio.sleep(1)
-                # Find One-Tap Bet toggle
-                toggle = frame.locator("text='One-Tap Bet', .one-tap-bet").first
-                if await toggle.is_visible():
-                    await toggle.click()
-                    print("DEBUG: One-Tap Bet ENABLED via UI.")
-                    # Close menu
-                    await menu_trigger.click()
-        except: pass
-
     async def get_ui_history_bubbles(self) -> List[str]:
-        """Scrapes history bar bubbles (UP/DOWN/MIDDLE)."""
+        """V5.9 History capture via .history_ball selector."""
         outcomes = []
         try:
-            frame = self.page.frame_locator("iframe").first
-            # Target color-coded or text-coded bubbles in history bar
-            bubbles = await frame.locator(".history-item, .bubble, .result-item").all()
+            if not self.game_frame: return []
+            # Target .history_ball within frame
+            bubbles = await self.game_frame.locator(".history_ball").all()
             for b in bubbles:
-                text = (await b.inner_text()).strip().upper()
-                if "UP" in text or "U" in text: outcomes.append("U")
-                elif "DOWN" in text or "D" in text: outcomes.append("D")
-                elif "MID" in text or "M" in text: outcomes.append("M")
-            return outcomes[::-1] # Newest last
+                # Class or color detection
+                cls = await b.get_attribute("class") or ""
+                if "blue" in cls.lower(): outcomes.append("U")
+                elif "red" in cls.lower(): outcomes.append("D")
+                # Fallback to text
+                else:
+                    text = (await b.inner_text()).strip().upper()
+                    if "UP" in text or "U" in text: outcomes.append("U")
+                    elif "DOWN" in text or "D" in text: outcomes.append("D")
+            return outcomes[::-1]
         except: pass
         return outcomes
 
-    async def click_bet_button(self, direction: str):
-        """Interacts directly with game action buttons."""
+    async def click_bet_button(self, direction: str, amount: float):
+        """V5.9 Robust Text Locators for Betting."""
         try:
-            frame = self.page.frame_locator("iframe").first
-            selector = f"button:has-text('{direction}'), .{direction.lower()}-btn"
-            target = frame.locator(selector).first
+            if not self.game_frame: return False
+
+            # 1. Fill Stake
+            stake_input = self.game_frame.locator('input[type="number"]').first
+            if await stake_input.is_visible():
+                await stake_input.fill(str(amount))
+
+            # 2. Click Directional Button (Text based)
+            selector = "UP" if direction == "U" else "DOWN"
+            target = self.game_frame.locator("button", has_text=selector).first
+
             if await target.is_visible():
-                print(f"DEBUG: Placing UI Bet -> {direction}")
+                self._log_execution(f"DEBUG: Executing UI Bet -> {selector} (₦{amount})")
                 await target.hover()
-                await asyncio.sleep(random.uniform(0.5, 1.2))
                 await target.click()
-                await asyncio.sleep(random.uniform(2.0, 5.0)) # Anti-detection jitter
+                await asyncio.sleep(random.uniform(2.0, 5.0))
                 return True
-        except: pass
+        except Exception as e:
+            self._log_execution(f"DEBUG: Bet execution failed: {e}")
         return False
 
     async def close(self):

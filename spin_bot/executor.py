@@ -11,11 +11,16 @@ class DecisionExecutor:
     def compute_ev(self, win_prob: float, stake: float) -> float:
         """
         EV = (P_win * Net_Profit) - (P_loss * Stake)
-        V3.0 House Edge Adjustment
+        V3.0 Refined Math: 1.95x - 2.0x payout.
+        Accounting for 'M' (Middle) as house edge.
         """
+        # Assume Middle occurs with probability P_m (e.g., 2% house edge)
         p_m = 0.02
+        # Probability of win is win_prob reduced by house edge occurrence
         adjusted_win_prob = win_prob * (1 - p_m)
         p_loss = 1.0 - adjusted_win_prob
+
+        # Payout 1.95x stake (Net Profit 0.95x)
         net_profit = stake * 0.95
 
         ev = (adjusted_win_prob * net_profit) - (p_loss * stake)
@@ -26,7 +31,6 @@ class DecisionExecutor:
         # 1. Prediction
         probs = self.brain.predict(outcomes)
 
-        # Determine best direction
         direction = "U" if probs["U"] > probs["D"] else "D"
         win_prob = probs[direction]
 

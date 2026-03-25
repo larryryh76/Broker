@@ -3,6 +3,7 @@ import time
 import json
 import asyncio
 import random
+import hashlib
 from typing import List, Dict, Optional, Any
 from spin_bot.memory import MemoryGraph
 from spin_bot.models import EnsembleBrain
@@ -36,59 +37,72 @@ class OmniMachineV30Accuracy:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
+        # 6. API Client (Bridge)
+        self.api_client = OmniAPIClient()
+
     async def run_accuracy_cycle(self):
-        """V3.0 Alpha: 98% Accuracy Protocol Loop."""
-        print(f"--- OMNI MACHINE CYCLE V3.0 (ACCURACY PROTOCOL) ---")
-        # User Prompt: Go to: 'https://www.football.com'
+        """V3.0 Refactored Accuracy Protocol Loop."""
+        print(f"--- OMNI MACHINE CYCLE V3.0 (MASTER REFACTOR) ---")
         client = PlaywrightClient("https://www.football.com")
 
         try:
-            await client.setup()
+            # 1. Persistence: Load Browser Cookies
+            existing_cookies = self.memory.load_cookies()
+            await client.setup(cookies=existing_cookies)
 
-            # 1. STRICT LOGIN SEQUENCE
-            await client.login()
+            # 2. Authentication: Check Session or Login
+            # Try to go to lobby directly
+            await client.page.goto("https://www.football.com/ng/games/lobby", wait_until="networkidle")
 
-            # 2. PATTERN DETECTION (The Brain)
-            # User Prompt: Switch to Iframe: 'frame = page.frame_locator("iframe[src*='sportygames']")'
-            if not await client.navigate_to_game():
+            # If redirected to login or login button is visible, perform full login
+            is_logged_in = not await client.page.locator("text=Login").first.is_visible()
+            if not is_logged_in:
+                await client.login()
+                # Save new cookies
+                new_cookies = await client.get_session_cookies()
+                self.memory.save_cookies(new_cookies)
+
+            # 3. Bridge: Inject Cookies into API Client
+            active_cookies = await client.get_session_cookies()
+            # Bridge to Requests Session
+            self.api_client.session.cookies.update({c['name']: c['value'] for c in active_cookies})
+
+            # 4. Pattern Discovery: Iframe Context
+            if not await client.enter_game_environment():
                 print("CRITICAL: Failed to reach Game Environment.")
                 return
 
-            # Scrape last 20 results
-            # User Prompt: Use 'frame.locator(".history_ball").all_inner_texts()'
+            # Scrape and Deduplicate
             scraped = await client.capture_history_texts()
-            for s in scraped:
-                # Save to Mongo
-                self.memory.log_spin(s, unique_key=f"round-{int(time.time())}-{random.randint(1000,9999)}")
+            latest_captured = self.memory.get_latest_spins(5)
 
-            # 3. 98% ACCURACY PROTOCOL CHECK
+            for i, outcome in enumerate(scraped):
+                # V3.0 Data Integrity: Hash last 5 outcomes
+                # To prevent re-logging history from previous runs
+                # We log each outcome using its preceding context
+                context = scraped[:i]
+                self.memory.log_spin(outcome, history_context=context)
+
+            # 5. Accuracy Protocol
             all_spins = self.memory.get_latest_spins(500)
             spin_count = len(all_spins)
-
-            # Calculate Brain State
             probs = self.brain.predict(all_spins)
-            direction = "U" if probs["U"] > probs["D"] else "D"
-            win_prob = probs[direction]
-            confidence = abs(win_prob - 0.5) * 2.0
+            confidence = abs(probs["U"] - 0.5) * 2.0
 
-            # User Prompt: The bot is FORBIDDEN from betting until MongoDB contains > 200 spins.
             if spin_count < 200:
                 self.session_state["mode"] = "LEARNING_MODE"
-                print(f"98% PROTOCOL: LEARNING_MODE active. ({spin_count}/200 spins captured)")
+                print(f"98% PROTOCOL: LEARNING_MODE active. ({spin_count}/200 spins)")
             else:
                 self.session_state["mode"] = "ELITE_EXECUTION"
-                print(f"98% PROTOCOL: ELITE_EXECUTION active. (N={spin_count})")
+                print(f"98% PROTOCOL: ELITE_EXECUTION unlocked. (N={spin_count})")
 
-            # User Prompt: PRINT "STATE UPDATED: [X] spins recorded. Confidence: [Y]%"
-            status_msg = f"STATE UPDATED: {spin_count} spins recorded. Confidence: {confidence*100:.1f}%"
-            print(status_msg)
+            print(f"STATE UPDATED: {spin_count} spins recorded. Confidence: {confidence*100:.1f}%")
 
-            # 4. EXECUTION
+            # 6. EXECUTION
             if self.session_state["mode"] == "ELITE_EXECUTION":
                 decision = self.executor.decide(all_spins)
-                # Elite accuracy requirements (98% Edge)
-                if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.8:
-                    print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']} (98% Edge)")
+                if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.7:
+                    print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']}")
                     success = await client.place_ui_bet(decision["direction"], decision["amount"])
                     if success:
                         await asyncio.sleep(15)
@@ -96,23 +110,21 @@ class OmniMachineV30Accuracy:
                         if new_res:
                             actual = new_res[-1]
                             win = (actual == decision["direction"])
+                            if actual == "M": win = False
                             print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
                             self.brain.update_weights(all_spins, actual)
                             payout = decision["amount"] * 1.95 if win else 0
                             self.risk.bankroll += (payout - decision["amount"])
                             self.risk.update_result(win)
                 else:
-                    print(f"SKIP: No 98% Edge detected. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
-            else:
-                print("OBSERVATION ONLY: Capturing patterns for ensemble calibration...")
+                    print(f"SKIP: No valid edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
-            # Artifacts (User Prompt: Output 'artifacts/cycle_logs.txt')
+            # Artifacts
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V3.0 Accuracy Cycle: {e}")
+            print(f"CRITICAL ERROR in V3.0 accuracy cycle: {e}")
         finally:
-            # 5. Permanent Persistence
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)

@@ -7,11 +7,10 @@ class MarkovModel:
         self.outcomes = outcomes
 
     def predict(self) -> Dict[str, float]:
-        """Calculates probabilities based on the last outcome's history."""
         if not self.outcomes: return {"U": 0.5, "D": 0.5}
         last_move = self.outcomes[-1]
 
-        # V3.1 Fixed KeyError: Support U, D, and M (Middle)
+        # Fixed: Support U, D, and M (Middle)
         transitions = {"U": 0, "D": 0, "M": 0}
         for i in range(len(self.outcomes) - 1):
             if self.outcomes[i] == last_move:
@@ -19,9 +18,11 @@ class MarkovModel:
                 if next_val in transitions:
                     transitions[next_val] += 1
 
+        # M is a total loss for U/D bets
         total = sum(transitions.values())
         if total == 0: return {"U": 0.5, "D": 0.5}
-        # We only bet on U/D, so we normalize those
+
+        # Normalization for betting directions
         ud_total = transitions["U"] + transitions["D"]
         if ud_total == 0: return {"U": 0.5, "D": 0.5}
 
@@ -32,7 +33,6 @@ class StreakModel:
         self.outcomes = outcomes
 
     def predict(self) -> Dict[str, float]:
-        """Streak continuation logic."""
         if not self.outcomes: return {"U": 0.5, "D": 0.5}
         current_streak = self.outcomes[-1]
         if current_streak == "M": return {"U": 0.5, "D": 0.5}
@@ -53,9 +53,9 @@ class MeanReversionModel:
         self.outcomes = outcomes
 
     def predict(self) -> Dict[str, float]:
-        """Bet against long streaks."""
         if len(self.outcomes) < 5: return {"U": 0.5, "D": 0.5}
         last_5 = self.outcomes[-5:]
+        # Treat M as a streak breaker
         if all(x == "U" for x in last_5): return {"U": 0.2, "D": 0.8}
         if all(x == "D" for x in last_5): return {"U": 0.8, "D": 0.2}
         return {"U": 0.5, "D": 0.5}
@@ -65,9 +65,7 @@ class BayesianBaseline:
         self.outcomes = outcomes
 
     def predict(self) -> Dict[str, float]:
-        """Global frequency model."""
         if not self.outcomes: return {"U": 0.5, "D": 0.5}
-        # Only count U/D for betting baseline
         u_count = self.outcomes.count("U")
         d_count = self.outcomes.count("D")
         total = u_count + d_count
@@ -82,6 +80,8 @@ class EnsembleBrain:
             "reversion": 1.0,
             "bayesian": 1.0
         }
+        # V3.0 Calibration: Reduce learning rate to 0.01
+        self.lr = 0.01
 
     def _softmax(self, weights: Dict[str, float]) -> Dict[str, float]:
         exp_weights = {k: math.exp(v) for k, v in weights.items()}
@@ -105,9 +105,9 @@ class EnsembleBrain:
         return final_prob
 
     def update_weights(self, outcomes: List[str], actual_outcome: str):
+        # M is a total loss for prediction models
         if not outcomes or actual_outcome == "M": return
 
-        lr = 0.1
         models_prev = {
             "markov": MarkovModel(outcomes).predict(),
             "streak": StreakModel(outcomes).predict(),
@@ -118,5 +118,5 @@ class EnsembleBrain:
         for name in self.weights:
             prob_correct = models_prev[name][actual_outcome]
             reward = (prob_correct - 0.5) * 2.0
-            self.weights[name] += lr * reward
+            self.weights[name] += self.lr * reward
             self.weights[name] = max(min(self.weights[name], 10), -10)

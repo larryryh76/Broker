@@ -1,31 +1,27 @@
-# OMNI-RECURSIVE MONEY MACHINE (V3.5) - PRODUCTION GRADE
+# OMNI-RECURSIVE MONEY MACHINE (V3.1 Alpha)
 
-The **Omni-Recursive Money Machine V3.5** is a production-grade, stateful, probabilistic, and self-adaptive betting system specifically engineered for the **Spin da Bottle** game on Football.com Nigeria.
+The **Omni-Recursive Money Machine V3.1 Alpha** is a stateful, probabilistic, and self-adaptive betting system specifically engineered for the **Spin da Bottle** game on Football.com Nigeria.
 
-## 🧠 PRODUCTION UPGRADES (V3.5)
+## 🧠 CORE FEATURES
 
-### 1. Hardened Anti-Detection (Playwright)
-- **Native Anti-Detection:** Uses native Playwright hardening (navigator.webdriver spoofing) to bypass modern bot detection without fragile library dependencies.
-- **Fingerprint Randomization:** Randomized User-Agents, realistic viewport settings, and `--disable-blink-features=AutomationControlled` browser flags.
-- **Human Emulation:** Implemented timing jitter (0.8s-2.5s), non-instant clicks, and random hover/click offsets.
+### 1. 98% Accuracy Protocol (Cold Start)
+- **Learning Mode:** The system is programmatically forbidden from betting until it captures 200 real-world game outcomes in MongoDB.
+- **Elite Execution:** Live betting only unlocks once model confidence > 0.8 and mathematical Expected Value (EV) > 0.05.
 
-### 2. True Probabilistic Ensemble Brain
-- **Softmax Weighting:** Replaced heuristic weights with a Softmax Ensemble (Markov, Streak, Mean Reversion, Bayesian Baseline).
-- **Adaptive Learning:** Models are rewarded for correct predictions and penalized for errors, with weights updated dynamically via a back-propagation inspired loop.
+### 2. Mobile-Native Automation
+- **Emulation:** Configured for iPhone 13 device profile to ensure consistent and unambiguous UI presentation.
+- **Robust Selectors:** Uses strict text-based and hierarchical selectors (e.g., `section >> input[type='password']`) to handle complex mobile layouts and duplicated fields.
+- **Iframe Handling:** Directly targets the `sportygames` iframe for all game interactions (history capture, betting).
 
-### 3. Strict Expected Value (EV) Engine
-- **Edge Calculation:** EV = (prob_win * payout) - (prob_loss * stake).
-- **Enforcement:** The system NEVER places a bet unless EV > 0, probability > 0.55, and dynamic confidence thresholds are met.
-- **Detailed Logging:** Full decision-making process is logged, showing win probability, confidence, and expected value.
+### 3. Ensemble Brain Architecture
+- **Softmax Ensemble:** Combines 4 probabilistic models: Markov Chain, Streak Analysis, Mean Reversion, and Bayesian Baseline.
+- **Adaptive Weighting:** Models are dynamically rewarded for correct predictions and penalized for errors.
+- **House-Edge Aware:** All EV calculations include a penalty for the 'Middle' (house win) outcome.
 
-### 4. Advanced Risk Management (Kelly-Inspired)
-- **Dynamic Staking:** stake = bankroll * edge * confidence_factor.
-- **Drawdown Protection:** If the system detects a drawdown > 15% from its peak equity, stake size is automatically reduced by 50% to preserve capital.
-- **Circuit Breaker:** Session automatically halts after 4 consecutive losses or 15% drawdown to allow model recalibration.
-
-### 5. Failsafe Architecture
-- **Persistent State:** All data (spins, sequences, models, sessions) is persisted in MongoDB Atlas to handle stateless CI/CD runners.
-- **Graceful Error Handling:** Comprehensive `try/except` wrapping around critical browser and database operations ensures the bot saves its state even upon crash.
+### 4. Risk & Vault Management
+- **Vault Floor:** Enforces a strict ₦500 balance floor. Automation enters observation-only mode if capital hits this threshold.
+- **Kelly-Inspired Staking:** Dynamic position sizing based on edge and model confidence.
+- **Drawdown Control:** Stake reduction at 15% drawdown to preserve capital.
 
 ---
 
@@ -34,27 +30,15 @@ The **Omni-Recursive Money Machine V3.5** is a production-grade, stateful, proba
 ### GitHub Secrets
 Configure the following secrets in your repository:
 - `MONGODB_URI`: MongoDB connection string.
-- `SPIN_URL`: Target game URL (Football.com NG).
-- `FOOTBALL_NG_LOGIN`: Your account login.
+- `FOOTBALL_NG_LOGIN`: Your account phone/mobile.
 - `FOOTBALL_NG_PASS`: Your account password.
-- `SELECTOR_HISTORY`: CSS selector for spin history results.
-- `SELECTOR_AMOUNT`: CSS selector for the bet amount input.
-- `SELECTOR_UP`: CSS selector for the 'Up' button.
-- `SELECTOR_DOWN`: CSS selector for the 'Down' button.
-- `SELECTOR_LOGIN`: CSS selector for the login username field.
-- `SELECTOR_PASS`: CSS selector for the login password field.
-- `SELECTOR_SUBMIT`: CSS selector for the login submit button.
 
-### Selector Discovery & Debugging
-Since web interfaces are dynamic, the bot includes a built-in discovery engine. If the bot fails to interact with the game:
-1. Check the `artifacts` directory in your GitHub Action run.
-2. Review the screenshots (`initial_load.png`, `post_login.png`, `scraping_error.png`, `bet_error.png`).
-3. Identify the correct CSS selectors from the screenshots or browser DevTools.
-4. Update the corresponding GitHub Secrets to restore functionality without code changes.
-
-### Execution
-The system is automated via GitHub Actions to run every 15 minutes. It takes screenshots on any interaction failure and uploads them as artifacts for debugging.
+### Artifacts & Auditing
+The system prioritizes human-readable transparency:
+- `artifacts/cycle_logs.txt`: Chronological audit of every execution step and model decision.
+- `artifacts/status.txt`: Immediate status of the latest login attempt.
+- `artifacts/error.png`: Visual evidence captured automatically on interaction failure.
 
 ---
 
-🎯 **OPERATING PRINCIPLE:** The system is a probabilistic decision engine. It does not guess. It calculates edge and acts ONLY when edge exists.
+🎯 **OPERATING PRINCIPLE:** "Responses are useless without knowing how they were requested." The system combines deep network intelligence with robust UI automation to calculate mathematical edge.

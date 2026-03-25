@@ -14,15 +14,13 @@ from spin_bot.api_client import normalize_url
 
 class PlaywrightClient:
     def __init__(self, login_url: str):
-        self.login_url = "https://www.football.com" # RESET V3.0
+        self.login_url = login_url or "https://www.football.com"
         self.playwright = None
         self.browser = None
         self.context = None
         self.page = None
         self.game_frame = None
         self.execution_log = []
-
-        # V5.7 Network Discovery Buffer
         self.network_log = []
 
     def _log_execution(self, message: str):
@@ -56,7 +54,10 @@ class PlaywrightClient:
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
-        if stealth: await stealth(self.page)
+        if stealth:
+            try:
+                await stealth(self.page)
+            except: pass
         await self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
     async def _log_request(self, request: Request):
@@ -80,20 +81,19 @@ class PlaywrightClient:
                 self.network_log.append(entry)
         except: pass
 
-    def save_cycle_logs(self):
-        """V3.0 Alpha Plain Text Logging."""
+    def save_cycle_logs(self, confidence: float, spins: int):
+        """V3.0 Alpha Optimized Logging."""
         try:
             os.makedirs("artifacts", exist_ok=True)
             log_path = "artifacts/cycle_logs.txt"
             with open(log_path, "w", encoding="utf-8") as f:
-                f.write("=== OMNI-RECURSIVE MONEY MACHINE V3.0 ALPHA LOG ===\n\n")
-                f.write("--- EXECUTION ---\n")
+                f.write(f"=== OMNI MACHINE V3.0 AUDIT ===\n")
+                f.write(f"Confidence Level: {confidence*100:.1f}%\n")
+                f.write(f"Spins in DB: {spins}\n")
+                f.write("-" * 30 + "\n\n")
+                f.write("--- EXECUTION STEPS ---\n")
                 for step in self.execution_log: f.write(f"{step}\n")
-                f.write("\n--- NETWORK INTELLIGENCE ---\n")
-                for entry in self.network_log:
-                    f.write(f"[{entry['type']}] {entry['url']}\n")
-                    if entry.get("response"): f.write(f"Data: {entry['response'][:500]}\n")
-            self._log_execution(f"DEBUG: V3.0 Logs persisted to {log_path}")
+            self._log_execution(f"DEBUG: V3.0 Audit saved. [Conf: {confidence*100:.1f}% | N: {spins}]")
         except: pass
 
     async def login(self):
@@ -101,36 +101,42 @@ class PlaywrightClient:
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
 
-        self._log_execution(f"DEBUG: V3.0 Login Reset -> {self.login_url}")
+        # 1. BYPASS HOMEPAGE SEQUENCE
+        self._log_execution(f"DEBUG: Bypassing Homepage -> {self.login_url}")
         try:
             await self.page.goto(self.login_url, wait_until="networkidle")
 
             # Close overlays
             await self._handle_overlays()
 
-            try: await self.page.locator("text=Login").first.click(timeout=5000)
-            except: await self.page.locator("button:has-text('Login')").click(timeout=5000)
+            try:
+                await self.page.locator("text=Login").first.click(timeout=5000)
+            except:
+                try:
+                    await self.page.locator("button:has-text('Login')").click(timeout=5000)
+                except: pass
 
-            # V3.0 Ambigious Locator Fix
-            await self.page.locator("input[type='text'], input[type='tel']").first.fill(user)
-            await self.page.locator("section >> input[type='password']").first.fill(pw)
+            # 2. HANDLE MULTIPLE INPUTS (Strict Selector Logic)
+            await self.page.locator("input[type='tel'], input[placeholder*='Mobile']").first.fill(user)
+            await self.page.locator("input[type='password']").first.fill(pw)
 
-            await self.page.locator("button:has-text('Login')").last.click()
+            # SUBMIT
+            await self.page.locator("button[type='submit'], .m-login-button").first.click()
             await asyncio.sleep(7)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V3.0 Login UI Error: {e}")
+            self._log_execution(f"CRITICAL: Login UI Error: {e}")
 
     async def _handle_overlays(self):
         selectors = ["button.close-icon", ".modal-close", "[aria-label='Close']", ".close-btn"]
         for sel in selectors:
             try:
                 btn = self.page.locator(sel).first
-                if await btn.is_visible(): await btn.click(timeout=2000)
+                if await btn.is_visible():
+                    await btn.click(timeout=2000)
             except: pass
 
     async def enter_game_environment(self) -> bool:
-        """V3.0 Direct Navigation to Spin da Bottle."""
         try:
             lobby_url = "https://www.football.com/ng/games/lobby"
             await self.page.goto(lobby_url, wait_until="networkidle")
@@ -141,7 +147,6 @@ class PlaywrightClient:
                 if "spin" in text.lower():
                     await cand.click()
                     await asyncio.sleep(10)
-                    # V3.0 Switch to Game Frame
                     self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
                     self._log_execution("DEBUG: Switched to Game Frame.")
                     return True
@@ -149,10 +154,9 @@ class PlaywrightClient:
         return False
 
     async def capture_history_texts(self) -> List[str]:
-        """V3.0 Result Capture from Iframe."""
+        """V3.0 Capture last results to feed the brain."""
         try:
             if not self.game_frame: return []
-            # Feed the Brain
             items = await self.game_frame.locator(".history_ball").all_inner_texts()
             outcomes = []
             for text in items:
@@ -169,7 +173,6 @@ class PlaywrightClient:
             if not self.game_frame: return False
             stake_input = self.game_frame.locator('input[type="number"]').first
             await stake_input.fill(str(amount))
-
             target = self.game_frame.locator("button", has_text="UP" if direction == "U" else "DOWN").first
             await target.click()
             await asyncio.sleep(random.uniform(2.0, 5.0))

@@ -13,7 +13,7 @@ from spin_bot.playwright_client import PlaywrightClient
 from spin_bot.api_client import OmniAPIClient, normalize_url
 from datetime import datetime, timezone
 
-class OmniMachineV30Accuracy:
+class OmniMachineV31Refined:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -37,53 +37,36 @@ class OmniMachineV30Accuracy:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-        # 6. API Client (Bridge)
-        self.api_client = OmniAPIClient()
-
     async def run_accuracy_cycle(self):
-        """V3.0 Refactored Accuracy Protocol Loop."""
-        print(f"--- OMNI MACHINE CYCLE V3.0 (MASTER REFACTOR) ---")
+        """V3.1 Refined: Emergency Repair Integration."""
+        print(f"--- OMNI MACHINE CYCLE V3.1 (EMERGENCY REPAIR) ---")
         client = PlaywrightClient("https://www.football.com")
 
         try:
-            # 1. Persistence: Load Browser Cookies
+            # 1. Setup with Persistence
             existing_cookies = self.memory.load_cookies()
             await client.setup(cookies=existing_cookies)
 
-            # 2. Authentication: Check Session or Login
-            # Try to go to lobby directly
-            await client.page.goto("https://www.football.com/ng/games/lobby", wait_until="networkidle")
+            # 2. Authentication and Navigation
+            await client.login()
 
-            # If redirected to login or login button is visible, perform full login
-            is_logged_in = not await client.page.locator("text=Login").first.is_visible()
-            if not is_logged_in:
-                await client.login()
-                # Save new cookies
-                new_cookies = await client.get_session_cookies()
-                self.memory.save_cookies(new_cookies)
+            # Save cookies after potential login
+            new_cookies = await client.get_session_cookies()
+            self.memory.save_cookies(new_cookies)
 
-            # 3. Bridge: Inject Cookies into API Client
-            active_cookies = await client.get_session_cookies()
-            # Bridge to Requests Session
-            self.api_client.session.cookies.update({c['name']: c['value'] for c in active_cookies})
-
-            # 4. Pattern Discovery: Iframe Context
-            if not await client.enter_game_environment():
-                print("CRITICAL: Failed to reach Game Environment.")
+            # 3. Game Discovery (Repaired V5.9.1)
+            if not await client.navigate_to_game():
+                print("CRITICAL: Failed to reach Game Environment even after repair.")
                 return
 
-            # Scrape and Deduplicate
+            # Scrape last outcomes with deduplication
             scraped = await client.capture_history_texts()
-            latest_captured = self.memory.get_latest_spins(5)
-
             for i, outcome in enumerate(scraped):
-                # V3.0 Data Integrity: Hash last 5 outcomes
-                # To prevent re-logging history from previous runs
-                # We log each outcome using its preceding context
+                # Unique key: round history sequence + hourly timestamp
                 context = scraped[:i]
                 self.memory.log_spin(outcome, history_context=context)
 
-            # 5. Accuracy Protocol
+            # 4. Accuracy Protocol
             all_spins = self.memory.get_latest_spins(500)
             spin_count = len(all_spins)
             probs = self.brain.predict(all_spins)
@@ -96,9 +79,10 @@ class OmniMachineV30Accuracy:
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 print(f"98% PROTOCOL: ELITE_EXECUTION unlocked. (N={spin_count})")
 
+            # PRINT SYSTEM STATE
             print(f"STATE UPDATED: {spin_count} spins recorded. Confidence: {confidence*100:.1f}%")
 
-            # 6. EXECUTION
+            # 5. EXECUTION
             if self.session_state["mode"] == "ELITE_EXECUTION":
                 decision = self.executor.decide(all_spins)
                 if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.7:
@@ -117,13 +101,12 @@ class OmniMachineV30Accuracy:
                             self.risk.bankroll += (payout - decision["amount"])
                             self.risk.update_result(win)
                 else:
-                    print(f"SKIP: No valid edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
+                    print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
-            # Artifacts
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V3.0 accuracy cycle: {e}")
+            print(f"CRITICAL ERROR in V3.1 Cycle: {e}")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)
@@ -133,5 +116,5 @@ class OmniMachineV30Accuracy:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV30Accuracy()
+    machine = OmniMachineV31Refined()
     asyncio.run(machine.run_accuracy_cycle())

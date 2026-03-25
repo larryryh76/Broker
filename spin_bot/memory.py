@@ -15,15 +15,20 @@ class MemoryGraph:
         self.sessions = self.db["sessions"]
         self.selectors = self.db["selectors"]
         self.tokens = self.db["session_tokens"]
+        self.cookies = self.db["cookies"] # V3.0 Cookie Persistence
 
-    def log_spin(self, outcome: str, unique_key: Optional[str] = None):
+    def log_spin(self, outcome: str, history_context: List[str] = None):
         """
         outcome: 'U' (Up), 'D' (Down), or 'M' (Middle).
-        V5.8 Refined Deduplication: Uses unique_key to prevent historical duplicates.
+        V3.0 Deduplication Logic: Generates a unique_id by hashing the last 5 spin outcomes.
+        Only logs if this specific state + outcome combo is new.
         """
-        # If no key, fall back to timestamp-based hash (limited protection)
-        key = unique_key or f"{outcome}-{datetime.now(timezone.utc).strftime('%Y-%m-%d-%H-%M')}"
-        unique_id = hashlib.md5(key.encode()).hexdigest()
+        if not history_context:
+            history_context = []
+
+        # Use last 4 from context + current outcome = 5-gram state
+        state_str = "".join(history_context[-4:]) + outcome
+        unique_id = hashlib.sha256(state_str.encode()).hexdigest()
 
         try:
             self.spins.update_one(
@@ -31,13 +36,14 @@ class MemoryGraph:
                 {"$setOnInsert": {
                     "outcome": outcome,
                     "timestamp": datetime.now(timezone.utc),
-                    "unique_id": unique_id
+                    "unique_id": unique_id,
+                    "state": state_str
                 }},
                 upsert=True
             )
         except: pass
 
-    def get_latest_spins(self, limit=100) -> List[str]:
+    def get_latest_spins(self, limit=200) -> List[str]:
         cursor = self.spins.find().sort("timestamp", -1).limit(limit)
         return [doc["outcome"] for doc in list(cursor)][::-1]
 
@@ -59,12 +65,17 @@ class MemoryGraph:
         doc = self.models.find_one({"id": "ensemble"})
         return doc["weights"] if doc else None
 
-    def save_session_tokens(self, tokens: Dict[str, Any]):
-        tokens["last_updated"] = datetime.now(timezone.utc)
-        self.tokens.update_one({"id": "active_session"}, {"$set": tokens}, upsert=True)
+    # V3.0 Browser Persistence
+    def save_cookies(self, cookie_data: List[Dict]):
+        self.cookies.update_one(
+            {"id": "active_session"},
+            {"$set": {"data": cookie_data, "last_updated": datetime.now(timezone.utc)}},
+            upsert=True
+        )
 
-    def load_session_tokens(self) -> Optional[Dict[str, Any]]:
-        return self.tokens.find_one({"id": "active_session"})
+    def load_cookies(self) -> Optional[List[Dict]]:
+        doc = self.cookies.find_one({"id": "active_session"})
+        return doc["data"] if doc else None
 
     def close(self):
         self.client.close()

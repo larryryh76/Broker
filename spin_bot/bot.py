@@ -2,6 +2,7 @@ import os
 import time
 import json
 import asyncio
+import random
 from typing import List, Dict, Optional, Any
 from spin_bot.memory import MemoryGraph
 from spin_bot.models import EnsembleBrain
@@ -11,7 +12,7 @@ from spin_bot.playwright_client import PlaywrightClient
 from spin_bot.api_client import OmniAPIClient, normalize_url
 from datetime import datetime, timezone
 
-class OmniMachineV57:
+class OmniMachineV58:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -38,123 +39,86 @@ class OmniMachineV57:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-        # 6. API Client (V5.7 Payload Capture)
-        self.api_client = OmniAPIClient()
+    async def run_ui_cycle(self):
+        """V5.8 Primary Execution Loop: UI-Driven."""
+        print(f"--- STARTING OMNI MACHINE CYCLE V5.8 (UI-DRIVEN) ---")
+        client = PlaywrightClient(os.getenv("LOGIN_URL", "https://www.football.com/ng/m/search"))
 
-    async def _async_discovery_cycle(self):
-        """V5.7 Async Discovery Cycle with Direct Log Access."""
-        print("DEBUG: Initiating Async Discovery Cycle (V5.7)...")
-        client = PlaywrightClient(os.getenv("SPIN_URL", "https://football.com/ng/games/spin"))
         try:
+            # 1. Setup and Navigate
             await client.setup()
-            await client.navigate_to_spin_game()
-            client.save_network_logs()
+            await client.login()
+            await client.navigate_to_game_lobby()
 
-            # V5.7 Access log directly from client to avoid file read race
-            logs = client.network_log
-
-            # Find a valid authenticated request
-            auth_data = {}
-            for entry in reversed(logs):
-                if entry["type"] == "REQUEST":
-                    headers = entry.get("headers", {})
-                    if "authorization" in headers or "cookie" in headers:
-                        normalized_endpoints = {
-                            k: normalize_url(v) if v else None
-                            for k, v in client.endpoints.items()
-                        }
-                        auth_data = {
-                            "headers": headers,
-                            "cookies": entry.get("cookies", []),
-                            "endpoints": normalized_endpoints
-                        }
-                        break
-            return auth_data
-        except Exception as e:
-            print(f"CRITICAL: Async Discovery Cycle FAILED: {e}")
-            return None
-        finally:
-            await client.close()
-
-    def _refresh_session(self):
-        """V5.7 Fallback to Async Discovery."""
-        print("DEBUG: Refreshing Session via V5.7 Async Discovery...")
-        auth_data = asyncio.run(self._async_discovery_cycle())
-
-        if auth_data:
-            self.memory.save_session_tokens(auth_data)
-            self.api_client.apply_session(auth_data)
-            print("DEBUG: Session successfully refreshed and persisted via V5.7 Engine.")
-        else:
-            print("CRITICAL: Failed to discover auth data during async cycle.")
-
-    def run_cycle(self):
-        print(f"--- STARTING OMNI MACHINE CYCLE V5.7 (PAYLOAD CAPTURE) ---")
-
-        try:
-            # 1. Load Session Tokens
-            tokens = self.memory.load_session_tokens()
-            if not tokens:
-                self._refresh_session()
-                tokens = self.memory.load_session_tokens()
-
-            if tokens:
-                self.api_client.apply_session(tokens)
-            else:
-                print("CRITICAL: No valid session tokens available. Aborting.")
+            if not await client.select_spin_game():
+                print("CRITICAL: Failed to enter Spin da Bottle game.")
                 return
 
-            # 2. API-Based Observation
-            outcomes = self.api_client.get_spin_history()
+            # 2. Configure Game Environment
+            await client.enable_one_tap_bet()
 
-            # Fallback
-            if not outcomes:
-                print("DEBUG: API fetch failed. Refreshing...")
-                self._refresh_session()
-                outcomes = self.api_client.get_spin_history()
+            # 3. Execution Loop (Calibration / Sniper)
+            max_rounds = 5 # Execution safety for GitHub Actions timeout
+            for round_num in range(max_rounds):
+                print(f"DEBUG: Round {round_num + 1}/{max_rounds}")
 
-            # 3. Prediction & Execution Phase
-            if outcomes:
-                print(f"Observed Intelligence (API): {''.join(outcomes[:10])}...")
+                # 3a. UI Observation
+                outcomes = await client.get_ui_history_bubbles()
+                if not outcomes:
+                    print("DEBUG: History bubbles not yet visible. Waiting...")
+                    await asyncio.sleep(5)
+                    continue
+
+                print(f"Observed UI Intelligence: {''.join(outcomes[-10:])}")
                 for o in outcomes: self.memory.log_spin(o)
 
+                # 3b. Decision
                 full_history = self.memory.get_latest_spins(100)
                 decision = self.executor.decide(full_history)
 
                 if decision["action"] == "BET":
-                    print(f"Executing Bet via API: ₦{decision['amount']} on {decision['direction']}")
-                    result = self.api_client.place_bet(decision["direction"], decision["amount"])
+                    # 3c. UI Interaction
+                    success = await client.click_bet_button(decision["direction"])
+                    if success:
+                        # Wait for round resolution
+                        print(f"Bet placed. Waiting for result...")
+                        await asyncio.sleep(15)
 
-                    if "error" not in result:
-                        print(f"API Bet Success: {result}")
-                        time.sleep(15)
-                        new_outcomes = self.api_client.get_spin_history()
+                        # Verify result
+                        new_outcomes = await client.get_ui_history_bubbles()
                         if new_outcomes:
-                            actual = new_outcomes[0]
+                            actual = new_outcomes[-1]
                             win = (actual == decision["direction"])
+
+                            # Handle 'M' (Middle) Loss correctly
+                            if actual == "M":
+                                win = False
+                                print("HOUSE EDGE: Bottle stopped in MIDDLE. Automatic LOSS.")
+
                             print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
 
+                            # Update system
                             self.brain.update_weights(full_history, actual)
                             payout = decision["amount"] * 1.95 if win else 0
                             self.risk.bankroll += (payout - decision["amount"])
                             self.risk.update_result(win)
-                    else:
-                        print(f"API Bet FAILED: {result}")
                 else:
                     print(f"SKIP: {decision['reason']}")
-            else:
-                print("CRITICAL: API Observation FAILED even after refresh.")
+                    await asyncio.sleep(10) # Observation interval
+
+            client.save_network_logs() # Background discovery capture
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.7 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.8 UI Cycle: {e}")
         finally:
-            # 4. Permanent Persistence Phase
+            # 4. Permanent Persistence
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)
+            await client.close()
             self.memory.close()
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV57()
-    machine.run_cycle()
+    machine = OmniMachineV58()
+    asyncio.run(machine.run_ui_cycle())

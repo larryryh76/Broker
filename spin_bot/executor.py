@@ -9,36 +9,42 @@ class DecisionExecutor:
         self.risk = risk_engine
 
     def compute_ev(self, win_prob: float, stake: float) -> float:
-        """EV = (P_win * payout) - (P_loss * stake)"""
-        p_loss = 1.0 - win_prob
-        # Football.com payout assumed 1.95x stake (profit 0.95x)
-        payout = stake * 1.95
-        ev = (win_prob * payout) - (p_loss * stake)
+        """
+        EV = (P_win * Net_Profit) - (P_loss * Stake)
+        V5.8 Handle Middle Loss house edge
+        """
+        # Assume Middle occurs with probability P_m (e.g., 2% house edge)
+        p_m = 0.02
+        adjusted_win_prob = win_prob * (1 - p_m)
+        p_loss = 1.0 - adjusted_win_prob
+
+        # Payout 1.95x stake means Net Profit is 0.95x stake
+        net_profit = stake * 0.95
+
+        ev = (adjusted_win_prob * net_profit) - (p_loss * stake)
         return ev
 
     def decide(self, outcomes: List[str]) -> Optional[Dict]:
         """Main decision engine: Observe -> EV -> Confidence -> Decision."""
-        # 1. Prediction (Ensemble Brain)
+        # 1. Prediction
         probs = self.brain.predict(outcomes)
 
         # Determine best direction
         direction = "U" if probs["U"] > probs["D"] else "D"
         win_prob = probs[direction]
 
-        # 2. Confidence Calculation (Normalized)
-        # 0.5 is no info, 1.0 is full info
+        # 2. Confidence Calculation
         confidence = abs(win_prob - 0.5) * 2.0
 
-        # 3. Dynamic Staking (Kelly-inspired)
+        # 3. Dynamic Staking
         stake = self.risk.calculate_stake(win_prob, confidence)
 
-        # 4. Expected Value (EV) Engine
+        # 4. Expected Value (EV) Engine (Corrected V5.8)
         ev = self.compute_ev(win_prob, stake) if stake > 0 else 0
 
         print(f"DECISION: Analysing {direction} | Prob: {win_prob:.2f} | Conf: {confidence:.2f} | EV: {ev:.2f}")
 
-        # 5. EXECUTION RULE: EV > 0 AND Prob > 0.55 AND confidence > dynamic threshold
-        # Threshold: 0.15 for tuition, 0.25 for sniper
+        # 5. EXECUTION RULE
         dynamic_threshold = 0.15 if self.risk.state["mode"] == "TUITION" else 0.25
 
         if ev > 0 and win_prob >= 0.55 and confidence >= dynamic_threshold:
@@ -52,7 +58,6 @@ class DecisionExecutor:
                 "ev": ev
             }
 
-        # Observation/Skip mode
         reason = "EV <= 0" if ev <= 0 else "Low confidence/probability"
         print(f"SKIP: {reason}")
         return {

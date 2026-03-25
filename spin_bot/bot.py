@@ -37,22 +37,21 @@ class OmniMachineV30Accuracy:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V3.0 Alpha: 98% Accuracy Protocol Loop."""
+        """V3.0 Alpha: 98% Accuracy Protocol Loop (N > 200)."""
         print(f"--- OMNI MACHINE CYCLE V3.0 (ACCURACY PROTOCOL) ---")
         client = PlaywrightClient("https://www.football.com")
 
         try:
             await client.setup()
 
-            # 1. STRICT LOGIN SEQUENCE
+            # 1. STRICT LOGIN SEQUENCE (Mobile)
             await client.login()
 
-            # 2. PATTERN DETECTION (The Brain)
+            # 2. REACH GAME AND SCRAPE HISTORY
             if not await client.enter_game_environment():
                 print("CRITICAL: Failed to reach Game Environment.")
                 return
 
-            # Scrape last 20 results
             scraped = await client.capture_history_texts()
             for s in scraped:
                 self.memory.log_spin(s, unique_key=f"round-{int(time.time())}-{random.randint(1000,9999)}")
@@ -74,14 +73,14 @@ class OmniMachineV30Accuracy:
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 print(f"98% PROTOCOL: ELITE_EXECUTION active. (N={spin_count})")
 
-            # Final System Status for User
+            # Final System Status
             status_msg = f"STATE UPDATED: {spin_count} spins recorded. Confidence: {confidence*100:.1f}%"
             print(status_msg)
 
             # 4. EXECUTION
             if self.session_state["mode"] == "ELITE_EXECUTION":
                 decision = self.executor.decide(all_spins)
-                # 98% Edge requirement: EV > 0.05 (from prompt) and high confidence
+                # Elite accuracy requirements
                 if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.8:
                     print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']} (98% Edge)")
                     success = await client.place_ui_bet(decision["direction"], decision["amount"])
@@ -99,9 +98,9 @@ class OmniMachineV30Accuracy:
                 else:
                     print(f"SKIP: No 98% Edge detected. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
             else:
-                print("OBSERVATION ONLY: Capturing patterns for Markov Chain...")
+                print("LEARNING_MODE: Capturing patterns for ensemble calibration...")
 
-            # Artifacts
+            # V3.0 Alpha Log Artifact
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:

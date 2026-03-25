@@ -12,7 +12,7 @@ from spin_bot.playwright_client import PlaywrightClient
 from spin_bot.api_client import OmniAPIClient, normalize_url
 from datetime import datetime, timezone
 
-class OmniMachineV59:
+class OmniMachineV30Alpha:
     def __init__(self):
         # 1. Initialize MongoDB Persistence
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
@@ -20,13 +20,10 @@ class OmniMachineV59:
         # 2. Reconstruct System State
         self.session_state = self.memory.load_session() or {
             "bankroll": 300.0,
-            "mode": "TUITION",
-            "tuition_spins": 0,
+            "mode": "COLD_START",
             "peak_equity": 300.0,
-            "consecutive_losses": 0,
             "vault_locked": False,
-            "history": [],
-            "selectors": {}
+            "history": []
         }
 
         # 3. Model Weight Loading
@@ -39,73 +36,79 @@ class OmniMachineV59:
         # 5. Prediction Engine
         self.executor = DecisionExecutor(self.brain, self.risk)
 
-    async def run_ui_cycle(self):
-        """V5.9 Primary Execution Loop: Robust Iframe & Selector."""
-        print(f"--- STARTING OMNI MACHINE CYCLE V5.9 (ROBUST) ---")
-        client = PlaywrightClient(os.getenv("LOGIN_URL", "https://www.football.com/ng/m/search"))
+    async def run_alpha_cycle(self):
+        """V3.0 Alpha Execution Loop: Cold Start & Vault."""
+        print(f"--- OMNI MACHINE CYCLE V3.0 ALPHA ({self.session_state['mode']}) ---")
+        client = PlaywrightClient("https://www.football.com")
 
         try:
-            # 1. Setup and Navigate (Bypassing Pop-ups)
             await client.setup()
             await client.login()
-            await client.navigate_to_game_lobby()
 
-            if not await client.select_spin_game():
-                print("CRITICAL: Failed to enter Spin da Bottle game environment.")
+            if not await client.enter_game_environment():
+                print("CRITICAL: Failed to enter Game Environment.")
                 return
 
-            # 2. Execution Loop
-            max_rounds = 5
-            for round_num in range(max_rounds):
-                print(f"DEBUG: Round {round_num + 1}/{max_rounds}")
+            # PHASE 1: THE COLD START
+            # IF DB is empty or in COLD_START mode, scrape history to build the brain
+            history_needed = 100
+            current_history = self.memory.get_latest_spins(history_needed)
 
-                # 2a. UI Observation (Iframe context)
-                outcomes = await client.get_ui_history_bubbles()
-                if not outcomes:
-                    print("DEBUG: History not yet visible in frame. Waiting...")
-                    await asyncio.sleep(5)
-                    continue
+            if len(current_history) < history_needed:
+                print(f"COLD START: Scraping initial {history_needed} results...")
+                scraped = await client.capture_history_texts()
+                for s in scraped: self.memory.log_spin(s)
+                current_history = self.memory.get_latest_spins(history_needed)
 
-                print(f"Observed UI Intelligence: {''.join(outcomes[-10:])}")
-                for o in outcomes: self.memory.log_spin(o)
+            # PHASE 3: ENSEMBLE BRAIN (Decision)
+            probs = self.brain.predict(current_history)
+            direction = "U" if probs["U"] > probs["D"] else "D"
+            win_prob = probs[direction]
+            confidence = abs(win_prob - 0.5) * 2.0
 
-                # 2b. Decision
-                full_history = self.memory.get_latest_spins(100)
-                decision = self.executor.decide(full_history)
+            print(f"STATE UPDATED: {len(current_history)} spins recorded. Confidence: {confidence*100:.1f}%")
 
-                if decision["action"] == "BET":
-                    # 2c. UI Interaction (Text-based locators)
-                    success = await client.click_bet_button(decision["direction"], decision["amount"])
+            # Check Vault floor
+            if self.risk.bankroll <= 500:
+                print("VAULT PROTECTED: ₦500 Floor Reached. Observation mode ONLY.")
+                # Force observation mode
+                self.session_state["mode"] = "OBSERVATION_ONLY"
+            elif confidence > 0.7:
+                self.session_state["mode"] = "LIVE_BETTING"
+            else:
+                self.session_state["mode"] = "COLD_START"
+
+            # Execution logic
+            if self.session_state["mode"] == "LIVE_BETTING":
+                decision = self.executor.decide(current_history)
+                if decision["action"] == "BET" and decision["ev"] > 0.05:
+                    print(f"EXECUTION: Bet ₦{decision['amount']} on {decision['direction']}")
+                    success = await client.place_ui_bet(decision["direction"], decision["amount"])
                     if success:
-                        print(f"Bet placed. Waiting for round resolution...")
                         await asyncio.sleep(15)
-
-                        # Verify result
-                        new_outcomes = await client.get_ui_history_bubbles()
-                        if new_outcomes:
-                            actual = new_outcomes[-1]
+                        new_results = await client.capture_history_texts()
+                        if new_results:
+                            actual = new_results[-1]
                             win = (actual == decision["direction"])
-                            if actual == "M": win = False
-
                             print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
-
-                            self.brain.update_weights(full_history, actual)
+                            self.brain.update_weights(current_history, actual)
                             payout = decision["amount"] * 1.95 if win else 0
                             self.risk.bankroll += (payout - decision["amount"])
                             self.risk.update_result(win)
                 else:
-                    print(f"SKIP: {decision['reason']}")
-                    await asyncio.sleep(10)
+                    print(f"SKIP: {decision.get('reason', 'Confidence/EV Threshold not met')}")
+            else:
+                print(f"MODE: {self.session_state['mode']}. Recording outcomes for Mental State...")
+                scraped = await client.capture_history_texts()
+                if scraped:
+                    last_outcome = scraped[-1]
+                    self.memory.log_spin(last_outcome)
 
-            # Final Intelligence Dump
-            final_history = await client.get_ui_history_bubbles()
-            print(f"--- FINAL CYCLE HISTORY: {''.join(final_history[-20:])} ---")
-            client.save_network_logs() # Human-readable audit
+            client.save_cycle_logs()
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.9 UI Cycle: {e}")
+            print(f"CRITICAL ERROR in V3.0 Cycle: {e}")
         finally:
-            # 3. Permanent Persistence
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)
@@ -114,5 +117,5 @@ class OmniMachineV59:
             print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
-    machine = OmniMachineV59()
-    asyncio.run(machine.run_ui_cycle())
+    machine = OmniMachineV30Alpha()
+    asyncio.run(machine.run_alpha_cycle())

@@ -45,10 +45,9 @@ class PlaywrightClient:
 
         self.context = await self.browser.new_context(
             **iphone_13,
-            is_mobile=True,
-            has_touch=True,
             locale="en-NG",
-            timezone_id="Africa/Lagos"
+            timezone_id="Africa/Lagos",
+            ignore_https_errors=True
         )
 
         # V5.9.4 Anti-Redirect Header

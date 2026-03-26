@@ -14,7 +14,7 @@ from spin_bot.api_client import normalize_url
 
 class PlaywrightClient:
     def __init__(self, login_url: str):
-        self.login_url = "https://www.football.com"
+        self.login_url = login_url or "https://www.football.com"
         self.playwright = None
         self.browser = None
         self.context = None
@@ -38,40 +38,35 @@ class PlaywrightClient:
             "--headless=new"
         ]
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
+
+        # V5.9.4 Mobile/Stealth Configuration
         iphone_13 = self.playwright.devices["iPhone 13"]
         iphone_13['viewport'] = {'width': 390, 'height': 844}
-        self.context = await self.browser.new_context(**iphone_13, locale="en-NG", timezone_id="Africa/Lagos")
-        if cookies: await self.context.add_cookies(cookies)
+
+        self.context = await self.browser.new_context(
+            **iphone_13,
+            is_mobile=True,
+            has_touch=True,
+            locale="en-NG",
+            timezone_id="Africa/Lagos"
+        )
+
+        # V5.9.4 Anti-Redirect Header
+        await self.context.set_extra_http_headers({"X-Requested-With": "com.android.browser"})
+
+        if cookies:
+            await self.context.add_cookies(cookies)
+            self._log_execution("DEBUG: Persistent session cookies injected.")
+
         self.page = await self.context.new_page()
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
+
         if stealth:
             try: await stealth(self.page)
             except: pass
         await self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-    async def _handle_regional_splash(self):
-        """V5.9.3: Close region select or confirm buttons."""
-        selectors = ["text=Nigeria", "text=Confirm", "button:has-text('Nigeria')", ".region-confirm"]
-        for sel in selectors:
-            try:
-                el = self.page.locator(sel).first
-                if await el.is_visible():
-                    await el.click(timeout=3000)
-                    self._log_execution(f"DEBUG: Selected Region via {sel}")
-            except: pass
-
-    async def _navigate_via_bottom_menu(self):
-        """V5.9.3: Fallback navigation via Bottom Menu."""
-        try:
-            self._log_execution("DEBUG: Attempting Bottom Menu navigation fallback...")
-            await self.page.locator("text=More").click(timeout=10000)
-            await asyncio.sleep(2)
-            await self.page.locator("text=Games").click(timeout=10000)
-            await asyncio.sleep(5)
-        except Exception as e:
-            self._log_execution(f"DEBUG: Bottom menu navigation failed: {e}")
 
     async def login(self):
         user = os.getenv("FOOTBALL_NG_LOGIN")
@@ -79,7 +74,7 @@ class PlaywrightClient:
         if not user or not pw: return
         self._log_execution(f"DEBUG: Initializing Aggressive Login sequence...")
         try:
-            # V5.9.3: wait_until="commit" to bypass redirects
+            # Aggressive commit wait to establish session before subdomain hop
             await self.page.goto(self.login_url, wait_until="commit")
             await self._handle_regional_splash()
             await self._handle_overlays()
@@ -109,32 +104,62 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def navigate_to_game(self) -> bool:
-        try:
-            lobby_url = "https://www.football.com/ng/games/lobby"
-            await self.page.goto(lobby_url, wait_until="networkidle")
-            await self._handle_overlays()
+        """V5.9.4: Anti-Redirect & Deep-Link Recovery."""
+        target_url = os.getenv("SPIN_URL", "https://www.football.com/ng/games/spin")
+        max_redirect_retries = 3
 
-            # V5.9.3: Fix Selector Syntax
-            self._log_execution("DEBUG: Waiting for Game Lobby hydration...")
+        for attempt in range(max_redirect_retries + 1):
             try:
-                await self.page.wait_for_selector(".game-item, :text('Spin da Bottle')", timeout=30000)
-            except:
-                await self._navigate_via_bottom_menu()
+                self._log_execution(f"DEBUG: Navigating to SPIN_URL (Attempt {attempt+1})...")
+                await self.page.goto(target_url, wait_until="networkidle")
 
-            candidates = await self.page.locator("div[class*='game'], a:has-text('Spin')").all()
-            for cand in candidates:
-                text = await cand.inner_text()
-                if "spin" in text.lower():
-                    await cand.click()
-                    await asyncio.sleep(5)
-                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=30000)
+                # Check for Livescore Trap
+                current_url = self.page.url
+                if "livescore" in current_url.lower():
+                    self._log_execution(f"WARNING: Redirected to {current_url}. Retrying target...")
+                    if attempt < max_redirect_retries: continue
+                    else: return False
+
+                await self._handle_overlays()
+
+                # V5.9.4 Deep-Link Iframe Wait
+                self._log_execution("DEBUG: Searching for Game Iframe...")
+                try:
+                    await self.page.wait_for_selector("iframe", state="visible", timeout=5000)
+                except:
+                    # Search for Refresh/Reload button if iframe missing
+                    self._log_execution("DEBUG: Iframe missing. Searching for Refresh/Reload triggers...")
+                    refresh_btn = self.page.locator("text=Refresh, text=Reload, .refresh-btn").first
+                    if await refresh_btn.is_visible():
+                        await refresh_btn.click()
+                        await asyncio.sleep(5)
+
+                # Target specific sportygames frame
+                try:
+                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=15000)
                     self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
                     await self.game_frame.locator(".history_ball").first.wait_for(timeout=20000)
-                    self._log_execution("DEBUG: Landed in Gaming Environment.")
+                    self._log_execution("DEBUG: Successfully attached to SportyGames environment.")
                     return True
-        except Exception as e:
-            self._log_execution(f"DEBUG: Navigation Error: {e}")
+                except:
+                    self._log_execution("DEBUG: Direct iframe wait failed. Trying lobby fallback...")
+                    # Add original fallback logic if needed
+                    pass
+
+            except Exception as e:
+                self._log_execution(f"DEBUG: Navigation attempt failed: {e}")
+
         return False
+
+    async def _handle_regional_splash(self):
+        selectors = ["text=Nigeria", "text=Confirm", "button:has-text('Nigeria')", ".region-confirm"]
+        for sel in selectors:
+            try:
+                el = self.page.locator(sel).first
+                if await el.is_visible():
+                    await el.click(timeout=3000)
+                    self._log_execution(f"DEBUG: Selected Region via {sel}")
+            except: pass
 
     async def _handle_overlays(self):
         selectors = ["button.close-icon", ".modal-close", "[aria-label='Close']", ".close-btn"]

@@ -29,8 +29,6 @@ class PlaywrightClient:
 
     async def setup(self, cookies: List[Dict] = None):
         self.playwright = await async_playwright().start()
-
-        # V3.0 MOBILE/HEADLESS STEALTH
         launch_args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
@@ -39,41 +37,116 @@ class PlaywrightClient:
             "--disable-features=IsolateOrigins,site-per-process",
             "--headless=new"
         ]
-
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
-
-        # iPhone 13 STRICT Viewport
         iphone_13 = self.playwright.devices["iPhone 13"]
         iphone_13['viewport'] = {'width': 390, 'height': 844}
-
-        self.context = await self.browser.new_context(
-            **iphone_13,
-            locale="en-NG",
-            timezone_id="Africa/Lagos"
-        )
-
-        if cookies:
-            await self.context.add_cookies(cookies)
-            self._log_execution("DEBUG: Persistent session cookies injected.")
-
+        self.context = await self.browser.new_context(**iphone_13, locale="en-NG", timezone_id="Africa/Lagos")
+        if cookies: await self.context.add_cookies(cookies)
         self.page = await self.context.new_page()
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
-
         if stealth:
-            try:
-                await stealth(self.page)
+            try: await stealth(self.page)
             except: pass
         await self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-    async def _escape_livescore_trap(self):
-        """V5.9.2: Force redirect if stuck on livescore subdomain."""
-        url = self.page.url
-        content = await self.page.content()
-        if "livescore" in url or "LIVESCORE" in content or await self.page.locator("text=Discover").first.is_visible():
-            self._log_execution(f"DEBUG: Detected Livescore Trap at {url}. Forcing redirect...")
-            await self.page.goto(self.login_url, wait_until="networkidle")
+    async def _handle_regional_splash(self):
+        """V5.9.3: Close region select or confirm buttons."""
+        selectors = ["text=Nigeria", "text=Confirm", "button:has-text('Nigeria')", ".region-confirm"]
+        for sel in selectors:
+            try:
+                el = self.page.locator(sel).first
+                if await el.is_visible():
+                    await el.click(timeout=3000)
+                    self._log_execution(f"DEBUG: Selected Region via {sel}")
+            except: pass
+
+    async def _navigate_via_bottom_menu(self):
+        """V5.9.3: Fallback navigation via Bottom Menu."""
+        try:
+            self._log_execution("DEBUG: Attempting Bottom Menu navigation fallback...")
+            await self.page.locator("text=More").click(timeout=10000)
+            await asyncio.sleep(2)
+            await self.page.locator("text=Games").click(timeout=10000)
+            await asyncio.sleep(5)
+        except Exception as e:
+            self._log_execution(f"DEBUG: Bottom menu navigation failed: {e}")
+
+    async def login(self):
+        user = os.getenv("FOOTBALL_NG_LOGIN")
+        pw = os.getenv("FOOTBALL_NG_PASS")
+        if not user or not pw: return
+        self._log_execution(f"DEBUG: Initializing Aggressive Login sequence...")
+        try:
+            # V5.9.3: wait_until="commit" to bypass redirects
+            await self.page.goto(self.login_url, wait_until="commit")
+            await self._handle_regional_splash()
+            await self._handle_overlays()
+
+            login_triggers = ["a[href*='login']", ".m-login-btn", "text=Login", "text=More"]
+            for trigger in login_triggers:
+                try:
+                    el = self.page.locator(trigger).first
+                    if await el.is_visible():
+                        await el.click(timeout=5000)
+                        await asyncio.sleep(2)
+                        break
+                except: pass
+
+            try:
+                btn = self.page.locator("text=Login / Register").first
+                if await btn.is_visible(): await btn.click()
+            except: pass
+
+            await self.page.locator("input[placeholder*='Mobile']").first.fill(user)
+            await self.page.locator("input[type='password']").first.fill(pw)
+            await self.page.locator("button[type='submit'], .m-login-button").first.click()
+            await asyncio.sleep(7)
+            await self._handle_overlays()
+        except Exception as e:
+            self._log_execution(f"CRITICAL: Login UI Error: {e}")
+            await self.page.screenshot(path="artifacts/error.png")
+
+    async def navigate_to_game(self) -> bool:
+        try:
+            lobby_url = "https://www.football.com/ng/games/lobby"
+            await self.page.goto(lobby_url, wait_until="networkidle")
+            await self._handle_overlays()
+
+            # V5.9.3: Fix Selector Syntax
+            self._log_execution("DEBUG: Waiting for Game Lobby hydration...")
+            try:
+                await self.page.wait_for_selector(".game-item, :text('Spin da Bottle')", timeout=30000)
+            except:
+                await self._navigate_via_bottom_menu()
+
+            candidates = await self.page.locator("div[class*='game'], a:has-text('Spin')").all()
+            for cand in candidates:
+                text = await cand.inner_text()
+                if "spin" in text.lower():
+                    await cand.click()
+                    await asyncio.sleep(5)
+                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=30000)
+                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+                    await self.game_frame.locator(".history_ball").first.wait_for(timeout=20000)
+                    self._log_execution("DEBUG: Landed in Gaming Environment.")
+                    return True
+        except Exception as e:
+            self._log_execution(f"DEBUG: Navigation Error: {e}")
+        return False
+
+    async def _handle_overlays(self):
+        selectors = ["button.close-icon", ".modal-close", "[aria-label='Close']", ".close-btn"]
+        for sel in selectors:
+            try:
+                while True:
+                    btn = self.page.locator(sel).first
+                    if await btn.is_visible():
+                        await btn.click(timeout=2000, force=True)
+                        await asyncio.sleep(1)
+                    else: break
+            except: pass
 
     async def _log_request(self, request: Request):
         try:
@@ -107,89 +180,6 @@ class PlaywrightClient:
                 f.write("--- EXECUTION STEPS ---\n")
                 for step in self.execution_log: f.write(f"{step}\n")
         except: pass
-
-    async def login(self):
-        user = os.getenv("FOOTBALL_NG_LOGIN")
-        pw = os.getenv("FOOTBALL_NG_PASS")
-        if not user or not pw: return
-
-        self._log_execution(f"DEBUG: Initializing Login sequence -> {self.login_url}")
-        try:
-            await self.page.goto(self.login_url, wait_until="networkidle")
-            await self._escape_livescore_trap()
-            await self._handle_overlays()
-
-            # V5.9.2 Refined Login Selectors
-            login_triggers = ["a[href*='login']", ".m-login-btn", "text=Login", "text=More"]
-            for trigger in login_triggers:
-                try:
-                    el = self.page.locator(trigger).first
-                    if await el.is_visible():
-                        await el.click(timeout=5000)
-                        await asyncio.sleep(2)
-                        break
-                except: pass
-
-            # Handle secondary 'Login / Register' if under 'More'
-            try:
-                btn = self.page.locator("text=Login / Register").first
-                if await btn.is_visible(): await btn.click()
-            except: pass
-
-            # V3.0 Ambiguous Locator Fix
-            await self.page.locator("input[placeholder*='Mobile']").first.fill(user)
-            await self.page.locator("input[type='password']").first.fill(pw)
-
-            # SUBMIT
-            await self.page.locator("button[type='submit'], .m-login-button").first.click()
-            await asyncio.sleep(7)
-            await self._handle_overlays()
-
-        except Exception as e:
-            self._log_execution(f"CRITICAL: Login UI Error: {e}")
-            await self.page.screenshot(path="artifacts/error.png")
-
-    async def _handle_overlays(self):
-        selectors = ["button.close-icon", ".modal-close", "[aria-label='Close']", ".close-btn"]
-        for sel in selectors:
-            try:
-                while True:
-                    btn = self.page.locator(sel).first
-                    if await btn.is_visible():
-                        await btn.click(timeout=2000, force=True)
-                        await asyncio.sleep(1)
-                    else:
-                        break
-            except: pass
-
-    async def navigate_to_game(self) -> bool:
-        """V5.9.2: Wait for Game Lobby visibility."""
-        try:
-            lobby_url = "https://www.football.com/ng/games/lobby"
-            await self.page.goto(lobby_url, wait_until="networkidle")
-            await self._handle_overlays()
-
-            # V5.9.2 Wait for lobby indicator
-            self._log_execution("DEBUG: Waiting for Game Lobby hydration...")
-            await self.page.wait_for_selector(".game-item, text='Spin da Bottle'", timeout=30000)
-
-            candidates = await self.page.locator("div[class*='game'], a:has-text('Spin')").all()
-            for cand in candidates:
-                text = await cand.inner_text()
-                if "spin" in text.lower():
-                    await cand.click()
-                    await asyncio.sleep(5)
-
-                    self._log_execution("DEBUG: Waiting for SportyGames iframe...")
-                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=30000)
-
-                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-                    await self.game_frame.locator(".history_ball").first.wait_for(timeout=20000)
-                    self._log_execution("DEBUG: Landed in Gaming Environment.")
-                    return True
-        except Exception as e:
-            self._log_execution(f"DEBUG: Navigation Error: {e}")
-        return False
 
     async def capture_history_texts(self) -> List[str]:
         try:

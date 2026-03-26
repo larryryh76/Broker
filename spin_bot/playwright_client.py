@@ -76,6 +76,9 @@ class PlaywrightClient:
             # Aggressive commit wait to establish session before subdomain hop
             await self.page.goto(self.login_url, wait_until="commit")
             await self._handle_regional_splash()
+
+            # V5.9.5: Force navigation after splash as requested
+            await self.page.goto("https://www.football.com", wait_until="networkidle")
             await self._handle_overlays()
 
             login_triggers = ["a[href*='login']", ".m-login-btn", "text=Login", "text=More"]
@@ -151,22 +154,43 @@ class PlaywrightClient:
         return False
 
     async def _handle_regional_splash(self):
-        selectors = ["text=Nigeria", "text=Confirm", "button:has-text('Nigeria')", ".region-confirm"]
+        """V5.9.5: Aggressive Location/Country Selector Bypass."""
+        selectors = [
+            "div:has-text('Nigeria')",
+            ".m-country-item:has-text('Nigeria')",
+            "text=Nigeria",
+            "text=Confirm",
+            "button:has-text('Nigeria')",
+            ".region-confirm"
+        ]
         for sel in selectors:
             try:
-                el = self.page.locator(sel).first
+                el = self.page.locator(sel).last
                 if await el.is_visible():
-                    await el.click(timeout=3000)
+                    self._log_execution(f"DEBUG: Regional Splash detected ({sel}). Clicking...")
+                    await el.click(timeout=5000, force=True)
+                    await asyncio.sleep(2) # Wait for modal to vanish
                     self._log_execution(f"DEBUG: Selected Region via {sel}")
+                    break
             except: pass
 
     async def _handle_overlays(self):
-        selectors = ["button.close-icon", ".modal-close", "[aria-label='Close']", ".close-btn"]
+        """V5.9.5: Kill Ad Banners and Modals Blocking Login."""
+        selectors = [
+            "button.close-icon",
+            ".modal-close",
+            "[aria-label='Close']",
+            ".close-btn",
+            ".m-app-banner .m-close-btn",
+            ".m-close",
+            "i.m-icon-close"
+        ]
         for sel in selectors:
             try:
                 while True:
                     btn = self.page.locator(sel).first
                     if await btn.is_visible():
+                        self._log_execution(f"DEBUG: Overlay/Banner detected ({sel}). Closing...")
                         await btn.click(timeout=2000, force=True)
                         await asyncio.sleep(1)
                     else: break

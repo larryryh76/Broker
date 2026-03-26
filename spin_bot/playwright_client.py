@@ -98,8 +98,37 @@ class PlaywrightClient:
 
             await self.page.locator("input[placeholder*='Mobile']").first.fill(user)
             await self.page.locator("input[type='password']").first.fill(pw)
-            await self.page.locator("button[type='submit'], .m-login-button").first.click()
-            await asyncio.sleep(7)
+
+            # V5.9.6: Robust Lime-Green Login Button Logic
+            login_btn = self.page.locator("text='Login'").filter(has_text="Login").first
+            try:
+                if await login_btn.is_visible():
+                    self._log_execution("DEBUG: Green Login button detected. Clicking...")
+                    await login_btn.click(force=True)
+                else:
+                    # Fallback selectors
+                    fallback_selectors = [".m-btn-login", "div:has-text('Login')", "button[type='submit']", ".m-login-button"]
+                    for sel in fallback_selectors:
+                        el = self.page.locator(sel).first
+                        if await el.is_visible():
+                            self._log_execution(f"DEBUG: Fallback Login button detected ({sel}). Clicking...")
+                            await el.click(force=True)
+                            break
+            except: pass
+
+            # Post-Login Verification
+            try:
+                await self.page.wait_for_url("**/ng/", timeout=15000)
+                self._log_execution("DEBUG: Post-login redirect detected. Session active.")
+            except:
+                # Check for Logout/Profile as proof of session
+                logout = self.page.locator("text=Logout, .m-profile-icon, .m-user-info").first
+                if await logout.is_visible():
+                    self._log_execution("DEBUG: Logout/Profile icon detected. Session active.")
+                else:
+                    self._log_execution("WARNING: Post-login verification failed.")
+
+            await asyncio.sleep(5)
             await self._handle_overlays()
         except Exception as e:
             self._log_execution(f"CRITICAL: Login UI Error: {e}")
@@ -144,9 +173,25 @@ class PlaywrightClient:
                     self._log_execution("DEBUG: Successfully attached to SportyGames environment.")
                     return True
                 except:
-                    self._log_execution("DEBUG: Direct iframe wait failed. Trying lobby fallback...")
-                    # Add original fallback logic if needed
-                    pass
+                    # V5.9.6 Lobby Fallback Strategy
+                    self._log_execution("DEBUG: Direct iframe wait failed. Scanning lobby for 'Spin da Bottle' icon...")
+                    # Search for game card/icon
+                    game_icons = ["text='Spin da Bottle'", "img[alt*='Spin']", ".game-item:has-text('Spin')"]
+                    for icon_sel in game_icons:
+                        try:
+                            icon = self.page.locator(icon_sel).first
+                            if await icon.is_visible():
+                                self._log_execution(f"DEBUG: Game icon detected ({icon_sel}). Clicking...")
+                                await icon.click(force=True)
+                                await asyncio.sleep(5)
+                                # Final attempt to find iframe
+                                await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=15000)
+                                self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+                                await self.game_frame.locator(".history_ball").first.wait_for(timeout=15000)
+                                self._log_execution("DEBUG: Successfully attached via lobby icon.")
+                                return True
+                        except: pass
+                    self._log_execution("CRITICAL: Failed to locate game via lobby fallback.")
 
             except Exception as e:
                 self._log_execution(f"DEBUG: Navigation attempt failed: {e}")

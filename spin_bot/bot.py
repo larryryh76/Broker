@@ -39,7 +39,8 @@ class OmniMachineV31Refined:
 
     async def run_accuracy_cycle(self):
         """V3.1 Refined: Emergency Repair Integration."""
-        print(f"--- OMNI MACHINE CYCLE V3.1 (EMERGENCY REPAIR) ---")
+        print(f"--- OMNI MACHINE CYCLE V3.1 (NAVIGATION REPAIR) ---")
+        # Ensure we target the gaming platform directly
         client = PlaywrightClient("https://www.football.com")
 
         try:
@@ -47,22 +48,21 @@ class OmniMachineV31Refined:
             existing_cookies = self.memory.load_cookies()
             await client.setup(cookies=existing_cookies)
 
-            # 2. Authentication and Navigation
+            # 2. Authentication and Navigation (V5.9.2 Escape Logic)
             await client.login()
 
             # Save cookies after potential login
             new_cookies = await client.get_session_cookies()
             self.memory.save_cookies(new_cookies)
 
-            # 3. Game Discovery (Repaired V5.9.1)
+            # 3. Game Discovery (Repaired V5.9.2)
             if not await client.navigate_to_game():
-                print("CRITICAL: Failed to reach Game Environment even after repair.")
+                print("CRITICAL: Failed to reach Game Environment. Navigation Trap suspected.")
                 return
 
             # Scrape last outcomes with deduplication
             scraped = await client.capture_history_texts()
             for i, outcome in enumerate(scraped):
-                # Unique key: round history sequence + hourly timestamp
                 context = scraped[:i]
                 self.memory.log_spin(outcome, history_context=context)
 

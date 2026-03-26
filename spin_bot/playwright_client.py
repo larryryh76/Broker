@@ -42,14 +42,13 @@ class PlaywrightClient:
 
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
 
-        # High-Fidelity iPhone 13 Emulation
-        IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
+        # CRITICAL FIX: Merge custom settings into the device dict or just use the device dict
+        # Do NOT pass user_agent as a separate keyword argument if using **iphone_13
         iphone_13 = self.playwright.devices["iPhone 13"]
 
         self.context = await self.browser.new_context(
             **iphone_13,
-            user_agent=IPHONE_UA,
-            locale="en-US",
+            locale="en-NG",
             timezone_id="Africa/Lagos"
         )
 

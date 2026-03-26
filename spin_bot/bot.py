@@ -39,26 +39,25 @@ class OmniMachineV31Refined:
 
     async def run_accuracy_cycle(self):
         """V3.1 Refined: Emergency Repair Integration."""
-        print(f"--- OMNI MACHINE CYCLE V3.1 (NAVIGATION REPAIR) ---")
-        # Ensure we target the gaming platform directly
+        print(f"--- OMNI MACHINE CYCLE V3.1 (STEALTH RECOVERY) ---")
         client = PlaywrightClient("https://www.football.com")
 
         try:
-            # 1. Setup with Persistence
+            # 1. Setup with Persistence (CRITICAL: Load cookies BEFORE navigation)
             existing_cookies = self.memory.load_cookies()
             await client.setup(cookies=existing_cookies)
 
-            # 2. Authentication and Navigation (V5.9.2 Escape Logic)
-            await client.login()
+            # 2. Anti-Redirect Navigation
+            if not await client.navigate_to_game():
+                print("DEBUG: Direct navigation failed. Attempting login refresh...")
+                await client.login()
+                if not await client.navigate_to_game():
+                    print("CRITICAL: Failed to reach Game Environment even after login.")
+                    return
 
-            # Save cookies after potential login
+            # Save fresh session state
             new_cookies = await client.get_session_cookies()
             self.memory.save_cookies(new_cookies)
-
-            # 3. Game Discovery (Repaired V5.9.2)
-            if not await client.navigate_to_game():
-                print("CRITICAL: Failed to reach Game Environment. Navigation Trap suspected.")
-                return
 
             # Scrape last outcomes with deduplication
             scraped = await client.capture_history_texts()

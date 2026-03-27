@@ -51,8 +51,14 @@ class OmniMachineV31Refined:
             if not await client.navigate_to_game():
                 print("DEBUG: Direct navigation failed. Attempting login refresh...")
                 await client.login()
+
+                # Save fresh session state IMMEDIATELY after login
+                new_cookies = await client.get_session_cookies()
+                self.memory.save_cookies(new_cookies)
+
                 if not await client.navigate_to_game():
                     print("CRITICAL: Failed to reach Game Environment even after login.")
+                    await client.page.screenshot(path="artifacts/error.png")
                     return
 
             # Save fresh session state
@@ -106,6 +112,8 @@ class OmniMachineV31Refined:
 
         except Exception as e:
             print(f"CRITICAL ERROR in V3.1 Cycle: {e}")
+            try: await client.page.screenshot(path="artifacts/error.png")
+            except: pass
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
             self.memory.save_session(self.session_state)

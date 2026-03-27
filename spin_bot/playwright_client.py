@@ -116,19 +116,26 @@ class PlaywrightClient:
                             break
             except: pass
 
-            # Post-Login Verification
-            try:
-                await self.page.wait_for_url("**/ng/", timeout=15000)
-                self._log_execution("DEBUG: Post-login redirect detected. Session active.")
-            except:
-                # Check for Logout/Profile as proof of session
-                logout = self.page.locator("text=Logout, .m-profile-icon, .m-user-info").first
-                if await logout.is_visible():
-                    self._log_execution("DEBUG: Logout/Profile icon detected. Session active.")
-                else:
-                    self._log_execution("WARNING: Post-login verification failed.")
-
+            # Post-Login Verification (V5.9.7: URL-based check)
             await asyncio.sleep(5)
+            # Handle Post-Login Popups (Aggressive Click)
+            try:
+                popup_triggers = ["button:has-text('OK')", ".m-btn-confirm", ".close-icon", "text=Confirm"]
+                for pt in popup_triggers:
+                    el = self.page.locator(pt).first
+                    if await el.is_visible():
+                        await el.click(timeout=5000)
+                        self._log_execution(f"DEBUG: Post-login popup ({pt}) cleared.")
+            except: pass
+
+            current_url = self.page.url.lower()
+            if "login" not in current_url and (".com/ng" in current_url or ".com/index" in current_url):
+                self._log_execution(f"DEBUG: Session active. URL: {current_url}")
+            else:
+                self._log_execution(f"WARNING: Post-login verification failed. URL still: {current_url}")
+                await self.page.screenshot(path="artifacts/error.png")
+
+            await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
             self._log_execution(f"CRITICAL: Login UI Error: {e}")

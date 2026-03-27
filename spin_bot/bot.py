@@ -41,6 +41,7 @@ class OmniMachineV31Refined:
         """V3.1 Refined: Emergency Repair Integration."""
         print(f"--- OMNI MACHINE CYCLE V3.1 (STEALTH RECOVERY) ---")
         client = PlaywrightClient("https://www.football.com")
+        api = OmniAPIClient()
 
         try:
             # 1. Setup with Persistence (CRITICAL: Load cookies BEFORE navigation)
@@ -55,6 +56,7 @@ class OmniMachineV31Refined:
                 # Save fresh session state IMMEDIATELY after login
                 new_cookies = await client.get_session_cookies()
                 self.memory.save_cookies(new_cookies)
+                api.apply_session({"cookies": new_cookies})
 
                 if not await client.navigate_to_game():
                     print("CRITICAL: Failed to reach Game Environment even after login.")
@@ -64,6 +66,7 @@ class OmniMachineV31Refined:
             # Save fresh session state
             new_cookies = await client.get_session_cookies()
             self.memory.save_cookies(new_cookies)
+            api.apply_session({"cookies": new_cookies})
 
             # Scrape last outcomes with deduplication
             scraped = await client.capture_history_texts()

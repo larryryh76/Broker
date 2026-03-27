@@ -67,7 +67,7 @@ class PlaywrightClient:
             except: pass
         await self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-    async def login(self):
+    async def login(self, retry: bool = True):
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
@@ -128,12 +128,28 @@ class PlaywrightClient:
                         self._log_execution(f"DEBUG: Post-login popup ({pt}) cleared.")
             except: pass
 
-            current_url = self.page.url.lower()
-            if "login" not in current_url and (".com/ng" in current_url or ".com/index" in current_url):
-                self._log_execution(f"DEBUG: Session active. URL: {current_url}")
-            else:
-                self._log_execution(f"WARNING: Post-login verification failed. URL still: {current_url}")
+            # V5.9.8: Robust Auth Verification
+            try:
+                auth_selectors = [".m-user-info", ".m-icon-user", "a[href*='me']", "text=Logout"]
+                auth_verified = False
+                for sel in auth_selectors:
+                    try:
+                        await self.page.wait_for_selector(sel, state="visible", timeout=15000)
+                        self._log_execution(f"DEBUG: Login confirmed via {sel}")
+                        auth_verified = True
+                        break
+                    except: pass
+
+                if not auth_verified:
+                    raise Exception("Auth verification timed out after login attempt.")
+
+            except Exception as e:
+                self._log_execution(f"WARNING: Login Verification Failed: {e}")
                 await self.page.screenshot(path="artifacts/error.png")
+                if retry:
+                    self._log_execution("DEBUG: Attempting login retry...")
+                    await self.login(retry=False)
+                    return
 
             await asyncio.sleep(2)
             await self._handle_overlays()
@@ -180,25 +196,32 @@ class PlaywrightClient:
                     self._log_execution("DEBUG: Successfully attached to SportyGames environment.")
                     return True
                 except:
-                    # V5.9.6 Lobby Fallback Strategy
-                    self._log_execution("DEBUG: Direct iframe wait failed. Scanning lobby for 'Spin da Bottle' icon...")
-                    # Search for game card/icon
-                    game_icons = ["text='Spin da Bottle'", "img[alt*='Spin']", ".game-item:has-text('Spin')"]
+                    # V5.9.8: Explicit Lobby Icon Interaction
+                    self._log_execution("DEBUG: Scanning lobby for 'Spin Da Bottle' interaction icon...")
+                    game_icons = [
+                        "div.game-item:has-text('Spin Da Bottle')",
+                        ".m-game-item:has-text('Spin Da Bottle')",
+                        "text='Spin Da Bottle'",
+                        ".game-item:has-text('Spin')"
+                    ]
                     for icon_sel in game_icons:
                         try:
                             icon = self.page.locator(icon_sel).first
                             if await icon.is_visible():
-                                self._log_execution(f"DEBUG: Game icon detected ({icon_sel}). Clicking...")
+                                self._log_execution(f"DEBUG: Target Game icon detected ({icon_sel}). Clicking...")
                                 await icon.click(force=True)
                                 await asyncio.sleep(5)
-                                # Final attempt to find iframe
-                                await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=15000)
-                                self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-                                await self.game_frame.locator(".history_ball").first.wait_for(timeout=15000)
-                                self._log_execution("DEBUG: Successfully attached via lobby icon.")
-                                return True
+
+                                # Wait for transition to iframe (Max 30s as requested)
+                                try:
+                                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=30000)
+                                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+                                    await self.game_frame.locator(".history_ball").first.wait_for(timeout=20000)
+                                    self._log_execution("DEBUG: Successfully attached via Lobby Interaction.")
+                                    return True
+                                except: pass
                         except: pass
-                    self._log_execution("CRITICAL: Failed to locate game via lobby fallback.")
+                    self._log_execution("CRITICAL: Lobby interaction failed to trigger iframe.")
 
             except Exception as e:
                 self._log_execution(f"DEBUG: Navigation attempt failed: {e}")
@@ -227,13 +250,15 @@ class PlaywrightClient:
             except: pass
 
     async def _handle_overlays(self):
-        """V5.9.5: Kill Ad Banners and Modals Blocking Login."""
+        """V5.9.8: Kill Ad Banners, Modals and Top Overlays."""
         selectors = [
             "button.close-icon",
             ".modal-close",
             "[aria-label='Close']",
             ".close-btn",
             ".m-app-banner .m-close-btn",
+            "text=Join Now",
+            ".m-btn-join",
             ".m-close",
             "i.m-icon-close"
         ]

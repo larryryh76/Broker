@@ -63,16 +63,20 @@ class OmniMachineV31Refined:
                     await client.page.screenshot(path="artifacts/error.png")
                     return
 
-            # V5.10.1: 60s Betting Environment Verification
+            # V5.11.0: Betting Environment Entry & Verification
             try:
-                print("DEBUG: Verifying Betting Environment (60s timeout)...")
-                # Wait for UP or DOWN betting buttons inside the iframe
-                up_btn = client.game_frame.locator("button:has-text('UP'), button:has-text('DOWN')").first
-                await up_btn.wait_for(state="visible", timeout=60000)
-                print("DEBUG: Betting Environment verified.")
+                print("DEBUG: Entering and Verifying Betting Environment (60s timeout)...")
+                # V5.11.0: Explicit wait for 'UP' or 'DOWN' buttons as absolute proof of game load
+                # The PlaywrightClient already handles the transition/fallback
+                if not client.game_frame:
+                    raise Exception("Game Iframe not attached.")
+
+                betting_trigger = client.game_frame.locator("button:has-text('UP'), button:has-text('DOWN'), .m-bet-btn").first
+                await betting_trigger.wait_for(state="visible", timeout=60000)
+                print("DEBUG: Betting Environment reached and verified.")
             except Exception as e:
-                print(f"CRITICAL: Failed to reach Betting Interface within 60s: {e}")
-                await client.page.screenshot(path="artifacts/timeout_error.png")
+                print(f"CRITICAL: Game Environment inaccessible: {e}")
+                await client.page.screenshot(path="artifacts/game_fail.png")
                 import sys
                 sys.exit(1)
 

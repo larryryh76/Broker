@@ -22,6 +22,7 @@ class PlaywrightClient:
         self.game_frame = None
         self.execution_log = []
         self.network_log = []
+        self.discovered_endpoints = {"history": None, "bet": None}
 
     def _log_execution(self, message: str):
         print(message)
@@ -81,6 +82,16 @@ class PlaywrightClient:
             # V5.9.5: Force navigation after splash as requested
             await self.page.goto("https://www.football.com", wait_until="networkidle")
             await self._handle_overlays()
+
+            # V5.10.0: Registration Trap Bypass
+            try:
+                reg_header = self.page.locator("text='Join Football.com', .m-join-header").first
+                if await reg_header.is_visible():
+                    self._log_execution("DEBUG: Registration screen detected. Switching to Log In...")
+                    login_link = self.page.locator("text='Log In'").last
+                    await login_link.click(force=True)
+                    await asyncio.sleep(3)
+            except: pass
 
             login_triggers = ["a[href*='login']", ".m-login-btn", "text=Login", "text=More"]
             for trigger in login_triggers:
@@ -159,9 +170,13 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def navigate_to_game(self) -> bool:
-        """V5.9.4: Anti-Redirect & Deep-Link Recovery."""
+        """V5.10.0: Aggressive Deep-Link & Manual Launch."""
         target_url = os.getenv("SPIN_URL", "https://www.football.com/ng/games/spin")
         max_redirect_retries = 3
+
+        # Ensure we start at the main domain post-login
+        if "login" in self.page.url:
+            await self.page.goto("https://www.football.com/ng/", wait_until="networkidle")
 
         for attempt in range(max_redirect_retries + 1):
             try:
@@ -222,7 +237,16 @@ class PlaywrightClient:
                                     return True
                                 except: pass
                         except: pass
-                    self._log_execution("CRITICAL: Lobby interaction failed to trigger iframe.")
+                    self._log_execution("CRITICAL: Lobby interaction failed to trigger iframe. Trying manual launch...")
+                    # Manual launch as requested
+                    try:
+                        launch_btn = self.page.locator("text='Spin Da Bottle'").first
+                        await launch_btn.click(force=True)
+                        await asyncio.sleep(10)
+                        await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=20000)
+                        self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+                        return True
+                    except: pass
 
             except Exception as e:
                 self._log_execution(f"DEBUG: Navigation attempt failed: {e}")
@@ -283,17 +307,26 @@ class PlaywrightClient:
             except: pass
 
     async def _log_request(self, request: Request):
+        """V5.10.0: Enhanced endpoint capturing."""
         try:
             url = request.url.lower()
-            if any(x in url for x in ["game", "spin", "bet", "api", "history"]):
+            if any(x in url for x in ["game", "spin", "bet", "api", "history", "result"]):
                 entry = {"type": "REQUEST", "url": request.url, "method": request.method, "timestamp": time.time()}
                 self.network_log.append(entry)
+
+                # Discovery logic
+                if "history" in url or "results" in url:
+                    self._log_execution(f"DEBUG: Found History Endpoint -> {request.url}")
+                    self.discovered_endpoints["history"] = request.url
+                elif "bet" in url or "place" in url:
+                    self._log_execution(f"DEBUG: Found Bet Endpoint -> {request.url}")
+                    self.discovered_endpoints["bet"] = request.url
         except: pass
 
     async def _log_response(self, response: Response):
         try:
             url = response.url.lower()
-            if any(x in url for x in ["game", "spin", "bet", "api", "history"]):
+            if any(x in url for x in ["game", "spin", "bet", "api", "history", "result"]):
                 body = None
                 try:
                     raw = await response.body()

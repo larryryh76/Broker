@@ -66,7 +66,10 @@ class OmniMachineV31Refined:
             # Save fresh session state
             new_cookies = await client.get_session_cookies()
             self.memory.save_cookies(new_cookies)
-            api.apply_session({"cookies": new_cookies})
+            api.apply_session({
+                "cookies": new_cookies,
+                "endpoints": client.discovered_endpoints
+            })
 
             # Scrape last outcomes with deduplication
             scraped = await client.capture_history_texts()

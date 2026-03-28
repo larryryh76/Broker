@@ -55,8 +55,12 @@ class OmniAPIClient:
 
     def apply_session(self, data: Dict[str, Any]):
         """Applies captured headers, cookies, and endpoint mappings."""
-        self.headers = data.get("headers", {})
-        self.cookies = data.get("cookies", {})
+        # V5.10.0: Incremental update (don't overwrite with empty)
+        new_headers = data.get("headers", {})
+        if new_headers: self.headers.update(new_headers)
+
+        new_cookies = data.get("cookies", [])
+        if new_cookies: self.cookies = new_cookies
 
         # Normalize incoming endpoints before storing
         raw_endpoints = data.get("endpoints", {})
@@ -64,7 +68,7 @@ class OmniAPIClient:
             if val:
                 normalized = normalize_url(val)
                 self.endpoints[key] = normalized
-                print(f"DEBUG: Normalized endpoint [{key}] -> {normalized}")
+                print(f"DEBUG: Hydrated endpoint [{key}] -> {normalized}")
 
         # Update session headers
         self.session.headers.update(self.headers)

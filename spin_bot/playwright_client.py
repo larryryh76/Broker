@@ -72,99 +72,52 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing Aggressive Login sequence...")
+        self._log_execution(f"DEBUG: Initializing EMERGENCY LOGIN REFACTOR (V5.11.1)...")
         try:
-            # V5.9.9: Clear everything and start at the independent login URL
+            # 1. Start at the Login entry point
             login_url = "https://www.football.com/ng/m/independent_login"
             await self.page.goto(login_url, wait_until="commit")
             await self._handle_regional_splash()
 
-            # V5.9.5: Force navigation after splash as requested
-            await self.page.goto("https://www.football.com", wait_until="networkidle")
+            # 2. V5.11.1: Mandatory Registration Bypass (Explicit User Request)
+            # Check for "Already have an account? Log In" text immediately
+            login_link = self.page.locator("text='Log In'").last
+            if await login_link.is_visible():
+                self._log_execution("DEBUG: 'Log In' link detected. Forcing view switch...")
+                await login_link.click(force=True)
+                await asyncio.sleep(3)
+
             await self._handle_overlays()
 
-            # V5.10.1: Registration Trap Bypass (Immediate Action)
-            try:
-                # Target the "Join Football.com" header or the registration view
-                reg_header = self.page.locator("text='Join Football.com', .m-join-header, .m-register-container").first
-                if await reg_header.is_visible():
-                    self._log_execution("DEBUG: Registration screen detected. Forcing Login view...")
-                    # Click the "Log In" link explicitly as requested
-                    login_link = self.page.locator("text='Log In'").last
-                    await login_link.click(force=True)
-                    await asyncio.sleep(4)
-                    self._log_execution("DEBUG: Successfully switched to Login fields.")
-            except: pass
-
-            login_triggers = ["a[href*='login']", ".m-login-btn", "text=Login", "text=More"]
-            for trigger in login_triggers:
-                try:
-                    el = self.page.locator(trigger).first
-                    if await el.is_visible():
-                        await el.click(timeout=5000)
-                        await asyncio.sleep(2)
-                        break
-                except: pass
-
-            try:
-                btn = self.page.locator("text=Login / Register").first
-                if await btn.is_visible(): await btn.click()
-            except: pass
-
+            # 3. Fill Real Fields (Mobile & Password)
             await self.page.locator("input[placeholder*='Mobile']").first.fill(user)
             await self.page.locator("input[type='password']").first.fill(pw)
 
-            # V5.9.6: Robust Lime-Green Login Button Logic
+            # 4. Lime-Green Login Button Logic
             login_btn = self.page.locator("text='Login'").filter(has_text="Login").first
+            if await login_btn.is_visible():
+                await login_btn.click(force=True)
+            else:
+                await self.page.locator("button[type='submit'], .m-btn-login").first.click(force=True)
+
+            # 5. Strict Verification: Deposit Button + Base URL
             try:
-                if await login_btn.is_visible():
-                    self._log_execution("DEBUG: Green Login button detected. Clicking...")
-                    await login_btn.click(force=True)
+                self._log_execution("DEBUG: Verifying True Login (60s timeout)...")
+                # Success criteria: "Deposit" button MUST be visible
+                deposit_btn = self.page.locator("text='Deposit', .m-btn-deposit").first
+                await deposit_btn.wait_for(state="visible", timeout=60000)
+
+                current_url = self.page.url
+                if "football.com" in current_url and "login" not in current_url:
+                    self._log_execution(f"DEBUG: TRUE LOGIN CONFIRMED. URL: {current_url}")
                 else:
-                    # Fallback selectors
-                    fallback_selectors = [".m-btn-login", "div:has-text('Login')", "button[type='submit']", ".m-login-button"]
-                    for sel in fallback_selectors:
-                        el = self.page.locator(sel).first
-                        if await el.is_visible():
-                            self._log_execution(f"DEBUG: Fallback Login button detected ({sel}). Clicking...")
-                            await el.click(force=True)
-                            break
-            except: pass
-
-            # Post-Login Verification (V5.9.7: URL-based check)
-            await asyncio.sleep(5)
-            # Handle Post-Login Popups (Aggressive Click)
-            try:
-                popup_triggers = ["button:has-text('OK')", ".m-btn-confirm", ".close-icon", "text=Confirm"]
-                for pt in popup_triggers:
-                    el = self.page.locator(pt).first
-                    if await el.is_visible():
-                        await el.click(timeout=5000)
-                        self._log_execution(f"DEBUG: Post-login popup ({pt}) cleared.")
-            except: pass
-
-            # V5.9.8: Robust Auth Verification
-            try:
-                auth_selectors = [".m-user-info", ".m-icon-user", "a[href*='me']", "text=Logout"]
-                auth_verified = False
-                for sel in auth_selectors:
-                    try:
-                        await self.page.wait_for_selector(sel, state="visible", timeout=15000)
-                        self._log_execution(f"DEBUG: Login confirmed via {sel}")
-                        auth_verified = True
-                        break
-                    except: pass
-
-                if not auth_verified:
-                    raise Exception("Auth verification timed out after login attempt.")
+                    raise Exception(f"Login failed (Wrong URL): {current_url}")
 
             except Exception as e:
-                self._log_execution(f"WARNING: Login Verification Failed: {e}")
-                await self.page.screenshot(path="artifacts/error.png")
-                if retry:
-                    self._log_execution("DEBUG: Attempting login retry...")
-                    await self.login(retry=False)
-                    return
+                self._log_execution(f"CRITICAL: TRUE LOGIN FAILED: {e}")
+                await self.page.screenshot(path="artifacts/login_fail.png")
+                import sys
+                sys.exit(1) # Stop wasting minutes as requested
 
             await asyncio.sleep(2)
             await self._handle_overlays()
@@ -352,18 +305,21 @@ class PlaywrightClient:
         except: pass
 
     async def capture_history_texts(self) -> List[str]:
-        """V5.10.1: Spin da Bottle Specific outcome extraction."""
+        """V5.11.0: Spin da Bottle Specific outcome extraction from iframe."""
         try:
             if not self.game_frame: return []
 
-            # Target Spin da Bottle indicators (U, D, M)
-            selectors = [".history-item", ".result-item", ".history_ball"]
+            # Target Spin da Bottle indicators (U, D, M) inside the iframe
+            # V5.11.0: Added more specific selectors as requested
+            selectors = [".history-item", ".result-item", ".history_ball", ".m-history-item"]
             items = []
             for sel in selectors:
-                found = await self.game_frame.locator(sel).all_inner_texts()
-                if found:
-                    items = found
-                    break
+                try:
+                    found = await self.game_frame.locator(sel).all_inner_texts()
+                    if found:
+                        items = found
+                        break
+                except: continue
 
             outcomes = []
             for text in items:
@@ -373,7 +329,8 @@ class PlaywrightClient:
                 elif "MIDDLE" in t or "M" in t: outcomes.append("M")
 
             return outcomes[::-1] # Ensure chronological order
-        except: pass
+        except Exception as e:
+            self._log_execution(f"DEBUG: Scraper Error: {e}")
         return []
 
     async def place_ui_bet(self, direction: str, amount: float):

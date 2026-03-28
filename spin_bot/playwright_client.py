@@ -83,14 +83,17 @@ class PlaywrightClient:
             await self.page.goto("https://www.football.com", wait_until="networkidle")
             await self._handle_overlays()
 
-            # V5.10.0: Registration Trap Bypass
+            # V5.10.1: Registration Trap Bypass (Immediate Action)
             try:
-                reg_header = self.page.locator("text='Join Football.com', .m-join-header").first
+                # Target the "Join Football.com" header or the registration view
+                reg_header = self.page.locator("text='Join Football.com', .m-join-header, .m-register-container").first
                 if await reg_header.is_visible():
-                    self._log_execution("DEBUG: Registration screen detected. Switching to Log In...")
+                    self._log_execution("DEBUG: Registration screen detected. Forcing Login view...")
+                    # Click the "Log In" link explicitly as requested
                     login_link = self.page.locator("text='Log In'").last
                     await login_link.click(force=True)
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(4)
+                    self._log_execution("DEBUG: Successfully switched to Login fields.")
             except: pass
 
             login_triggers = ["a[href*='login']", ".m-login-btn", "text=Login", "text=More"]
@@ -349,16 +352,27 @@ class PlaywrightClient:
         except: pass
 
     async def capture_history_texts(self) -> List[str]:
+        """V5.10.1: Spin da Bottle Specific outcome extraction."""
         try:
             if not self.game_frame: return []
-            items = await self.game_frame.locator(".history_ball").all_inner_texts()
+
+            # Target Spin da Bottle indicators (U, D, M)
+            selectors = [".history-item", ".result-item", ".history_ball"]
+            items = []
+            for sel in selectors:
+                found = await self.game_frame.locator(sel).all_inner_texts()
+                if found:
+                    items = found
+                    break
+
             outcomes = []
             for text in items:
                 t = text.strip().upper()
                 if "UP" in t or "U" in t: outcomes.append("U")
                 elif "DOWN" in t or "D" in t: outcomes.append("D")
-                else: outcomes.append("M")
-            return outcomes[::-1]
+                elif "MIDDLE" in t or "M" in t: outcomes.append("M")
+
+            return outcomes[::-1] # Ensure chronological order
         except: pass
         return []
 

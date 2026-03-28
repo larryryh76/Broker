@@ -73,8 +73,9 @@ class PlaywrightClient:
         if not user or not pw: return
         self._log_execution(f"DEBUG: Initializing Aggressive Login sequence...")
         try:
-            # Aggressive commit wait to establish session before subdomain hop
-            await self.page.goto(self.login_url, wait_until="commit")
+            # V5.9.9: Clear everything and start at the independent login URL
+            login_url = "https://www.football.com/ng/m/independent_login"
+            await self.page.goto(login_url, wait_until="commit")
             await self._handle_regional_splash()
 
             # V5.9.5: Force navigation after splash as requested
@@ -250,7 +251,7 @@ class PlaywrightClient:
             except: pass
 
     async def _handle_overlays(self):
-        """V5.9.8: Kill Ad Banners, Modals and Top Overlays."""
+        """V5.9.9: Kill Ad Banners with a 3-attempt limit and JS hiding fallback."""
         selectors = [
             "button.close-icon",
             ".modal-close",
@@ -262,12 +263,20 @@ class PlaywrightClient:
             ".m-close",
             "i.m-icon-close"
         ]
+
+        # Stop sticky headers using JS as requested
+        try:
+            await self.page.evaluate("() => { document.querySelectorAll('.m-join-now, .join-now-banner, .m-app-banner').forEach(el => el.style.display = 'none'); }")
+        except: pass
+
         for sel in selectors:
+            attempts = 0
             try:
-                while True:
+                while attempts < 3:
                     btn = self.page.locator(sel).first
                     if await btn.is_visible():
-                        self._log_execution(f"DEBUG: Overlay/Banner detected ({sel}). Closing...")
+                        attempts += 1
+                        self._log_execution(f"DEBUG: Overlay/Banner detected ({sel}). Closing attempt {attempts}...")
                         await btn.click(timeout=2000, force=True)
                         await asyncio.sleep(1)
                     else: break

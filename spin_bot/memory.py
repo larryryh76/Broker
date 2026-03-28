@@ -20,7 +20,7 @@ class MemoryGraph:
     def log_spin(self, outcome: str, history_context: List[str] = None):
         """
         outcome: 'U' (Up), 'D' (Down), or 'M' (Middle).
-        V5.10.0 Hardened Deduplication: Incorporates timestamp in hash to prevent data loss.
+        V5.10.1 Deterministic Pattern Deduplication (Pure 5-gram).
         """
         if not history_context:
             history_context = []
@@ -28,10 +28,8 @@ class MemoryGraph:
         # Use last 4 from context + current outcome = 5-gram pattern
         pattern = "".join(history_context[-4:]) + outcome
 
-        # Salt with timestamp (minute resolution) to allow re-entry of same pattern over time
-        # while still deduplicating redundant scrapes in the same cycle.
-        ts_salt = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
-        unique_id = hashlib.sha256((pattern + ts_salt).encode()).hexdigest()
+        # Pure deterministic hash of the 5-gram outcome sequence
+        unique_id = hashlib.sha256(pattern.encode()).hexdigest()
 
         try:
             self.spins.update_one(

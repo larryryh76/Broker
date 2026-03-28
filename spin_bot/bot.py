@@ -63,6 +63,19 @@ class OmniMachineV31Refined:
                     await client.page.screenshot(path="artifacts/error.png")
                     return
 
+            # V5.10.1: 60s Betting Environment Verification
+            try:
+                print("DEBUG: Verifying Betting Environment (60s timeout)...")
+                # Wait for UP or DOWN betting buttons inside the iframe
+                up_btn = client.game_frame.locator("button:has-text('UP'), button:has-text('DOWN')").first
+                await up_btn.wait_for(state="visible", timeout=60000)
+                print("DEBUG: Betting Environment verified.")
+            except Exception as e:
+                print(f"CRITICAL: Failed to reach Betting Interface within 60s: {e}")
+                await client.page.screenshot(path="artifacts/timeout_error.png")
+                import sys
+                sys.exit(1)
+
             # Save fresh session state
             new_cookies = await client.get_session_cookies()
             self.memory.save_cookies(new_cookies)

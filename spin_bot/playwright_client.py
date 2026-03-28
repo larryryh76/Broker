@@ -72,32 +72,57 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing EMERGENCY LOGIN REFACTOR (V5.11.1)...")
+        self._log_execution(f"DEBUG: Initializing VISIBILITY TRAP BYPASS (V5.11.2)...")
         try:
             # 1. Start at the Login entry point
             login_url = "https://www.football.com/ng/m/independent_login"
             await self.page.goto(login_url, wait_until="commit")
             await self._handle_regional_splash()
 
-            # 2. V5.11.1: Mandatory Registration Bypass (Explicit User Request)
-            # Check for "Already have an account? Log In" text immediately
+            # 2. V5.11.2: Strict Registration Modal Dismissal
+            # Check for "Already have an account? Log In" link immediately
             login_link = self.page.locator("text='Log In'").last
-            if await login_link.is_visible():
-                self._log_execution("DEBUG: 'Log In' link detected. Forcing view switch...")
+            try:
+                # V5.11.2: Use short timeout to check visibility
+                await login_link.wait_for(state="visible", timeout=10000)
+                self._log_execution("DEBUG: 'Log In' link detected. Switching to Login fields...")
                 await login_link.click(force=True)
                 await asyncio.sleep(3)
+            except:
+                # If fields aren't interactable after 30s, force navigation to main
+                self._log_execution("DEBUG: Login link not found. Forcing navigation to main domain...")
+                await self.page.goto("https://www.football.com", wait_until="networkidle")
 
             await self._handle_overlays()
 
-            # 3. Fill Real Fields (Mobile & Password)
-            await self.page.locator("input[placeholder*='Mobile']").first.fill(user)
-            await self.page.locator("input[type='password']").first.fill(pw)
+            # 3. Fill Fields with JS Fallback (Bypasses visibility checks)
+            try:
+                # Try standard Playwright fill first
+                await self.page.locator("input[placeholder*='Mobile']").first.fill(user, timeout=5000)
+                await self.page.locator("input[type='password']").first.fill(pw, timeout=5000)
+            except:
+                self._log_execution("DEBUG: Element fill failed (Visibility Trap). Falling back to JS Injection...")
+                await self.page.evaluate("""
+                    (creds) => {
+                        const mobile = document.querySelector('input[placeholder*="Mobile"]');
+                        const pass = document.querySelector('input[type="password"]');
+                        if (mobile) {
+                            mobile.value = creds.user;
+                            mobile.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                        if (pass) {
+                            pass.value = creds.pw;
+                            pass.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    }
+                """, {"user": user, "pw": pw})
 
-            # 4. Lime-Green Login Button Logic
+            # 4. Login Submission
             login_btn = self.page.locator("text='Login'").filter(has_text="Login").first
             if await login_btn.is_visible():
                 await login_btn.click(force=True)
             else:
+                # Fallback to Submit button
                 await self.page.locator("button[type='submit'], .m-btn-login").first.click(force=True)
 
             # 5. Strict Verification: Deposit Button + Base URL

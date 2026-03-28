@@ -78,5 +78,10 @@ class MemoryGraph:
         doc = self.cookies.find_one({"id": "active_session"})
         return doc["data"] if doc else None
 
+    def save_session_tokens(self, token_data: Dict):
+        """V5.11.3: Auth Persistence."""
+        token_data["last_updated"] = datetime.now(timezone.utc)
+        self.tokens.update_one({"id": "current_auth"}, {"$set": token_data}, upsert=True)
+
     def close(self):
         self.client.close()

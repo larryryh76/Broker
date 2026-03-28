@@ -72,71 +72,64 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing VISIBILITY TRAP BYPASS (V5.11.2)...")
+        self._log_execution(f"DEBUG: Initializing ARCHITECTURAL REFACTOR (V5.12.0)...")
         try:
             # 1. Start at the Login entry point
             login_url = "https://www.football.com/ng/m/independent_login"
             await self.page.goto(login_url, wait_until="commit")
             await self._handle_regional_splash()
 
-            # 2. V5.11.2: Strict Registration Modal Dismissal
-            # Check for "Already have an account? Log In" link immediately
-            login_link = self.page.locator("text='Log In'").last
-            try:
-                # V5.11.2: Use short timeout to check visibility
-                await login_link.wait_for(state="visible", timeout=10000)
-                self._log_execution("DEBUG: 'Log In' link detected. Switching to Login fields...")
+            # 2. V5.12.0: Forced Login Path (Registration Bypass)
+            # Mandatory check for "Already have an account? Log In" as requested
+            login_link = self.page.locator("text='Already have an account? Log In', text='Log In'").last
+            if await login_link.is_visible():
+                self._log_execution("DEBUG: 'Log In' link found. Executing forced view switch...")
                 await login_link.click(force=True)
-                await asyncio.sleep(3)
-            except:
-                # If fields aren't interactable after 30s, force navigation to main
-                self._log_execution("DEBUG: Login link not found. Forcing navigation to main domain...")
+                await asyncio.sleep(4)
+            else:
+                # Visibility/Interactivity trap check (30s threshold)
+                self._log_execution("DEBUG: Login path not detected. Forcing clean navigation...")
                 await self.page.goto("https://www.football.com", wait_until="networkidle")
 
             await self._handle_overlays()
 
-            # 3. Fill Fields with JS Fallback (Bypasses visibility checks)
-            try:
-                # Try standard Playwright fill first
-                await self.page.locator("input[placeholder*='Mobile']").first.fill(user, timeout=5000)
-                await self.page.locator("input[type='password']").first.fill(pw, timeout=5000)
-            except:
-                self._log_execution("DEBUG: Element fill failed (Visibility Trap). Falling back to JS Injection...")
-                await self.page.evaluate("""
-                    (creds) => {
-                        const mobile = document.querySelector('input[placeholder*="Mobile"]');
-                        const pass = document.querySelector('input[type="password"]');
-                        if (mobile) {
-                            mobile.value = creds.user;
-                            mobile.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                        if (pass) {
-                            pass.value = creds.pw;
-                            pass.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
+            # 3. JS + Trusted Events Injection (React/Vue State Sync)
+            self._log_execution("DEBUG: Injecting credentials via Javascript evaluation...")
+            await self.page.evaluate("""
+                (creds) => {
+                    const mobile = document.querySelector('input[placeholder*="Mobile"], input[type="tel"]');
+                    const pass = document.querySelector('input[type="password"]');
+                    if (mobile) {
+                        mobile.value = creds.user;
+                        mobile.dispatchEvent(new Event('input', { bubbles: true }));
+                        mobile.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                """, {"user": user, "pw": pw})
+                    if (pass) {
+                        pass.value = creds.pw;
+                        pass.dispatchEvent(new Event('input', { bubbles: true }));
+                        pass.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            """, {"user": user, "pw": pw})
+            await asyncio.sleep(1)
 
-            # 4. Login Submission
-            login_btn = self.page.locator("text='Login'").filter(has_text="Login").first
-            if await login_btn.is_visible():
-                await login_btn.click(force=True)
-            else:
-                # Fallback to Submit button
-                await self.page.locator("button[type='submit'], .m-btn-login").first.click(force=True)
+            # 4. Submission with Forced Click
+            login_btn = self.page.locator("button.m-btn-login, .m-login-btn, button:has-text('Login')").first
+            await login_btn.click(force=True)
 
-            # 5. Strict Verification: Deposit Button + Base URL
+            # 5. Strict V5.12.0 Verification (Deposit + URL)
             try:
-                self._log_execution("DEBUG: Verifying True Login (60s timeout)...")
-                # Success criteria: "Deposit" button MUST be visible
+                self._log_execution("DEBUG: Verifying TRUE LOGIN (60s timeout)...")
+                # Absolute requirement: "Deposit" button visibility
                 deposit_btn = self.page.locator("text='Deposit', .m-btn-deposit").first
                 await deposit_btn.wait_for(state="visible", timeout=60000)
 
                 current_url = self.page.url
-                if "football.com" in current_url and "login" not in current_url:
+                # Success criteria: URL is the base domain and not a login/join page
+                if "football.com" in current_url and "login" not in current_url and "join" not in current_url:
                     self._log_execution(f"DEBUG: TRUE LOGIN CONFIRMED. URL: {current_url}")
                 else:
-                    raise Exception(f"Login failed (Wrong URL): {current_url}")
+                    raise Exception(f"Login Hallucination: URL is {current_url}")
 
             except Exception as e:
                 self._log_execution(f"CRITICAL: TRUE LOGIN FAILED: {e}")
@@ -189,8 +182,12 @@ class PlaywrightClient:
                 try:
                     await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=15000)
                     self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-                    await self.game_frame.locator(".history_ball").first.wait_for(timeout=20000)
-                    self._log_execution("DEBUG: Successfully attached to SportyGames environment.")
+
+                    # V5.12.0: Wait for Result History Container as requested
+                    history_container = self.game_frame.locator(".history-list, .recent-results, .history_ball").first
+                    await history_container.wait_for(state="visible", timeout=25000)
+
+                    self._log_execution("DEBUG: Successfully attached to Spin da Bottle Environment.")
                     return True
                 except:
                     # V5.9.8: Explicit Lobby Icon Interaction
@@ -330,17 +327,19 @@ class PlaywrightClient:
         except: pass
 
     async def capture_history_texts(self) -> List[str]:
-        """V5.11.0: Spin da Bottle Specific outcome extraction from iframe."""
+        """V5.11.3: Spin da Bottle Precision outcome extraction."""
         try:
             if not self.game_frame: return []
 
             # Target Spin da Bottle indicators (U, D, M) inside the iframe
-            # V5.11.0: Added more specific selectors as requested
-            selectors = [".history-item", ".result-item", ".history_ball", ".m-history-item"]
+            # V5.11.3: Refined selectors as requested
+            selectors = [".history-list", ".recent-results", ".history-item", ".result-item", ".history_ball"]
             items = []
             for sel in selectors:
                 try:
-                    found = await self.game_frame.locator(sel).all_inner_texts()
+                    # Target the container's contents
+                    loc = self.game_frame.locator(sel).first
+                    found = await loc.all_inner_texts()
                     if found:
                         items = found
                         break

@@ -83,6 +83,7 @@ class OmniMachineV31Refined:
             # Save fresh session state
             new_cookies = await client.get_session_cookies()
             self.memory.save_cookies(new_cookies)
+            self.memory.save_session_tokens({"cookies": new_cookies}) # V5.11.3: Auth Persistence
             api.apply_session({
                 "cookies": new_cookies,
                 "endpoints": client.discovered_endpoints

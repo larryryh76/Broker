@@ -96,11 +96,19 @@ class PlaywrightClient:
             await self._handle_regional_splash()
             await self._handle_overlays()
 
-            # 2. V5.13.1: Login Modal Verification
+            # 2. Trigger Login UI (Click Top-Right Login Button)
+            try:
+                login_trigger = self.page.get_by_text("Log In", exact=True).first
+                if await login_trigger.is_visible():
+                    await login_trigger.click(force=True)
+                    await asyncio.sleep(1)
+            except: pass
+
+            # 3. V5.13.1: Login Modal Verification
             modal_indicator = self.page.locator("input").first
             await modal_indicator.wait_for(state="visible", timeout=15000)
 
-            # 3. Registration Bypass (if modal is registration-first)
+            # 4. Registration Bypass (if modal is registration-first)
             login_link = self.page.get_by_text("Log In").last
             if await login_link.is_visible():
                 self._log_execution("DEBUG: Switching from registration to login...")
@@ -173,11 +181,19 @@ class PlaywrightClient:
                 self._log_execution(f"DEBUG: Game Navigation Attempt {attempt+1}...")
                 await self._handle_overlays()
 
-                # 2. Wait for Lobby Hydration (Increased timeout for high-latency environments)
+                # 2. Navigate via 'Games' Icon in Bottom Nav (Robust Path)
+                try:
+                    games_nav = self.page.get_by_text("Games").last
+                    if await games_nav.is_visible():
+                        await games_nav.click(force=True)
+                        await asyncio.sleep(2)
+                except: pass
+
+                # 3. Wait for Lobby Hydration (Increased timeout for high-latency environments)
                 # Refactored wait_for_selector to avoid text=
                 await self.page.wait_for_selector(".m-game-item, .game-item", state="visible", timeout=45000)
 
-                # 3. Targeted Discovery: "Spin" via robust locator as requested
+                # 4. Targeted Discovery: "Spin" via robust locator as requested
                 self._log_execution("DEBUG: Searching for 'Spin' icon in lobby...")
                 game_target = self.page.locator(".m-game-item").filter(has_text="Spin").first
 
@@ -235,6 +251,14 @@ class PlaywrightClient:
 
     async def _handle_overlays(self, retries: int = 5):
         """V5.13.1: Robust Overlay Handling with CSS injection and JS clearing."""
+        # 1. Clear Tutorial Tooltips (Mouse Click & Selector)
+        try:
+            await self.page.mouse.click(10, 10)
+            tooltip_close = self.page.locator(".m-tool-tips-close").first
+            if await tooltip_close.is_visible():
+                await tooltip_close.click(timeout=2000)
+        except: pass
+
         # Forcefully hide common blockers via CSS Injection
         try:
             await self.page.add_style_tag(content="""
@@ -254,7 +278,8 @@ class PlaywrightClient:
             ".close-btn",
             ".m-app-banner .m-close-btn",
             ".m-close",
-            ".af-download-banner .m-icon-close"
+            ".af-download-banner .m-icon-close",
+            ".m-tool-tips-close"
         ]
 
         for sel in selectors:

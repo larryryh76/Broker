@@ -83,5 +83,14 @@ class MemoryGraph:
         token_data["last_updated"] = datetime.now(timezone.utc)
         self.tokens.update_one({"id": "current_auth"}, {"$set": token_data}, upsert=True)
 
+    def save_full_session(self, data: Dict):
+        """V5.12.1: Full Session Persistence (Cookies + Storage)."""
+        data["last_sync"] = datetime.now(timezone.utc)
+        self.sessions.update_one({"id": "active_v5"}, {"$set": data}, upsert=True)
+
+    def load_full_session(self) -> Optional[Dict]:
+        """V5.12.1: Load full session state."""
+        return self.sessions.find_one({"id": "active_v5"})
+
     def close(self):
         self.client.close()

@@ -20,15 +20,19 @@ class MemoryGraph:
     def log_spin(self, outcome: str, history_context: List[str] = None):
         """
         outcome: 'U' (Up), 'D' (Down), or 'M' (Middle).
-        V5.10.1 Deterministic Pattern Deduplication (Pure 5-gram).
+        V5.13.1 Sequence-Hash Deduplication: Hashes last 5 bottle outcomes.
         """
         if not history_context:
             history_context = []
 
         # Use last 4 from context + current outcome = 5-gram pattern
+        # e.g., 'UUDDM'
         pattern = "".join(history_context[-4:]) + outcome
 
-        # Pure deterministic hash of the 5-gram outcome sequence
+        # V5.13.1: Only log if pattern is complete (5 outcomes)
+        if len(pattern) < 5: return
+
+        # Pure deterministic hash of the 5-gram outcome sequence as unique_id
         unique_id = hashlib.sha256(pattern.encode()).hexdigest()
 
         try:

@@ -65,9 +65,14 @@ class PlaywrightClient:
         # V5.9.4 Anti-Redirect Header
         await self.context.set_extra_http_headers({"X-Requested-With": "com.android.browser"})
 
+        # V5.13.1: Browser Injection BEFORE navigation
         if cookies:
-            await self.context.add_cookies(cookies)
-            self._log_execution("DEBUG: Persistent session cookies injected.")
+            try:
+                # Pre-inject cookies as requested to bypass login modals
+                await self.context.add_cookies(cookies)
+                self._log_execution("DEBUG: API session cookies injected into Browser context.")
+            except Exception as e:
+                self._log_execution(f"DEBUG: Cookie injection failed: {e}")
 
         self.page = await self.context.new_page()
         self.page.set_default_timeout(60000)
@@ -83,7 +88,7 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing UI-SYNCED LOGIN (V5.12.1)...")
+        self._log_execution(f"DEBUG: Initializing SELF-SORTING LOGIN (V5.13.1)...")
         try:
             # 1. Direct Login Landing
             login_url = "https://www.football.com/ng/m/independent_login"
@@ -91,12 +96,12 @@ class PlaywrightClient:
             await self._handle_regional_splash()
             await self._handle_overlays()
 
-            # 2. V5.12.1: Login Modal Verification
-            modal_indicator = self.page.locator("input[placeholder*='Mobile'], input[type='tel'], text='Log In'").first
+            # 2. V5.13.1: Login Modal Verification
+            modal_indicator = self.page.locator("input").first
             await modal_indicator.wait_for(state="visible", timeout=15000)
 
             # 3. Registration Bypass (if modal is registration-first)
-            login_link = self.page.locator("text='Already have an account? Log In', text='Log In'").last
+            login_link = self.page.get_by_text("Log In").last
             if await login_link.is_visible():
                 self._log_execution("DEBUG: Switching from registration to login...")
                 await login_link.click(force=True)
@@ -104,7 +109,11 @@ class PlaywrightClient:
 
             # 4. Input with Trusted Events (React/Vue Sync)
             self._log_execution("DEBUG: Entering credentials...")
-            mobile_input = self.page.locator("input[placeholder*='Mobile'], input[type='tel']").first
+            # Use get_by_placeholder as requested
+            mobile_input = self.page.get_by_placeholder("Mobile Number").first
+            if not await mobile_input.is_visible():
+                mobile_input = self.page.locator("input[type='tel']").first
+
             pass_input = self.page.locator("input[type='password']").first
 
             await mobile_input.fill(user)
@@ -116,15 +125,17 @@ class PlaywrightClient:
             await pass_input.dispatch_event("change")
 
             # 5. Submission
-            login_btn = self.page.locator("button.m-btn-login, .m-login-btn, button:has-text('Login')").first
+            # Refactored selector to avoid invalid patterns
+            login_btn = self.page.locator("button.m-btn-login, .m-login-btn").first
             await login_btn.click(force=True)
 
             # 6. Strict Verification (User Indicator or Modal Disappearance)
             try:
                 self._log_execution("DEBUG: Verifying session (30s timeout)...")
                 # Wait for user profile indicator OR modal disappearance
+                # wait_for_selector refactored to avoid = in CSS
                 await asyncio.wait([
-                    self.page.wait_for_selector("a[href*='me'], .m-user-info", state="visible"),
+                    self.page.wait_for_selector(".m-user-info", state="visible"),
                     self.page.wait_for_selector("input[type='password']", state="hidden")
                 ], return_when=asyncio.FIRST_COMPLETED, timeout=30000)
 
@@ -142,7 +153,7 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def navigate_to_game(self) -> bool:
-        """V5.12.1: Robust Lobby-based Discovery & Iframe Sync."""
+        """V5.13.1: Robust Lobby-based Discovery & Iframe Sync."""
         target_url = os.getenv("SPIN_URL", "https://www.football.com/ng/games/spin")
 
         # 1. Clean Landing post-auth
@@ -155,11 +166,12 @@ class PlaywrightClient:
                 await self._handle_overlays()
 
                 # 2. Wait for Lobby Hydration
-                await self.page.wait_for_selector(".m-game-item, .game-item, text=Spin", state="visible", timeout=20000)
+                # Refactored wait_for_selector to avoid text=
+                await self.page.wait_for_selector(".m-game-item, .game-item", state="visible", timeout=20000)
 
-                # 3. Targeted Discovery: "Spin" via text selector
+                # 3. Targeted Discovery: "Spin" via robust locator as requested
                 self._log_execution("DEBUG: Searching for 'Spin' icon in lobby...")
-                game_target = self.page.locator("text=Spin").first
+                game_target = self.page.locator(".m-game-item").filter(has_text="Spin").first
 
                 if await game_target.is_visible():
                     await game_target.scroll_into_view_if_needed()
@@ -173,9 +185,9 @@ class PlaywrightClient:
 
                 # 4. Iframe Sync & UI Verification
                 try:
-                    self._log_execution("DEBUG: Waiting for Game Iframe (iframe[src*='spin'])...")
-                    await self.page.wait_for_selector("iframe[src*='spin'], iframe[src*='sportygames']", state="visible", timeout=30000)
-                    self.game_frame = self.page.frame_locator("iframe[src*='spin'], iframe[src*='sportygames']")
+                    self._log_execution("DEBUG: Waiting for Game Iframe (iframe[src*='sportygames'])...")
+                    # V5.13.1: Specific frame locator as requested
+                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
 
                     # Wait for Game UI: canvas, .history, .results as requested
                     ui_indicator = self.game_frame.locator("canvas, .history, .results, .history-list").first
@@ -200,32 +212,30 @@ class PlaywrightClient:
         return False
 
     async def _handle_regional_splash(self):
-        """V5.9.5: Aggressive Location/Country Selector Bypass."""
-        selectors = [
-            "div:has-text('Nigeria')",
-            ".m-country-item:has-text('Nigeria')",
-            "text=Nigeria",
-            "text=Confirm",
-            "button:has-text('Nigeria')",
-            ".region-confirm"
-        ]
-        for sel in selectors:
+        """V5.13.1: Refactored Splash Bypass to avoid invalid selectors."""
+        for attempt in range(2):
             try:
-                el = self.page.locator(sel).last
+                # Use get_by_text for cleaner discovery
+                el = self.page.get_by_text("Nigeria").last
                 if await el.is_visible():
-                    self._log_execution(f"DEBUG: Regional Splash detected ({sel}). Clicking...")
+                    self._log_execution("DEBUG: Regional Splash detected (Nigeria). Clicking...")
                     await el.click(timeout=5000, force=True)
                     await asyncio.sleep(2) # Wait for modal to vanish
-                    self._log_execution(f"DEBUG: Selected Region via {sel}")
+                    self._log_execution("DEBUG: Selected Region via text")
                     break
             except: pass
 
     async def _handle_overlays(self, retries: int = 5):
-        """V5.12.1: Robust Overlay Handling with user-requested selectors and retries."""
+        """V5.13.1: Robust Overlay Handling with refactored selectors."""
+        # Hide sticky headers using JS as requested
+        try:
+            await self.page.evaluate("""() => {
+                document.querySelectorAll('.m-join-now, .join-now-banner, .m-app-banner, .m-join-header').forEach(el => el.style.display = 'none');
+            }""")
+        except: pass
+
         selectors = [
-            "button:has-text('Join Now')",
             ".m-icon-close",
-            "[aria-label='close']",
             "button.close-icon",
             ".modal-close",
             ".close-btn",

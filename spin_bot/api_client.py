@@ -68,16 +68,44 @@ class OmniAPIClient:
 
         print(f"DEBUG: V5.3 Session applied with {len([k for k,v in self.endpoints.items() if v])} valid endpoints.")
 
-    def login(self, user: str, passw: str) -> bool:
-        """API-based login logic (Placeholder: to be hydrated from network traffic)."""
-        print(f"DEBUG: Attempting API Login for user {user}...")
-        # Since API endpoints are discovered via traffic, we rely on existing session logic
-        # If headers/cookies exist, we verify with balance call.
-        balance = self.get_balance()
-        if balance > 0:
-            print("DEBUG: API Session verified (Balance > 0)")
-            return True
+    def ensure_authenticated(self, user: str, passw: str) -> bool:
+        """V5.13.1 Self-Sorting Login: Verifies session or performs direct POST auth."""
+        print(f"DEBUG: Ensuring API authentication for {user}...")
+
+        # 1. Test existing session
+        try:
+            # Simple balance check as health probe
+            balance = self.get_balance()
+            if balance > 0:
+                print("DEBUG: Existing API session valid.")
+                return True
+        except: pass
+
+        # 2. Perform direct POST login if session invalid
+        print("DEBUG: Session invalid or missing. Attempting direct POST login...")
+        auth_url = "https://www.football.com/api/ng/auth/login" # Presumed endpoint
+        payload = {"mobile": user, "password": passw, "remember": True}
+
+        try:
+            response = self.session.post(auth_url, json=payload, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # Capture token if present in body
+                token = data.get("token") or data.get("data", {}).get("token")
+                if token:
+                    self.session.headers.update({"Authorization": f"Bearer {token}"})
+
+                print("DEBUG: API Login successful (POST).")
+                return True
+            else:
+                print(f"DEBUG: API POST Login failed ({response.status_code}).")
+        except Exception as e:
+            print(f"DEBUG: API Auth Error: {e}")
+
         return False
+
+    def login(self, user: str, passw: str) -> bool:
+        return self.ensure_authenticated(user, passw)
 
     def get_spin_history(self) -> List[str]:
         """Fetches outcomes from the normalized history endpoint."""

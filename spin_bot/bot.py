@@ -57,6 +57,12 @@ class OmniMachineV31Refined:
             pw = os.getenv("FOOTBALL_NG_PASS")
 
             if api.login(user, pw):
+                # V5.13.1: Persistence Sync
+                api_cookies = api.session.cookies.get_dict()
+                cookie_list = [{"name": k, "value": v, "domain": ".football.com", "path": "/"} for k, v in api_cookies.items()]
+                self.memory.save_full_session({"cookies": cookie_list})
+                self.memory.save_session_tokens({"cookies": cookie_list})
+
                 api_history = api.get_spin_history()
                 if api_history:
                     print(f"DEBUG: API Success. Retrieved {len(api_history)} spins.")
@@ -66,11 +72,14 @@ class OmniMachineV31Refined:
             if not api_success:
                 print("DEBUG: API Failed. Falling back to Playwright UI...")
                 # 3. Playwright Fallback (UI)
-                cookies = full_session.get("cookies") if full_session else None
-                await client.setup(cookies=cookies)
+                # Inject cookies from API to bypass login modal if possible
+                api_cookies = api.session.cookies.get_dict()
+                cookie_list = [{"name": k, "value": v, "domain": ".football.com", "path": "/"} for k, v in api_cookies.items()]
+
+                await client.setup(cookies=cookie_list)
 
                 if not await client.navigate_to_game():
-                    print("DEBUG: Nav failure. Attempting UI Login...")
+                    print("DEBUG: Nav failure or Session expired. Attempting UI Login...")
                     await client.login()
 
                     # Capture and sync session immediately
@@ -82,6 +91,18 @@ class OmniMachineV31Refined:
                         print("CRITICAL: Failed to reach Game Environment even after login.")
                         await client.page.screenshot(path="artifacts/error.png")
                         return
+
+            # V5.13.1: Strict Dashboard Verification (Deposit Button)
+            if not api_success:
+                try:
+                    # Deposit button check as proof of successful landing
+                    # Using robust filter to avoid invalid CSS patterns
+                    deposit_indicator = client.page.locator("button").filter(has_text="Deposit").first
+                    await deposit_indicator.wait_for(state="visible", timeout=30000)
+                    print("DEBUG: Dashboard landing verified (Deposit button found).")
+                except:
+                    print("WARNING: Dashboard verification failed.")
+                    await client.page.screenshot(path="artifacts/error.png")
 
             # V5.11.0: Betting Environment Entry & Verification
             if not api_success:

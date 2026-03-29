@@ -4,37 +4,26 @@ import time
 from typing import List, Dict, Optional, Any
 
 def normalize_url(url: str) -> str:
-    """V5.3 Enhanced URL Normalization: Fixes duplicates and double slashes."""
+    """V5.3.1 Robust URL Normalization: Fixes duplicates and double slashes."""
     if not url: return ""
     base = "https://www.football.com"
-    domain = "www.football.com"
 
     # 1. Handle Protocol-Relative URLs
     if url.startswith("//"):
         url = "https:" + url
 
-    # 2. Correct Relative URLs
-    if not url.startswith("http") and not url.startswith("/"):
+    # 2. If it's already an absolute URL, use it directly (FIX: Avoid duplication)
+    if url.startswith("http"):
+        # Fix internal double slashes but preserve protocol
+        temp_url = url.replace("https://", "HTTPS_TEMP").replace("http://", "HTTP_TEMP")
+        while "//" in temp_url: temp_url = temp_url.replace("//", "/")
+        return temp_url.replace("HTTPS_TEMP", "https://").replace("HTTP_TEMP", "http://")
+
+    # 3. For relative paths, prepend base
+    if not url.startswith("/"):
         url = "/" + url
-    if not url.startswith("http"):
-        url = base.rstrip("/") + "/" + url.lstrip("/")
 
-    # 3. Remove Duplicate Base URIs or domains
-    # Handle the specific case: https://www.football.com/api/ng//www.football.com/api/ng/results
-    if url.count(domain) > 1:
-        # Reconstruct with only the final occurrence
-        parts = url.split(domain)
-        url = base + parts[-1]
-
-    # 4. Fix Internal Double Slashes (But preserve protocol)
-    temp_url = url.replace("https://", "HTTPS_TEMP")
-    temp_url = temp_url.replace("http://", "HTTP_TEMP")
-    while "//" in temp_url:
-        temp_url = temp_url.replace("//", "/")
-
-    url = temp_url.replace("HTTPS_TEMP", "https://").replace("HTTP_TEMP", "http://")
-
-    return url
+    return base.rstrip("/") + url
 
 class OmniAPIClient:
     def __init__(self, session_data: Optional[Dict[str, Any]] = None):
@@ -78,6 +67,17 @@ class OmniAPIClient:
             self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
 
         print(f"DEBUG: V5.3 Session applied with {len([k for k,v in self.endpoints.items() if v])} valid endpoints.")
+
+    def login(self, user: str, passw: str) -> bool:
+        """API-based login logic (Placeholder: to be hydrated from network traffic)."""
+        print(f"DEBUG: Attempting API Login for user {user}...")
+        # Since API endpoints are discovered via traffic, we rely on existing session logic
+        # If headers/cookies exist, we verify with balance call.
+        balance = self.get_balance()
+        if balance > 0:
+            print("DEBUG: API Session verified (Balance > 0)")
+            return True
+        return False
 
     def get_spin_history(self) -> List[str]:
         """Fetches outcomes from the normalized history endpoint."""

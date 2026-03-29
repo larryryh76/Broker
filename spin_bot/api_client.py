@@ -28,7 +28,16 @@ def normalize_url(url: str) -> str:
 class OmniAPIClient:
     def __init__(self, session_data: Optional[Dict[str, Any]] = None):
         self.session = requests.Session()
-        self.headers = {}
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            "Origin": "https://www.football.com",
+            "Referer": "https://www.football.com/ng/m/independent_login",
+            "X-Requested-With": "com.android.browser",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-NG,en;q=0.9",
+            "Content-Type": "application/json"
+        }
+        self.session.headers.update(self.headers)
         self.cookies = {}
         self.base_url = "https://www.football.com/api/ng/"
 

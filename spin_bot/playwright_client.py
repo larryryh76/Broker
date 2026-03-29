@@ -116,13 +116,21 @@ class PlaywrightClient:
 
             pass_input = self.page.locator("input[type='password']").first
 
-            await mobile_input.fill(user)
-            await mobile_input.dispatch_event("input")
-            await mobile_input.dispatch_event("change")
-
-            await pass_input.fill(pw)
-            await pass_input.dispatch_event("input")
-            await pass_input.dispatch_event("change")
+            # JS-based input injection to bypass visibility/attachment checks
+            await self.page.evaluate("""([u, p]) => {
+                const m = document.querySelector('input[type="tel"], input[placeholder*="Mobile"]');
+                const pw = document.querySelector('input[type="password"]');
+                if (m) {
+                    m.value = u;
+                    m.dispatchEvent(new Event('input', { bubbles: true }));
+                    m.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (pw) {
+                    pw.value = p;
+                    pw.dispatchEvent(new Event('input', { bubbles: true }));
+                    pw.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }""", [user, pw])
 
             # 5. Submission
             # Refactored selector to avoid invalid patterns
@@ -165,9 +173,9 @@ class PlaywrightClient:
                 self._log_execution(f"DEBUG: Game Navigation Attempt {attempt+1}...")
                 await self._handle_overlays()
 
-                # 2. Wait for Lobby Hydration
+                # 2. Wait for Lobby Hydration (Increased timeout for high-latency environments)
                 # Refactored wait_for_selector to avoid text=
-                await self.page.wait_for_selector(".m-game-item, .game-item", state="visible", timeout=20000)
+                await self.page.wait_for_selector(".m-game-item, .game-item", state="visible", timeout=45000)
 
                 # 3. Targeted Discovery: "Spin" via robust locator as requested
                 self._log_execution("DEBUG: Searching for 'Spin' icon in lobby...")
@@ -183,15 +191,15 @@ class PlaywrightClient:
                     self._log_execution("DEBUG: Lobby icon elusive. Attempting direct SPIN_URL...")
                     await self.page.goto(target_url, wait_until="networkidle")
 
-                # 4. Iframe Sync & UI Verification
+                # 4. Iframe Sync & UI Verification (Extended verification for game initialization)
                 try:
                     self._log_execution("DEBUG: Waiting for Game Iframe (iframe[src*='sportygames'])...")
                     # V5.13.1: Specific frame locator as requested
                     self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
 
                     # Wait for Game UI: canvas, .history, .results as requested
-                    ui_indicator = self.game_frame.locator("canvas, .history, .results, .history-list").first
-                    await ui_indicator.wait_for(state="visible", timeout=20000)
+                    ui_indicator = self.game_frame.locator("canvas, .history, .results, .history-list, .bet-panel").first
+                    await ui_indicator.wait_for(state="visible", timeout=45000)
 
                     self._log_execution("IFRAME FOUND")
                     return True
@@ -226,12 +234,17 @@ class PlaywrightClient:
             except: pass
 
     async def _handle_overlays(self, retries: int = 5):
-        """V5.13.1: Robust Overlay Handling with refactored selectors."""
-        # Hide sticky headers using JS as requested
+        """V5.13.1: Robust Overlay Handling with CSS injection and JS clearing."""
+        # Forcefully hide common blockers via CSS Injection
         try:
-            await self.page.evaluate("""() => {
-                document.querySelectorAll('.m-join-now, .join-now-banner, .m-app-banner, .m-join-header').forEach(el => el.style.display = 'none');
-            }""")
+            await self.page.add_style_tag(content="""
+                .m-join-now, .join-now-banner, .m-app-banner, .m-join-header,
+                .af-download-banner, .m-download-guide, .m-home-popup {
+                    display: none !important;
+                    visibility: hidden !important;
+                    pointer-events: none !important;
+                }
+            """)
         except: pass
 
         selectors = [
@@ -240,15 +253,9 @@ class PlaywrightClient:
             ".modal-close",
             ".close-btn",
             ".m-app-banner .m-close-btn",
-            ".m-close"
+            ".m-close",
+            ".af-download-banner .m-icon-close"
         ]
-
-        # JS Hiding Fallback
-        try:
-            await self.page.evaluate("""() => {
-                document.querySelectorAll('.m-join-now, .join-now-banner, .m-app-banner').forEach(el => el.style.display = 'none');
-            }""")
-        except: pass
 
         for sel in selectors:
             for attempt in range(retries):

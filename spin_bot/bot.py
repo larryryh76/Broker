@@ -72,20 +72,20 @@ class OmniMachineV31Refined:
             if not api_success:
                 print("DEBUG: API Failed. Falling back to Playwright UI...")
                 # 3. Playwright Fallback (UI)
-                # Inject cookies from API to bypass login modal if possible
-                api_cookies = api.session.cookies.get_dict()
-                cookie_list = [{"name": k, "value": v, "domain": ".football.com", "path": "/"} for k, v in api_cookies.items()]
-
-                await client.setup(cookies=cookie_list)
+                # Inject full session from memory if available
+                await client.setup(
+                    cookies=full_session.get("cookies") if full_session else None,
+                    session_state=full_session
+                )
 
                 if not await client.navigate_to_game():
                     print("DEBUG: Nav failure or Session expired. Attempting UI Login...")
                     await client.login()
 
-                    # Capture and sync session immediately
-                    new_cookies = await client.get_session_cookies()
-                    self.memory.save_full_session({"cookies": new_cookies})
-                    api.apply_session({"cookies": new_cookies})
+                    # Capture and sync full session immediately
+                    new_session = await client.get_full_session_state()
+                    self.memory.save_full_session(new_session)
+                    api.apply_session(new_session)
 
                     if not await client.navigate_to_game():
                         print("CRITICAL: Failed to reach Game Environment even after login.")
@@ -124,12 +124,10 @@ class OmniMachineV31Refined:
 
             # 4. Final Sync and Processing
             if not api_success:
-                new_cookies = await client.get_session_cookies()
-                self.memory.save_full_session({"cookies": new_cookies})
-                api.apply_session({
-                    "cookies": new_cookies,
-                    "endpoints": client.discovered_endpoints
-                })
+                new_session = await client.get_full_session_state()
+                new_session["endpoints"] = client.discovered_endpoints
+                self.memory.save_full_session(new_session)
+                api.apply_session(new_session)
 
                 # Structured Data Synchronization
                 extraction = await client.capture_history_texts()

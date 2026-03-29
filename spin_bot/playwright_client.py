@@ -9,7 +9,7 @@ try:
     from playwright_stealth import stealth_async as stealth
 except ImportError:
     stealth = None
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Any
 from spin_bot.api_client import normalize_url
 
 class PlaywrightClient:
@@ -130,16 +130,10 @@ class PlaywrightClient:
 
                 self._log_execution("LOGIN SUCCESS")
             except Exception as e:
-                self._log_execution(f"CRITICAL: Login indicator failed: {e}")
+                self._log_execution(f"CRITICAL: TRUE LOGIN FAILED: {e}")
                 await self.capture_failure_artifact("login_verify_fail")
                 import sys
                 sys.exit(1)
-
-            except Exception as e:
-                self._log_execution(f"CRITICAL: TRUE LOGIN FAILED: {e}")
-                await self.page.screenshot(path="artifacts/login_fail.png")
-                import sys
-                sys.exit(1) # Stop wasting minutes as requested
 
             await asyncio.sleep(2)
             await self._handle_overlays()

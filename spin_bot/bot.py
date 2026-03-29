@@ -39,63 +39,82 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.12.1 Refined: Architectural Auth & Structured Data Sync."""
-        print(f"--- OMNI MACHINE CYCLE V5.12.1 (HIGH RELIABILITY) ---")
+        """V5.13.0 Hybrid: API Client (Primary) + Playwright (Fallback)."""
+        print(f"--- OMNI MACHINE CYCLE V5.13.0 (HYBRID) ---")
+
+        # 1. Initialize API Client and check for existing session
+        full_session = self.memory.load_full_session()
+        api = OmniAPIClient(session_data=full_session)
         client = PlaywrightClient("https://www.football.com")
-        api = OmniAPIClient()
+
+        api_success = False
+        scraped = []
 
         try:
-            # 1. Setup with Full Persistence (Cookies + Storage)
-            full_session = self.memory.load_full_session()
-            cookies = full_session.get("cookies") if full_session else None
-            await client.setup(cookies=cookies)
+            # 2. Attempt API Execution (PRIMARY)
+            print("DEBUG: Attempting PRIMARY path (API)...")
+            user = os.getenv("FOOTBALL_NG_LOGIN")
+            pw = os.getenv("FOOTBALL_NG_PASS")
 
-            # 2. Resilient Discovery & Authentication
-            if not await client.navigate_to_game():
-                print("DEBUG: Initial discovery failed. Attempting UI-Synced Login...")
-                await client.login()
+            if api.login(user, pw):
+                api_history = api.get_spin_history()
+                if api_history:
+                    print(f"DEBUG: API Success. Retrieved {len(api_history)} spins.")
+                    scraped = api_history
+                    api_success = True
 
-                # Capture and Save Full session immediately
-                new_cookies = await client.get_session_cookies()
-                # Simplified storage capture for V5.12.1
-                self.memory.save_full_session({"cookies": new_cookies})
-                self.memory.save_session_tokens({"cookies": new_cookies})
-                api.apply_session({"cookies": new_cookies})
+            if not api_success:
+                print("DEBUG: API Failed. Falling back to Playwright UI...")
+                # 3. Playwright Fallback (UI)
+                cookies = full_session.get("cookies") if full_session else None
+                await client.setup(cookies=cookies)
 
                 if not await client.navigate_to_game():
-                    print("CRITICAL: Failed to reach Game Environment even after login.")
-                    await client.page.screenshot(path="artifacts/error.png")
-                    return
+                    print("DEBUG: Nav failure. Attempting UI Login...")
+                    await client.login()
+
+                    # Capture and sync session immediately
+                    new_cookies = await client.get_session_cookies()
+                    self.memory.save_full_session({"cookies": new_cookies})
+                    api.apply_session({"cookies": new_cookies})
+
+                    if not await client.navigate_to_game():
+                        print("CRITICAL: Failed to reach Game Environment even after login.")
+                        await client.page.screenshot(path="artifacts/error.png")
+                        return
 
             # V5.11.0: Betting Environment Entry & Verification
-            try:
-                print("DEBUG: Entering and Verifying Betting Environment (60s timeout)...")
-                # V5.11.0: Explicit wait for 'UP' or 'DOWN' buttons as absolute proof of game load
-                # The PlaywrightClient already handles the transition/fallback
-                if not client.game_frame:
-                    raise Exception("Game Iframe not attached.")
+            if not api_success:
+                try:
+                    print("DEBUG: Entering and Verifying Betting Environment (60s timeout)...")
+                    # V5.11.0: Explicit wait for 'UP' or 'DOWN' buttons as absolute proof of game load
+                    # The PlaywrightClient already handles the transition/fallback
+                    if not client.game_frame:
+                        raise Exception("Game Iframe not attached.")
 
-                betting_trigger = client.game_frame.locator("button:has-text('UP'), button:has-text('DOWN'), .m-bet-btn").first
-                await betting_trigger.wait_for(state="visible", timeout=60000)
-                print("DEBUG: Betting Environment reached and verified.")
-            except Exception as e:
-                print(f"CRITICAL: Game Environment inaccessible: {e}")
-                await client.page.screenshot(path="artifacts/game_fail.png")
-                sys.exit(1)
+                    betting_trigger = client.game_frame.locator("button:has-text('UP'), button:has-text('DOWN'), .m-bet-btn").first
+                    await betting_trigger.wait_for(state="visible", timeout=60000)
+                    print("DEBUG: Betting Environment reached and verified.")
+                except Exception as e:
+                    print(f"CRITICAL: Game Environment inaccessible: {e}")
+                    try: await client.page.screenshot(path="artifacts/game_fail.png")
+                    except: pass
+                    sys.exit(1)
 
-            # Save fresh session state
-            new_cookies = await client.get_session_cookies()
-            self.memory.save_full_session({"cookies": new_cookies})
-            api.apply_session({
-                "cookies": new_cookies,
-                "endpoints": client.discovered_endpoints
-            })
+            # 4. Final Sync and Processing
+            if not api_success:
+                new_cookies = await client.get_session_cookies()
+                self.memory.save_full_session({"cookies": new_cookies})
+                api.apply_session({
+                    "cookies": new_cookies,
+                    "endpoints": client.discovered_endpoints
+                })
 
-            # 3. Structured Data Synchronization
-            extraction = await client.capture_history_texts()
-            scraped = extraction["results"]
+                # Structured Data Synchronization
+                extraction = await client.capture_history_texts()
+                scraped = extraction["results"]
 
-            # Sequence-Hash Deduplication (V5.12.1)
+            # Sequence-Hash Deduplication (V5.13.0)
             for i, outcome in enumerate(scraped):
                 # Pattern generated from the last 4 outcomes + current
                 context = scraped[:i]
@@ -122,11 +141,25 @@ class OmniMachineV31Refined:
                 decision = self.executor.decide(all_spins)
                 if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.7:
                     print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']}")
-                    success = await client.place_ui_bet(decision["direction"], decision["amount"])
-                    if success:
+
+                    bet_success = False
+                    if api_success:
+                        res = api.place_bet(decision["direction"], decision["amount"])
+                        if "error" not in res:
+                            print(f"API BET SUCCESS: {res}")
+                            bet_success = True
+                    else:
+                        bet_success = await client.place_ui_bet(decision["direction"], decision["amount"])
+
+                    if bet_success:
                         await asyncio.sleep(15)
-                        extraction = await client.capture_history_texts()
-                        outcomes = extraction.get("results", [])
+                        # Re-verify results
+                        if api_success:
+                            outcomes = api.get_spin_history()
+                        else:
+                            extraction = await client.capture_history_texts()
+                            outcomes = extraction.get("results", [])
+
                         if outcomes:
                             actual = outcomes[-1]
                             win = (actual == decision["direction"])

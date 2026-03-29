@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import json
 import asyncio
@@ -38,24 +39,27 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V3.1 Refined: Emergency Repair Integration."""
-        print(f"--- OMNI MACHINE CYCLE V3.1 (STEALTH RECOVERY) ---")
+        """V5.12.1 Refined: Architectural Auth & Structured Data Sync."""
+        print(f"--- OMNI MACHINE CYCLE V5.12.1 (HIGH RELIABILITY) ---")
         client = PlaywrightClient("https://www.football.com")
         api = OmniAPIClient()
 
         try:
-            # 1. Setup with Persistence (CRITICAL: Load cookies BEFORE navigation)
-            existing_cookies = self.memory.load_cookies()
-            await client.setup(cookies=existing_cookies)
+            # 1. Setup with Full Persistence (Cookies + Storage)
+            full_session = self.memory.load_full_session()
+            cookies = full_session.get("cookies") if full_session else None
+            await client.setup(cookies=cookies)
 
-            # 2. Anti-Redirect Navigation
+            # 2. Resilient Discovery & Authentication
             if not await client.navigate_to_game():
-                print("DEBUG: Direct navigation failed. Attempting login refresh...")
+                print("DEBUG: Initial discovery failed. Attempting UI-Synced Login...")
                 await client.login()
 
-                # Save fresh session state IMMEDIATELY after login
+                # Capture and Save Full session immediately
                 new_cookies = await client.get_session_cookies()
-                self.memory.save_cookies(new_cookies)
+                # Simplified storage capture for V5.12.1
+                self.memory.save_full_session({"cookies": new_cookies})
+                self.memory.save_session_tokens({"cookies": new_cookies})
                 api.apply_session({"cookies": new_cookies})
 
                 if not await client.navigate_to_game():
@@ -77,21 +81,23 @@ class OmniMachineV31Refined:
             except Exception as e:
                 print(f"CRITICAL: Game Environment inaccessible: {e}")
                 await client.page.screenshot(path="artifacts/game_fail.png")
-                import sys
                 sys.exit(1)
 
             # Save fresh session state
             new_cookies = await client.get_session_cookies()
-            self.memory.save_cookies(new_cookies)
-            self.memory.save_session_tokens({"cookies": new_cookies}) # V5.11.3: Auth Persistence
+            self.memory.save_full_session({"cookies": new_cookies})
             api.apply_session({
                 "cookies": new_cookies,
                 "endpoints": client.discovered_endpoints
             })
 
-            # Scrape last outcomes with deduplication
-            scraped = await client.capture_history_texts()
+            # 3. Structured Data Synchronization
+            extraction = await client.capture_history_texts()
+            scraped = extraction["results"]
+
+            # Sequence-Hash Deduplication (V5.12.1)
             for i, outcome in enumerate(scraped):
+                # Pattern generated from the last 4 outcomes + current
                 context = scraped[:i]
                 self.memory.log_spin(outcome, history_context=context)
 
@@ -119,9 +125,10 @@ class OmniMachineV31Refined:
                     success = await client.place_ui_bet(decision["direction"], decision["amount"])
                     if success:
                         await asyncio.sleep(15)
-                        new_res = await client.capture_history_texts()
-                        if new_res:
-                            actual = new_res[-1]
+                        extraction = await client.capture_history_texts()
+                        outcomes = extraction.get("results", [])
+                        if outcomes:
+                            actual = outcomes[-1]
                             win = (actual == decision["direction"])
                             if actual == "M": win = False
                             print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")

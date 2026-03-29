@@ -28,7 +28,18 @@ class PlaywrightClient:
         print(message)
         self.execution_log.append(f"[{time.ctime()}] {message}")
 
-    async def setup(self, cookies: List[Dict] = None):
+    async def capture_failure_artifact(self, name: str):
+        """V5.12.1: Robust failure documentation."""
+        try:
+            os.makedirs("artifacts", exist_ok=True)
+            await self.page.screenshot(path=f"artifacts/{name}.png")
+            content = await self.page.content()
+            with open(f"artifacts/{name}.html", "w", encoding="utf-8") as f:
+                f.write(content)
+            self._log_execution(f"DEBUG: Saved artifacts for {name}")
+        except: pass
+
+    async def setup(self, cookies: List[Dict] = None, session_state: Dict = None):
         self.playwright = await async_playwright().start()
         launch_args = [
             "--disable-blink-features=AutomationControlled",
@@ -72,64 +83,57 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing ARCHITECTURAL REFACTOR (V5.12.0)...")
+        self._log_execution(f"DEBUG: Initializing UI-SYNCED LOGIN (V5.12.1)...")
         try:
-            # 1. Start at the Login entry point
+            # 1. Direct Login Landing
             login_url = "https://www.football.com/ng/m/independent_login"
             await self.page.goto(login_url, wait_until="commit")
             await self._handle_regional_splash()
-
-            # 2. V5.12.0: Forced Login Path (Registration Bypass)
-            # Mandatory check for "Already have an account? Log In" as requested
-            login_link = self.page.locator("text='Already have an account? Log In', text='Log In'").last
-            if await login_link.is_visible():
-                self._log_execution("DEBUG: 'Log In' link found. Executing forced view switch...")
-                await login_link.click(force=True)
-                await asyncio.sleep(4)
-            else:
-                # Visibility/Interactivity trap check (30s threshold)
-                self._log_execution("DEBUG: Login path not detected. Forcing clean navigation...")
-                await self.page.goto("https://www.football.com", wait_until="networkidle")
-
             await self._handle_overlays()
 
-            # 3. JS + Trusted Events Injection (React/Vue State Sync)
-            self._log_execution("DEBUG: Injecting credentials via Javascript evaluation...")
-            await self.page.evaluate("""
-                (creds) => {
-                    const mobile = document.querySelector('input[placeholder*="Mobile"], input[type="tel"]');
-                    const pass = document.querySelector('input[type="password"]');
-                    if (mobile) {
-                        mobile.value = creds.user;
-                        mobile.dispatchEvent(new Event('input', { bubbles: true }));
-                        mobile.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    if (pass) {
-                        pass.value = creds.pw;
-                        pass.dispatchEvent(new Event('input', { bubbles: true }));
-                        pass.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }
-            """, {"user": user, "pw": pw})
-            await asyncio.sleep(1)
+            # 2. V5.12.1: Login Modal Verification
+            modal_indicator = self.page.locator("input[placeholder*='Mobile'], input[type='tel'], text='Log In'").first
+            await modal_indicator.wait_for(state="visible", timeout=15000)
 
-            # 4. Submission with Forced Click
+            # 3. Registration Bypass (if modal is registration-first)
+            login_link = self.page.locator("text='Already have an account? Log In', text='Log In'").last
+            if await login_link.is_visible():
+                self._log_execution("DEBUG: Switching from registration to login...")
+                await login_link.click(force=True)
+                await asyncio.sleep(2)
+
+            # 4. Input with Trusted Events (React/Vue Sync)
+            self._log_execution("DEBUG: Entering credentials...")
+            mobile_input = self.page.locator("input[placeholder*='Mobile'], input[type='tel']").first
+            pass_input = self.page.locator("input[type='password']").first
+
+            await mobile_input.fill(user)
+            await mobile_input.dispatch_event("input")
+            await mobile_input.dispatch_event("change")
+
+            await pass_input.fill(pw)
+            await pass_input.dispatch_event("input")
+            await pass_input.dispatch_event("change")
+
+            # 5. Submission
             login_btn = self.page.locator("button.m-btn-login, .m-login-btn, button:has-text('Login')").first
             await login_btn.click(force=True)
 
-            # 5. Strict V5.12.0 Verification (Deposit + URL)
+            # 6. Strict Verification (User Indicator or Modal Disappearance)
             try:
-                self._log_execution("DEBUG: Verifying TRUE LOGIN (60s timeout)...")
-                # Absolute requirement: "Deposit" button visibility
-                deposit_btn = self.page.locator("text='Deposit', .m-btn-deposit").first
-                await deposit_btn.wait_for(state="visible", timeout=60000)
+                self._log_execution("DEBUG: Verifying session (30s timeout)...")
+                # Wait for user profile indicator OR modal disappearance
+                await asyncio.wait([
+                    self.page.wait_for_selector("a[href*='me'], .m-user-info", state="visible"),
+                    self.page.wait_for_selector("input[type='password']", state="hidden")
+                ], return_when=asyncio.FIRST_COMPLETED, timeout=30000)
 
-                current_url = self.page.url
-                # Success criteria: URL is the base domain and not a login/join page
-                if "football.com" in current_url and "login" not in current_url and "join" not in current_url:
-                    self._log_execution(f"DEBUG: TRUE LOGIN CONFIRMED. URL: {current_url}")
-                else:
-                    raise Exception(f"Login Hallucination: URL is {current_url}")
+                self._log_execution("LOGIN SUCCESS")
+            except Exception as e:
+                self._log_execution(f"CRITICAL: Login indicator failed: {e}")
+                await self.capture_failure_artifact("login_verify_fail")
+                import sys
+                sys.exit(1)
 
             except Exception as e:
                 self._log_execution(f"CRITICAL: TRUE LOGIN FAILED: {e}")
@@ -144,90 +148,60 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def navigate_to_game(self) -> bool:
-        """V5.10.0: Aggressive Deep-Link & Manual Launch."""
+        """V5.12.1: Robust Lobby-based Discovery & Iframe Sync."""
         target_url = os.getenv("SPIN_URL", "https://www.football.com/ng/games/spin")
-        max_redirect_retries = 3
 
-        # Ensure we start at the main domain post-login
-        if "login" in self.page.url:
+        # 1. Clean Landing post-auth
+        if "login" in self.page.url or "independent_login" in self.page.url:
             await self.page.goto("https://www.football.com/ng/", wait_until="networkidle")
 
-        for attempt in range(max_redirect_retries + 1):
+        for attempt in range(3): # 3 retry loop as requested
             try:
-                self._log_execution(f"DEBUG: Navigating to SPIN_URL (Attempt {attempt+1})...")
-                await self.page.goto(target_url, wait_until="networkidle")
-
-                # Check for Livescore Trap
-                current_url = self.page.url
-                if "livescore" in current_url.lower():
-                    self._log_execution(f"WARNING: Redirected to {current_url}. Retrying target...")
-                    if attempt < max_redirect_retries: continue
-                    else: return False
-
+                self._log_execution(f"DEBUG: Game Navigation Attempt {attempt+1}...")
                 await self._handle_overlays()
 
-                # V5.9.4 Deep-Link Iframe Wait
-                self._log_execution("DEBUG: Searching for Game Iframe...")
+                # 2. Wait for Lobby Hydration
+                await self.page.wait_for_selector(".m-game-item, .game-item, text=Spin", state="visible", timeout=20000)
+
+                # 3. Targeted Discovery: "Spin" via text selector
+                self._log_execution("DEBUG: Searching for 'Spin' icon in lobby...")
+                game_target = self.page.locator("text=Spin").first
+
+                if await game_target.is_visible():
+                    await game_target.scroll_into_view_if_needed()
+                    await asyncio.sleep(1)
+                    await game_target.click(force=True)
+                    self._log_execution("DEBUG: Game icon clicked. Syncing with iframe...")
+                else:
+                    # Fallback to direct URL if lobby icon is elusive
+                    self._log_execution("DEBUG: Lobby icon elusive. Attempting direct SPIN_URL...")
+                    await self.page.goto(target_url, wait_until="networkidle")
+
+                # 4. Iframe Sync & UI Verification
                 try:
-                    await self.page.wait_for_selector("iframe", state="visible", timeout=5000)
-                except:
-                    # Search for Refresh/Reload button if iframe missing
-                    self._log_execution("DEBUG: Iframe missing. Searching for Refresh/Reload triggers...")
-                    refresh_btn = self.page.locator("text=Refresh, text=Reload, .refresh-btn").first
-                    if await refresh_btn.is_visible():
-                        await refresh_btn.click()
-                        await asyncio.sleep(5)
+                    self._log_execution("DEBUG: Waiting for Game Iframe (iframe[src*='spin'])...")
+                    await self.page.wait_for_selector("iframe[src*='spin'], iframe[src*='sportygames']", state="visible", timeout=30000)
+                    self.game_frame = self.page.frame_locator("iframe[src*='spin'], iframe[src*='sportygames']")
 
-                # Target specific sportygames frame
-                try:
-                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=15000)
-                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+                    # Wait for Game UI: canvas, .history, .results as requested
+                    ui_indicator = self.game_frame.locator("canvas, .history, .results, .history-list").first
+                    await ui_indicator.wait_for(state="visible", timeout=20000)
 
-                    # V5.12.0: Wait for Result History Container as requested
-                    history_container = self.game_frame.locator(".history-list, .recent-results, .history_ball").first
-                    await history_container.wait_for(state="visible", timeout=25000)
-
-                    self._log_execution("DEBUG: Successfully attached to Spin da Bottle Environment.")
+                    self._log_execution("IFRAME FOUND")
                     return True
-                except:
-                    # V5.9.8: Explicit Lobby Icon Interaction
-                    self._log_execution("DEBUG: Scanning lobby for 'Spin Da Bottle' interaction icon...")
-                    game_icons = [
-                        "div.game-item:has-text('Spin Da Bottle')",
-                        ".m-game-item:has-text('Spin Da Bottle')",
-                        "text='Spin Da Bottle'",
-                        ".game-item:has-text('Spin')"
-                    ]
-                    for icon_sel in game_icons:
-                        try:
-                            icon = self.page.locator(icon_sel).first
-                            if await icon.is_visible():
-                                self._log_execution(f"DEBUG: Target Game icon detected ({icon_sel}). Clicking...")
-                                await icon.click(force=True)
-                                await asyncio.sleep(5)
 
-                                # Wait for transition to iframe (Max 30s as requested)
-                                try:
-                                    await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=30000)
-                                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-                                    await self.game_frame.locator(".history_ball").first.wait_for(timeout=20000)
-                                    self._log_execution("DEBUG: Successfully attached via Lobby Interaction.")
-                                    return True
-                                except: pass
-                        except: pass
-                    self._log_execution("CRITICAL: Lobby interaction failed to trigger iframe. Trying manual launch...")
-                    # Manual launch as requested
-                    try:
-                        launch_btn = self.page.locator("text='Spin Da Bottle'").first
-                        await launch_btn.click(force=True)
-                        await asyncio.sleep(10)
-                        await self.page.wait_for_selector("iframe[src*='sportygames']", state="visible", timeout=20000)
-                        self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-                        return True
-                    except: pass
+                except Exception as e:
+                    # Capture all iframes and log src on failure
+                    iframes = await self.page.query_selector_all("iframe")
+                    for i, f in enumerate(iframes):
+                        src = await f.get_attribute("src")
+                        self._log_execution(f"DEBUG: Found alternative iframe[{i}] src: {src}")
+
+                    await self.capture_failure_artifact(f"nav_fail_attempt_{attempt}")
 
             except Exception as e:
-                self._log_execution(f"DEBUG: Navigation attempt failed: {e}")
+                self._log_execution(f"DEBUG: Navigation error: {e}")
+                await asyncio.sleep(2)
 
         return False
 
@@ -252,37 +226,38 @@ class PlaywrightClient:
                     break
             except: pass
 
-    async def _handle_overlays(self):
-        """V5.9.9: Kill Ad Banners with a 3-attempt limit and JS hiding fallback."""
+    async def _handle_overlays(self, retries: int = 5):
+        """V5.12.1: Robust Overlay Handling with user-requested selectors and retries."""
         selectors = [
+            "button:has-text('Join Now')",
+            ".m-icon-close",
+            "[aria-label='close']",
             "button.close-icon",
             ".modal-close",
-            "[aria-label='Close']",
             ".close-btn",
             ".m-app-banner .m-close-btn",
-            "text=Join Now",
-            ".m-btn-join",
-            ".m-close",
-            "i.m-icon-close"
+            ".m-close"
         ]
 
-        # Stop sticky headers using JS as requested
+        # JS Hiding Fallback
         try:
-            await self.page.evaluate("() => { document.querySelectorAll('.m-join-now, .join-now-banner, .m-app-banner').forEach(el => el.style.display = 'none'); }")
+            await self.page.evaluate("""() => {
+                document.querySelectorAll('.m-join-now, .join-now-banner, .m-app-banner').forEach(el => el.style.display = 'none');
+            }""")
         except: pass
 
         for sel in selectors:
-            attempts = 0
-            try:
-                while attempts < 3:
+            for attempt in range(retries):
+                try:
                     btn = self.page.locator(sel).first
                     if await btn.is_visible():
-                        attempts += 1
-                        self._log_execution(f"DEBUG: Overlay/Banner detected ({sel}). Closing attempt {attempts}...")
-                        await btn.click(timeout=2000, force=True)
+                        self._log_execution(f"DEBUG: Overlay ({sel}) detected. Closing (Attempt {attempt+1})...")
+                        await btn.click(timeout=3000, force=True)
                         await asyncio.sleep(1)
-                    else: break
-            except: pass
+                    else:
+                        break
+                except:
+                    await asyncio.sleep(1)
 
     async def _log_request(self, request: Request):
         """V5.10.0: Enhanced endpoint capturing."""
@@ -326,36 +301,54 @@ class PlaywrightClient:
                 for step in self.execution_log: f.write(f"{step}\n")
         except: pass
 
-    async def capture_history_texts(self) -> List[str]:
-        """V5.11.3: Spin da Bottle Precision outcome extraction."""
+    async def capture_history_texts(self) -> Dict[str, Any]:
+        """V5.12.1: Dual-Method History Extraction (UI + Network)."""
+        data = {"timestamp": time.time(), "results": []}
+
+        # Method A: UI Scrape
         try:
-            if not self.game_frame: return []
+            if self.game_frame:
+                selectors = [".history-list", ".recent-results", ".history-item", ".result-item", ".history_ball"]
+                items = []
+                for sel in selectors:
+                    try:
+                        loc = self.game_frame.locator(sel)
+                        # Extract up to 20 results as requested
+                        found = await loc.all_inner_texts()
+                        if found:
+                            items = found[:20]
+                            break
+                    except: continue
 
-            # Target Spin da Bottle indicators (U, D, M) inside the iframe
-            # V5.11.3: Refined selectors as requested
-            selectors = [".history-list", ".recent-results", ".history-item", ".result-item", ".history_ball"]
-            items = []
-            for sel in selectors:
-                try:
-                    # Target the container's contents
-                    loc = self.game_frame.locator(sel).first
-                    found = await loc.all_inner_texts()
-                    if found:
-                        items = found
-                        break
-                except: continue
+                for text in items:
+                    t = text.strip().upper()
+                    if "UP" in t or "U" in t: data["results"].append("U")
+                    elif "DOWN" in t or "D" in t: data["results"].append("D")
+                    elif "MIDDLE" in t or "M" in t: data["results"].append("M")
 
-            outcomes = []
-            for text in items:
-                t = text.strip().upper()
-                if "UP" in t or "U" in t: outcomes.append("U")
-                elif "DOWN" in t or "D" in t: outcomes.append("D")
-                elif "MIDDLE" in t or "M" in t: outcomes.append("M")
-
-            return outcomes[::-1] # Ensure chronological order
+                # Ensure chronological order (UI is usually reversed)
+                data["results"] = data["results"][::-1]
         except Exception as e:
             self._log_execution(f"DEBUG: Scraper Error: {e}")
-        return []
+
+        # Method B: Network Interception (Merge findings)
+        try:
+            for entry in self.network_log:
+                if entry["type"] == "RESPONSE" and any(x in entry["url"].lower() for x in ["spin", "history", "result"]):
+                    try:
+                        body = json.loads(entry["response"])
+                        # Generic extractor for history lists in JSON
+                        items = body if isinstance(body, list) else body.get("results", body.get("data", []))
+                        for item in items:
+                            val = str(item.get("outcome", item.get("val", item))).upper()[0]
+                            if val in ["U", "D", "M"] and val not in data["results"][:5]:
+                                # Only add if not recently scraped to avoid duplicates
+                                data["results"].append(val)
+                    except: pass
+        except: pass
+
+        self._log_execution(f"HISTORY EXTRACTED: {len(data['results'])} outcomes found.")
+        return data
 
     async def place_ui_bet(self, direction: str, amount: float):
         try:

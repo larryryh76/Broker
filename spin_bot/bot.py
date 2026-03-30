@@ -21,11 +21,12 @@ class OmniMachineV31Refined:
 
         # 2. Reconstruct System State
         self.session_state = self.memory.load_session() or {
-            "bankroll": 300.0,
+            "bankroll": 1000.0, # V5.16.1: Start > 500 to pass Vault protection
             "mode": "LEARNING_MODE",
-            "peak_equity": 300.0,
+            "peak_equity": 1000.0,
             "vault_locked": False,
-            "history": []
+            "history": [],
+            "tuition_history": [] # V5.16.1: Track actual win/loss
         }
 
         # 3. Model Weight Loading
@@ -165,9 +166,22 @@ class OmniMachineV31Refined:
                 self.session_state["mode"] = "LEARNING_MODE"
                 print(f"98% PROTOCOL: LEARNING_MODE active. ({spin_count}/200 spins)")
             elif self.risk.state["mode"] == "TUITION" and self.risk.state["tuition_spins"] >= 30:
+                # V5.16.1: Real Win-Rate Logic
+                th = self.session_state.get("tuition_history", [])
+                if not th:
+                    print("V5.16.1: No tuition history. Staying in LEARNING.")
+                    return
+
+                win_rate = sum(th) / len(th)
+                if win_rate < 0.60:
+                    print(f"V5.16.1 TUITION ABORT: Win Rate {win_rate:.2f} < 60%. Resetting state.")
+                    self.session_state["tuition_history"] = []
+                    self.risk.state["tuition_spins"] = 0
+                    return
+
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 self.risk.state["mode"] = "SNIPER"
-                print(f"V5.15 PROMOTION: SNIPER Activated. (N={spin_count})")
+                print(f"V5.16.1 PROMOTION: SNIPER Activated. (Win Rate: {win_rate:.2f})")
             else:
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 print(f"98% PROTOCOL: ELITE_EXECUTION unlocked. (N={spin_count})")

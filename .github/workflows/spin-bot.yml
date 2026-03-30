@@ -1,4 +1,4 @@
-name: Omni-Recursive Money Machine Cycle (V4.4 - Intelligent Discovery)
+name: Omni-Recursive Money Machine Cycle (V5.15 - Immortal Session)
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
       - name: Create Artifacts Folder
         run: mkdir -p artifacts || true
 
-      - name: Execute Money Machine Cycle
+      - name: Execute Money Machine Cycle (V5.15 Predator Mode)
         run: |
           python -m spin_bot.bot
         env:
@@ -36,6 +36,14 @@ jobs:
           SPIN_URL: ${{ secrets.SPIN_URL }}
           FOOTBALL_NG_LOGIN: ${{ secrets.FOOTBALL_NG_LOGIN }}
           FOOTBALL_NG_PASS: ${{ secrets.FOOTBALL_NG_PASS }}
+          GOLDEN_ACCESS_TOKEN: ${{ secrets.GOLDEN_ACCESS_TOKEN }}
+          GOLDEN_REFRESH_TOKEN: ${{ secrets.GOLDEN_REFRESH_TOKEN }}
+          GOLDEN_PUID: ${{ secrets.GOLDEN_PUID }}
+          GOLDEN_DEVICE_ID: ${{ secrets.GOLDEN_DEVICE_ID }}
+          GOLDEN_CF_BM: ${{ secrets.GOLDEN_CF_BM }}
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
 
       - name: Extract Artifacts (State Logs)
         if: always()
@@ -47,5 +55,5 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: spin-logs-v4.4-${{ github.run_id }}
+          name: spin-logs-v5.15-${{ github.run_id }}
           path: artifacts/

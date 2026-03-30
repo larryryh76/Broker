@@ -52,13 +52,24 @@ class OmniAPIClient:
             self.apply_session(session_data)
 
     def apply_session(self, data: Dict[str, Any]):
-        """Applies captured headers, cookies, and endpoint mappings."""
+        """Applies captured headers, cookies, V5.15 tokens and endpoint mappings."""
         # V5.10.0: Incremental update (don't overwrite with empty)
         new_headers = data.get("headers", {})
         if new_headers: self.headers.update(new_headers)
 
         new_cookies = data.get("cookies", [])
         if new_cookies: self.cookies = new_cookies
+
+        # V5.15.0: Golden Token Injection
+        auth_state = data.get("auth_state", {})
+        if auth_state.get("accessToken"):
+            self.headers["accessToken"] = auth_state["accessToken"]
+            self.headers["Authorization"] = f"Bearer {auth_state['accessToken']}"
+        if auth_state.get("puid"):
+            self.headers["puid"] = auth_state["puid"]
+        if auth_state.get("deviceId"):
+            self.headers["deviceId"] = auth_state["deviceId"]
+            self.headers["X-Device-Id"] = auth_state["deviceId"]
 
         # Normalize incoming endpoints before storing
         raw_endpoints = data.get("endpoints", {})
@@ -75,7 +86,11 @@ class OmniAPIClient:
         for cookie in self.cookies:
             self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
 
-        print(f"DEBUG: V5.3 Session applied with {len([k for k,v in self.endpoints.items() if v])} valid endpoints.")
+        # Ensure Cloudflare clearance is set
+        if auth_state.get("cf_bm"):
+            self.session.cookies.set("__cf_bm", auth_state["cf_bm"], domain=".football.com")
+
+        print(f"DEBUG: V5.15 Immortal Session applied with {len([k for k,v in self.endpoints.items() if v])} valid endpoints.")
 
     def ensure_authenticated(self, user: str, passw: str) -> bool:
         """V5.13.1 Self-Sorting Login: Verifies session or performs direct POST auth."""
@@ -116,6 +131,17 @@ class OmniAPIClient:
     def login(self, user: str, passw: str) -> bool:
         return self.ensure_authenticated(user, passw)
 
+    def _update_tokens_from_response(self, response: requests.Response):
+        """V5.15.0: Captures updated accessToken from API responses."""
+        try:
+            data = response.json()
+            new_token = data.get("accessToken") or data.get("data", {}).get("accessToken")
+            if new_token:
+                self.headers["accessToken"] = new_token
+                self.headers["Authorization"] = f"Bearer {new_token}"
+                self.session.headers.update(self.headers)
+        except: pass
+
     def get_spin_history(self) -> List[str]:
         """Fetches outcomes from the normalized history endpoint."""
         raw_url = self.endpoints.get("history")
@@ -128,6 +154,7 @@ class OmniAPIClient:
 
         try:
             response = self.session.get(final_url, timeout=10)
+            self._update_tokens_from_response(response)
             if response.status_code == 200:
                 print(f"DEBUG: History Response Preview: {response.text[:500]}")
                 data = response.json()
@@ -168,6 +195,7 @@ class OmniAPIClient:
                 "timestamp": int(time.time() * 1000)
             }
             response = self.session.post(final_url, json=payload, timeout=10)
+            self._update_tokens_from_response(response)
             return response.json() if response.status_code == 200 else {"error": response.status_code}
         except Exception as e:
             return {"error": str(e)}

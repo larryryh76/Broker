@@ -120,7 +120,13 @@ class PlaywrightClient:
             local_storage["deviceId"] = self.auth_state["deviceId"]
 
         try:
-            await self.page.add_init_script(f"""
+            # V5.16.0: Hardcoded defaults for LocalStorage as requested
+            local_storage.setdefault("keep_signed_in", "1")
+            local_storage.setdefault("remember_me", "1")
+            local_storage.setdefault("fcom_theme_theme", "classic")
+
+            # Use context.add_init_script to ensure it runs on all pages/frames before navigation
+            await self.context.add_init_script(f"""
                 if (window.location.hostname.includes('football.com')) {{
                     const local = {json.dumps(local_storage)};
                     const session = {json.dumps(storage.get('session', {}))};
@@ -128,7 +134,7 @@ class PlaywrightClient:
                     for (const k in session) sessionStorage.setItem(k, session[k]);
                 }}
             """)
-            self._log_execution("DEBUG: Immortal Session Storage injected.")
+            self._log_execution("DEBUG: V5.16 Ghost Bypass Storage injected.")
         except Exception as e:
             self._log_execution(f"DEBUG: Storage injection failed: {e}")
 
@@ -145,61 +151,31 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing SELF-SORTING LOGIN (V5.13.1)...")
+        self._log_execution(f"DEBUG: Initializing V5.16 GHOST BYPASS LOGIN...")
         try:
             # 1. Direct Login Landing
             login_url = "https://www.football.com/ng/m/independent_login"
-            await self.page.goto(login_url, wait_until="commit")
-            await self._handle_regional_splash()
+            await self.page.goto(login_url, wait_until="networkidle")
             await self._handle_overlays()
+            await self._handle_regional_splash()
 
-            # 2. Trigger Login UI (Click Top-Right Login Button)
-            try:
-                login_trigger = self.page.get_by_text("Log In", exact=True).first
-                if await login_trigger.is_visible():
-                    await login_trigger.click(force=True)
-                    await asyncio.sleep(1)
-            except: pass
+            # 2. V5.16 Visible-Only Input Handling
+            self._log_execution("DEBUG: Entering credentials via visible selectors...")
 
-            # 3. V5.13.1: Login Modal Verification
-            modal_indicator = self.page.locator("input").first
-            await modal_indicator.wait_for(state="visible", timeout=15000)
+            # Resolve "Hidden Input" crash by targeting only visible elements
+            # Step 1: Phone number
+            phone_field = self.page.locator("input:visible").filter(has_text="Mobile Number").first
+            if not await phone_field.is_visible():
+                phone_field = self.page.locator("input[type='tel']:visible, input[placeholder*='Mobile']:visible").first
 
-            # 4. Registration Bypass (if modal is registration-first)
-            login_link = self.page.get_by_text("Log In").last
-            if await login_link.is_visible():
-                self._log_execution("DEBUG: Switching from registration to login...")
-                await login_link.click(force=True)
-                await asyncio.sleep(2)
+            await phone_field.fill(user)
 
-            # 4. Input with Trusted Events (React/Vue Sync)
-            self._log_execution("DEBUG: Entering credentials...")
-            # Use get_by_placeholder as requested
-            mobile_input = self.page.get_by_placeholder("Mobile Number").first
-            if not await mobile_input.is_visible():
-                mobile_input = self.page.locator("input[type='tel']").first
-
-            pass_input = self.page.locator("input[type='password']").first
-
-            # JS-based input injection to bypass visibility/attachment checks
-            await self.page.evaluate("""([u, p]) => {
-                const m = document.querySelector('input[type="tel"], input[placeholder*="Mobile"]');
-                const pw = document.querySelector('input[type="password"]');
-                if (m) {
-                    m.value = u;
-                    m.dispatchEvent(new Event('input', { bubbles: true }));
-                    m.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                if (pw) {
-                    pw.value = p;
-                    pw.dispatchEvent(new Event('input', { bubbles: true }));
-                    pw.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            }""", [user, pw])
+            # Step 2: Password
+            password_field = self.page.locator("input[type='password']:visible").first
+            await password_field.fill(pw)
 
             # 5. Submission
-            # Refactored selector to avoid invalid patterns
-            login_btn = self.page.locator("button.m-btn-login, .m-login-btn").first
+            login_btn = self.page.locator("button.m-btn-login:visible, .m-login-btn:visible, button:has-text('Log In'):visible").first
             await login_btn.click(force=True)
 
             # 6. Strict Verification (User Indicator or Modal Disappearance)
@@ -226,30 +202,26 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def navigate_to_game(self) -> bool:
-        """V5.15.0: Direct Predator Navigation."""
-        # V5.15.0: Targeted direct URL to bypass lobby hurdles
-        target_url = "https://www.football.com/ng/games/lobby?isNavShow=false"
+        """V5.16.0: Ghost Bypass Direct Navigation."""
+        # V5.16.0: Step B: Direct Endpoint Entry
+        target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.15 Predator Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.16 Ghost Bypass Navigation Attempt {attempt+1}...")
+
+                # Step B: Wait for Network to be Idle instead of a specific selector
                 await self.page.goto(target_url, wait_until="networkidle")
+
+                # Step A: The Blind Clearance
                 await self._handle_overlays()
 
-                # Verify if we are logged in by checking balance or user profile
+                # Verify if we are logged in
                 try:
-                    await self.page.wait_for_selector(".m-user-info, .m-balance", timeout=15000)
-                    self._log_execution("DEBUG: Predator Session Authenticated.")
+                    await self.page.wait_for_selector(".m-user-info, .m-balance", timeout=5000)
+                    self._log_execution("DEBUG: V5.16 Session Authenticated.")
                 except:
-                    self._log_execution("WARNING: Session not visually verified. Attempting game entry anyway.")
-
-                # Discovery: "Spin" via robust locator
-                game_target = self.page.locator("img[alt*='Spin'], .m-game-item").filter(has_text="Spin").first
-                if await game_target.is_visible():
-                    await game_target.click(force=True)
-                else:
-                    # Fallback direct
-                    await self.page.goto("https://www.football.com/ng/games/spin", wait_until="networkidle")
+                    self._log_execution("WARNING: Session not visually verified.")
 
                 # 4. Iframe Sync & UI Verification
                 try:
@@ -294,13 +266,15 @@ class PlaywrightClient:
             except: pass
 
     async def _handle_overlays(self, retries: int = 5):
-        """V5.13.1: Robust Overlay Handling with CSS injection and JS clearing."""
-        # 1. Clear Tutorial Tooltips (Mouse Click & Selector)
+        """V5.16.0: Blind Clearance & Force-Close Protocol."""
+        # Step A: The Blind Clearance
         try:
-            await self.page.mouse.click(10, 10)
+            # Click at (0, 0) to dismiss unfocused modals/ads
+            await self.page.mouse.click(0, 0)
+            # Tutorial tooltips
             tooltip_close = self.page.locator(".m-tool-tips-close").first
             if await tooltip_close.is_visible():
-                await tooltip_close.click(timeout=2000)
+                await tooltip_close.click(timeout=2000, force=True)
         except: pass
 
         # Forcefully hide common blockers via CSS Injection

@@ -54,7 +54,7 @@ class RiskEngine:
     def calculate_stake(self, win_prob: float, confidence: float) -> float:
         """Kelly-inspired staking logic (bankroll * edge * confidence_factor)."""
         if self.check_circuit_breaker():
-            return 0.0
+            return 0.0 # STOP
 
         if self.state["mode"] == "TUITION":
             return 10.0 # Flat tuition stake (₦10)
@@ -99,21 +99,30 @@ class RiskEngine:
             self.state["consecutive_losses"] = 0
             self.update_peak_equity()
 
-            # V5.15.0 Target Scaling
-            realized_profit = self.bankroll - 300.0 # Using 300 as base
+            # V5.16.1 Tuition history update
+            if self.state["mode"] == "TUITION":
+                if "tuition_history" not in self.state: self.state["tuition_history"] = []
+                self.state["tuition_history"].append(1)
+
+            # V5.16.1 Target Scaling & Simulated Withdrawal
+            realized_profit = self.bankroll - 1000.0 # Using 1000 as base
             if realized_profit > 0:
                 current_target = self.state.get("target_multiplier", 10) * 500
                 if self.bankroll >= current_target:
-                    print(f"V5.15 TARGET HIT: {current_target}. Moving to next recursion.")
+                    print(f"V5.16 TARGET HIT: {current_target}. Executing simulated WITHDRAW(3000).")
+                    # Simulation: "Withdraw" 3000 by reducing bankroll
+                    self.bankroll -= 3000
+                    self.state["peak_equity"] = self.bankroll
                     self.state["target_multiplier"] *= 10
         else:
             self.state["consecutive_losses"] += 1
+            if self.state["mode"] == "TUITION":
+                if "tuition_history" not in self.state: self.state["tuition_history"] = []
+                self.state["tuition_history"].append(0)
 
         if self.state["mode"] == "TUITION":
             self.state["tuition_spins"] += 1
-            if self.state["tuition_spins"] >= 30:
-                # Calculate Win Rate from history would be better, but we rely on external check
-                pass
+            # Note: Win Rate check is typically done in bot.py logic
 
         self.check_vault()
         print(f"Post-Trade Status: Mode={self.state['mode']} | Balance=₦{self.bankroll:.2f}")

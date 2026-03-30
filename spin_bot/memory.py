@@ -88,13 +88,22 @@ class MemoryGraph:
         self.tokens.update_one({"id": "current_auth"}, {"$set": token_data}, upsert=True)
 
     def save_full_session(self, data: Dict):
-        """V5.12.1: Full Session Persistence (Cookies + Storage)."""
+        """V5.15.0: Full Session Persistence (Cookies + Storage + V5.15 Tokens)."""
         data["last_sync"] = datetime.now(timezone.utc)
-        self.sessions.update_one({"id": "active_v5"}, {"$set": data}, upsert=True)
+        self.sessions.update_one({"id": "active_v5_15"}, {"$set": data}, upsert=True)
 
     def load_full_session(self) -> Optional[Dict]:
-        """V5.12.1: Load full session state."""
-        return self.sessions.find_one({"id": "active_v5"})
+        """V5.15.0: Load V5.15 immortal session state."""
+        return self.sessions.find_one({"id": "active_v5_15"})
+
+    def save_auth_state(self, auth_data: Dict):
+        """V5.15.0: Save specific 'Golden Tokens' and Cloudflare clearance."""
+        auth_data["timestamp"] = datetime.now(timezone.utc)
+        self.sessions.update_one({"id": "auth_v5_15"}, {"$set": auth_data}, upsert=True)
+
+    def load_auth_state(self) -> Optional[Dict]:
+        """V5.15.0: Load 'Golden Tokens'."""
+        return self.sessions.find_one({"id": "auth_v5_15"})
 
     def close(self):
         self.client.close()

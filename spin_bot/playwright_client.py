@@ -23,6 +23,13 @@ class PlaywrightClient:
         self.execution_log = []
         self.network_log = []
         self.discovered_endpoints = {"history": None, "bet": None}
+        self.auth_state = {
+            "accessToken": os.getenv("GOLDEN_ACCESS_TOKEN", ""),
+            "refreshToken": os.getenv("GOLDEN_REFRESH_TOKEN", ""),
+            "puid": os.getenv("GOLDEN_PUID", ""),
+            "deviceId": os.getenv("GOLDEN_DEVICE_ID", ""),
+            "cf_bm": os.getenv("GOLDEN_CF_BM", "")
+        }
 
     def _log_execution(self, message: str):
         print(message)
@@ -55,17 +62,40 @@ class PlaywrightClient:
         iphone_13 = self.playwright.devices["iPhone 13"]
         iphone_13['viewport'] = {'width': 390, 'height': 844}
 
+        proxy_server = os.getenv("PROXY_SERVER")
+        proxy_config = {"server": proxy_server} if proxy_server else None
+        if proxy_config and os.getenv("PROXY_USERNAME"):
+            proxy_config["username"] = os.getenv("PROXY_USERNAME")
+            proxy_config["password"] = os.getenv("PROXY_PASSWORD")
+
         self.context = await self.browser.new_context(
             **iphone_13,
             locale="en-NG",
             timezone_id="Africa/Lagos",
-            ignore_https_errors=True
+            ignore_https_errors=True,
+            proxy=proxy_config
         )
 
         # V5.9.4 Anti-Redirect Header
         await self.context.set_extra_http_headers({"X-Requested-With": "com.android.browser"})
 
-        # V5.13.2: Full Session Injection (Cookies + Storage)
+        # V5.15.0: Immortal Session Injection (Golden Tokens + Cookies + Storage)
+        if session_state and "auth_state" in session_state:
+            self.auth_state.update(session_state["auth_state"])
+
+        # Inject __cf_bm if available
+        if self.auth_state.get("cf_bm"):
+            cf_cookie = {
+                "name": "__cf_bm",
+                "value": self.auth_state["cf_bm"],
+                "domain": ".football.com",
+                "path": "/",
+                "secure": True,
+                "httpOnly": True,
+                "sameSite": "None"
+            }
+            await self.context.add_cookies([cf_cookie])
+
         if cookies:
             try:
                 await self.context.add_cookies(cookies)
@@ -75,20 +105,32 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        if session_state and "storage" in session_state:
-            try:
-                storage = session_state["storage"]
-                await self.page.add_init_script(f"""
-                    if (window.location.hostname.includes('football.com')) {{
-                        const local = {json.dumps(storage.get('local', {}))};
-                        const session = {json.dumps(storage.get('session', {}))};
-                        for (const k in local) localStorage.setItem(k, local[k]);
-                        for (const k in session) sessionStorage.setItem(k, session[k]);
-                    }}
-                """)
-                self._log_execution("DEBUG: Session storage injected into Browser context.")
-            except Exception as e:
-                self._log_execution(f"DEBUG: Storage injection failed: {e}")
+        # V5.15.0: Golden Token & Storage Injection
+        storage = session_state.get("storage", {}) if session_state else {}
+        local_storage = storage.get("local", {})
+
+        # Merge Golden Tokens into LocalStorage
+        if self.auth_state.get("accessToken"):
+            local_storage["patron:id:accesstoken"] = self.auth_state["accessToken"]
+        if self.auth_state.get("refreshToken"):
+            local_storage["patron:id:refreshtoken"] = self.auth_state["refreshToken"]
+        if self.auth_state.get("puid"):
+            local_storage["patron:id:puid"] = self.auth_state["puid"]
+        if self.auth_state.get("deviceId"):
+            local_storage["deviceId"] = self.auth_state["deviceId"]
+
+        try:
+            await self.page.add_init_script(f"""
+                if (window.location.hostname.includes('football.com')) {{
+                    const local = {json.dumps(local_storage)};
+                    const session = {json.dumps(storage.get('session', {}))};
+                    for (const k in local) localStorage.setItem(k, local[k]);
+                    for (const k in session) sessionStorage.setItem(k, session[k]);
+                }}
+            """)
+            self._log_execution("DEBUG: Immortal Session Storage injected.")
+        except Exception as e:
+            self._log_execution(f"DEBUG: Storage injection failed: {e}")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -184,46 +226,32 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def navigate_to_game(self) -> bool:
-        """V5.13.1: Robust Lobby-based Discovery & Iframe Sync."""
-        target_url = os.getenv("SPIN_URL", "https://www.football.com/ng/games/spin")
+        """V5.15.0: Direct Predator Navigation."""
+        # V5.15.0: Targeted direct URL to bypass lobby hurdles
+        target_url = "https://www.football.com/ng/games/lobby?isNavShow=false"
 
-        # 1. Clean Landing post-auth
-        if "login" in self.page.url or "independent_login" in self.page.url:
-            await self.page.goto("https://www.football.com/ng/", wait_until="networkidle")
-
-        for attempt in range(3): # 3 retry loop as requested
+        for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: Game Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.15 Predator Navigation Attempt {attempt+1}...")
+                await self.page.goto(target_url, wait_until="networkidle")
                 await self._handle_overlays()
 
-                # 2. Navigate via 'Games' Icon in Bottom Nav (Robust Path)
+                # Verify if we are logged in by checking balance or user profile
                 try:
-                    games_nav = self.page.get_by_text("Games").last
-                    if await games_nav.is_visible():
-                        await games_nav.click(force=True)
-                        await asyncio.sleep(2)
-                except: pass
+                    await self.page.wait_for_selector(".m-user-info, .m-balance", timeout=15000)
+                    self._log_execution("DEBUG: Predator Session Authenticated.")
+                except:
+                    self._log_execution("WARNING: Session not visually verified. Attempting game entry anyway.")
 
-                # 3. Wait for Lobby Hydration (Increased timeout for high-latency environments)
-                # Refactored wait_for_selector to avoid text=
-                await self.page.wait_for_selector(".m-game-item, .game-item", state="visible", timeout=45000)
-
-                # 4. Targeted Discovery: "Spin" via robust locator (V5.13.2 Nuclear Mode)
-                self._log_execution("DEBUG: Searching for 'Spin' icon in lobby...")
-                # Try image with alt text first as it's more robust than text-based filter on generic containers
-                game_target = self.page.locator("img[alt*='Spin'], img[alt*='spin'], .m-game-item").filter(has_text="Spin").first
-
+                # Discovery: "Spin" via robust locator
+                game_target = self.page.locator("img[alt*='Spin'], .m-game-item").filter(has_text="Spin").first
                 if await game_target.is_visible():
-                    await game_target.scroll_into_view_if_needed()
-                    await asyncio.sleep(1)
                     await game_target.click(force=True)
-                    self._log_execution("DEBUG: Game icon clicked. Syncing with iframe...")
                 else:
-                    # Fallback to direct URL if lobby icon is elusive
-                    self._log_execution("DEBUG: Lobby icon elusive. Attempting direct SPIN_URL...")
-                    await self.page.goto(target_url, wait_until="networkidle")
+                    # Fallback direct
+                    await self.page.goto("https://www.football.com/ng/games/spin", wait_until="networkidle")
 
-                # 4. Iframe Sync & UI Verification (Extended verification for game initialization)
+                # 4. Iframe Sync & UI Verification
                 try:
                     self._log_execution("DEBUG: Waiting for Game Iframe (iframe[src*='sportygames'])...")
                     # V5.13.1: Specific frame locator as requested
@@ -331,6 +359,23 @@ class PlaywrightClient:
     async def _log_response(self, response: Response):
         try:
             url = response.url.lower()
+
+            # V5.15.0 Token Interception Logic
+            if any(x in url for x in ["/api/ng/orders/", "/api/ng/factscenter/", "login"]):
+                try:
+                    data = await response.json()
+                    new_token = data.get("accessToken") or data.get("data", {}).get("accessToken")
+                    if new_token:
+                        self._log_execution(f"DEBUG: V5.15 Captured updated accessToken.")
+                        self.auth_state["accessToken"] = new_token
+                except: pass
+
+            # Cloudflare Cookie Update
+            cookies = await self.context.cookies()
+            for c in cookies:
+                if c["name"] == "__cf_bm":
+                    self.auth_state["cf_bm"] = c["value"]
+
             if any(x in url for x in ["game", "spin", "bet", "api", "history", "result"]):
                 body = None
                 try:
@@ -416,7 +461,7 @@ class PlaywrightClient:
         except: return False
 
     async def get_full_session_state(self):
-        """V5.13.2: Captures cookies, localStorage, and sessionStorage."""
+        """V5.15.0: Captures cookies, localStorage, and V5.15 auth_state."""
         cookies = await self.context.cookies()
         storage = await self.page.evaluate("""() => {
             return {
@@ -424,7 +469,17 @@ class PlaywrightClient:
                 session: { ...sessionStorage }
             };
         }""")
-        return {"cookies": cookies, "storage": storage}
+
+        # Sync current LocalStorage back to auth_state if possible
+        ls = storage.get("local", {})
+        self.auth_state["accessToken"] = ls.get("patron:id:accesstoken", self.auth_state["accessToken"])
+        self.auth_state["refreshToken"] = ls.get("patron:id:refreshtoken", self.auth_state["refreshToken"])
+
+        return {
+            "cookies": cookies,
+            "storage": storage,
+            "auth_state": self.auth_state
+        }
 
     async def get_session_cookies(self):
         return await self.context.cookies()

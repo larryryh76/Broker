@@ -39,11 +39,25 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.13.0 Hybrid: API Client (Primary) + Playwright (Fallback)."""
-        print(f"--- OMNI MACHINE CYCLE V5.13.0 (HYBRID) ---")
+        """V5.15.0: OMNI-RECURSIVE IMMORTAL MACHINE."""
+        print(f"--- OMNI MACHINE CYCLE V5.15.0 (IMMORTAL SESSION) ---")
 
-        # 1. Initialize API Client and check for existing session
-        full_session = self.memory.load_full_session()
+        # 1. Initialize State & Tokens
+        full_session = self.memory.load_full_session() or {}
+        auth_v5_15 = self.memory.load_auth_state() or {}
+
+        # Inject Golden Tokens from ENV if memory is empty
+        if not auth_v5_15:
+            auth_v5_15 = {
+                "accessToken": os.getenv("GOLDEN_ACCESS_TOKEN", ""),
+                "refreshToken": os.getenv("GOLDEN_REFRESH_TOKEN", ""),
+                "puid": os.getenv("GOLDEN_PUID", ""),
+                "deviceId": os.getenv("GOLDEN_DEVICE_ID", ""),
+                "cf_bm": os.getenv("GOLDEN_CF_BM", "")
+            }
+
+        full_session["auth_state"] = auth_v5_15
+
         api = OmniAPIClient(session_data=full_session)
         client = PlaywrightClient("https://www.football.com")
 
@@ -123,10 +137,12 @@ class OmniMachineV31Refined:
                     sys.exit(1)
 
             # 4. Final Sync and Processing
+            # 4. Final Sync and State Persistence
             if not api_success:
                 new_session = await client.get_full_session_state()
                 new_session["endpoints"] = client.discovered_endpoints
                 self.memory.save_full_session(new_session)
+                self.memory.save_auth_state(new_session["auth_state"])
                 api.apply_session(new_session)
 
                 # Structured Data Synchronization
@@ -148,6 +164,10 @@ class OmniMachineV31Refined:
             if spin_count < 200:
                 self.session_state["mode"] = "LEARNING_MODE"
                 print(f"98% PROTOCOL: LEARNING_MODE active. ({spin_count}/200 spins)")
+            elif self.risk.state["mode"] == "TUITION" and self.risk.state["tuition_spins"] >= 30:
+                self.session_state["mode"] = "ELITE_EXECUTION"
+                self.risk.state["mode"] = "SNIPER"
+                print(f"V5.15 PROMOTION: SNIPER Activated. (N={spin_count})")
             else:
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 print(f"98% PROTOCOL: ELITE_EXECUTION unlocked. (N={spin_count})")
@@ -199,11 +219,16 @@ class OmniMachineV31Refined:
             except: pass
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
+            # Update auth_state before closing
+            final_auth = api.headers.copy()
+            final_auth["cf_bm"] = api.session.cookies.get("__cf_bm")
+            self.memory.save_auth_state(final_auth)
+
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.15 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
     machine = OmniMachineV31Refined()

@@ -65,16 +65,31 @@ class PlaywrightClient:
         # V5.9.4 Anti-Redirect Header
         await self.context.set_extra_http_headers({"X-Requested-With": "com.android.browser"})
 
-        # V5.13.1: Browser Injection BEFORE navigation
+        # V5.13.2: Full Session Injection (Cookies + Storage)
         if cookies:
             try:
-                # Pre-inject cookies as requested to bypass login modals
                 await self.context.add_cookies(cookies)
                 self._log_execution("DEBUG: API session cookies injected into Browser context.")
             except Exception as e:
                 self._log_execution(f"DEBUG: Cookie injection failed: {e}")
 
         self.page = await self.context.new_page()
+
+        if session_state and "storage" in session_state:
+            try:
+                storage = session_state["storage"]
+                await self.page.add_init_script(f"""
+                    if (window.location.hostname.includes('football.com')) {{
+                        const local = {json.dumps(storage.get('local', {}))};
+                        const session = {json.dumps(storage.get('session', {}))};
+                        for (const k in local) localStorage.setItem(k, local[k]);
+                        for (const k in session) sessionStorage.setItem(k, session[k]);
+                    }}
+                """)
+                self._log_execution("DEBUG: Session storage injected into Browser context.")
+            except Exception as e:
+                self._log_execution(f"DEBUG: Storage injection failed: {e}")
+
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
@@ -193,9 +208,10 @@ class PlaywrightClient:
                 # Refactored wait_for_selector to avoid text=
                 await self.page.wait_for_selector(".m-game-item, .game-item", state="visible", timeout=45000)
 
-                # 4. Targeted Discovery: "Spin" via robust locator as requested
+                # 4. Targeted Discovery: "Spin" via robust locator (V5.13.2 Nuclear Mode)
                 self._log_execution("DEBUG: Searching for 'Spin' icon in lobby...")
-                game_target = self.page.locator(".m-game-item").filter(has_text="Spin").first
+                # Try image with alt text first as it's more robust than text-based filter on generic containers
+                game_target = self.page.locator("img[alt*='Spin'], img[alt*='spin'], .m-game-item").filter(has_text="Spin").first
 
                 if await game_target.is_visible():
                     await game_target.scroll_into_view_if_needed()
@@ -398,6 +414,17 @@ class PlaywrightClient:
             await asyncio.sleep(random.uniform(2.5, 6.8))
             return True
         except: return False
+
+    async def get_full_session_state(self):
+        """V5.13.2: Captures cookies, localStorage, and sessionStorage."""
+        cookies = await self.context.cookies()
+        storage = await self.page.evaluate("""() => {
+            return {
+                local: { ...localStorage },
+                session: { ...sessionStorage }
+            };
+        }""")
+        return {"cookies": cookies, "storage": storage}
 
     async def get_session_cookies(self):
         return await self.context.cookies()

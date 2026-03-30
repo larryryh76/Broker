@@ -142,9 +142,11 @@ class OmniAPIClient:
 
                     if val:
                         char = str(val).upper()[0]
-                        if char in ["U", "D"]:
+                        if char in ["U", "D", "M"]:
                             outcomes.append(char)
-                return outcomes
+
+                # V5.13.2: Return in chronological order (Oldest -> Newest)
+                return outcomes[::-1]
             else:
                 print(f"DEBUG: History fetch failed. Status: {response.status_code} | URL: {final_url}")
         except Exception as e:

@@ -103,31 +103,26 @@ class TerminalConnector:
                 else:
                     print(f"MT5 MACHINE: WARNING - No recent activity in {log_dir}")
 
-            # Attempt A: Explicit Path init (Ensures we attach to the correctly initialized process)
-            # Attempt B: Path-less init fallback
-            success = self.mt5.initialize(path=path)
-            if not success:
-                success = self.mt5.initialize()
+            # Attempt A: Unified Initialization (V5.2.0 Hardening)
+            success = self.mt5.initialize(
+                path=path,
+                login=int(self.login_id),
+                password=self.password,
+                server=self.server,
+                timeout=120000
+            )
 
             if success:
-                print(f"MT5 MACHINE: IPC Bridge Online. Version: {self.mt5.version()}")
+                print(f"MT5 MACHINE: IPC Bridge Online & Authenticated. Version: {self.mt5.version()}")
 
-                # Verify Terminal state
-                t_info = self.mt5.terminal_info()
-                if t_info:
-                    print(f"MT5 MACHINE: API PROVEN. Connected: {t_info.connected}")
+                # Verify Account readiness
+                account = self.mt5.account_info()
+                if account and account.login == int(self.login_id):
+                    print("CONNECTION SUCCESS")
+                    print(f"Account: {account.login} | Balance: ${account.balance}")
+                    return True
 
-                    # Step 2: Explicit Login
-                    print(f"MT5 MACHINE: Performing login to {self.server}...")
-                    if self.mt5.login(login=int(self.login_id), password=self.password, server=self.server):
-                        # Prove Account readiness
-                        account = self.mt5.account_info()
-                        if account and account.login == int(self.login_id):
-                            print("CONNECTION SUCCESS")
-                            print(f"Account: {account.login} | Balance: ${account.balance}")
-                            return True
-
-                print("MT5 MACHINE: Bridge established but API/Login incomplete. Retrying...")
+                print("MT5 MACHINE: Bridge established but Account info mismatch. Retrying...")
             else:
                 err_code, err_msg = self.mt5.last_error()
                 print(f"MT5 MACHINE: IPC Timeout/Fail ({err_code}): {err_msg}")

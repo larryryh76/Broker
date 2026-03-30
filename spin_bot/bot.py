@@ -1,10 +1,6 @@
 import os
 import sys
-import time
-import json
 import asyncio
-import random
-import hashlib
 from typing import List, Dict, Optional, Any
 from spin_bot.memory import MemoryGraph
 from spin_bot.models import EnsembleBrain
@@ -21,12 +17,12 @@ class OmniMachineV31Refined:
 
         # 2. Reconstruct System State
         self.session_state = self.memory.load_session() or {
-            "bankroll": 1000.0, # V5.16.1: Start > 500 to pass Vault protection
+            "bankroll": 300.0, # V5.17.0: Start with Tuition capital
             "mode": "LEARNING_MODE",
-            "peak_equity": 1000.0,
+            "peak_equity": 300.0,
             "vault_locked": False,
             "history": [],
-            "tuition_history": [] # V5.16.1: Track actual win/loss
+            "tuition_history": []
         }
 
         # 3. Model Weight Loading
@@ -85,27 +81,24 @@ class OmniMachineV31Refined:
                     api_success = True
 
             if not api_success:
-                print("DEBUG: API Failed. Falling back to Playwright UI...")
-                # 3. Playwright Fallback (UI)
-                # Inject full session from memory if available
+                print("DEBUG: API Path. Bootstrapping Playwright (Hybrid Fallback)...")
+                # 3. Playwright Boot
                 await client.setup(
                     cookies=full_session.get("cookies") if full_session else None,
                     session_state=full_session
                 )
 
                 if not await client.navigate_to_game():
-                    print("DEBUG: Nav failure or Session expired. Attempting UI Login...")
+                    print("DEBUG: Direct navigation failed. Attempting UI Login...")
                     await client.login()
 
-                    # Capture and sync full session immediately
-                    new_session = await client.get_full_session_state()
-                    self.memory.save_full_session(new_session)
-                    api.apply_session(new_session)
-
                     if not await client.navigate_to_game():
-                        print("CRITICAL: Failed to reach Game Environment even after login.")
-                        await client.page.screenshot(path="artifacts/error.png")
+                        print("CRITICAL: Failed to reach Game Environment.")
+                        await client.capture_failure_artifact("nav_fail_v5_17")
                         return
+
+            # V5.17.0: Mental State Sync (History + Weights)
+            print("DEBUG: Synchronizing Intelligence...")
 
             # V5.13.1: Strict Dashboard Verification (Deposit Button)
             if not api_success:
@@ -166,22 +159,21 @@ class OmniMachineV31Refined:
                 self.session_state["mode"] = "LEARNING_MODE"
                 print(f"98% PROTOCOL: LEARNING_MODE active. ({spin_count}/200 spins)")
             elif self.risk.state["mode"] == "TUITION" and self.risk.state["tuition_spins"] >= 30:
-                # V5.16.1: Real Win-Rate Logic
-                th = self.session_state.get("tuition_history", [])
-                if not th:
-                    print("V5.16.1: No tuition history. Staying in LEARNING.")
-                    return
+                # V5.17.0: Markov Confidence Escalation
+                from spin_bot.models import MarkovModel
+                mm = MarkovModel(all_spins).predict()
+                mm_conf = max(mm.values())
 
-                win_rate = sum(th) / len(th)
-                if win_rate < 0.60:
-                    print(f"V5.16.1 TUITION ABORT: Win Rate {win_rate:.2f} < 60%. Resetting state.")
-                    self.session_state["tuition_history"] = []
-                    self.risk.state["tuition_spins"] = 0
+                th = self.session_state.get("tuition_history", [])
+                win_rate = sum(th) / len(th) if th else 0
+
+                if mm_conf < 0.60:
+                    print(f"V5.17 TUITION: Markov Confidence {mm_conf:.2f} < 60%. Staying in Tuition/Observation.")
                     return
 
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 self.risk.state["mode"] = "SNIPER"
-                print(f"V5.16.1 PROMOTION: SNIPER Activated. (Win Rate: {win_rate:.2f})")
+                print(f"V5.17 PROMOTION: SNIPER Activated. (Markov Conf: {mm_conf:.2f} | Win Rate: {win_rate:.2f})")
             else:
                 self.session_state["mode"] = "ELITE_EXECUTION"
                 print(f"98% PROTOCOL: ELITE_EXECUTION unlocked. (N={spin_count})")
@@ -228,21 +220,26 @@ class OmniMachineV31Refined:
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V3.1 Cycle: {e}")
-            try: await client.page.screenshot(path="artifacts/error.png")
+            print(f"CRITICAL ERROR in V5.17 Cycle: {e}")
+            try: await client.capture_failure_artifact("cycle_crash")
             except: pass
         finally:
+            # V5.17.0: Mandatory Persistence Commit (Self-Healing)
             self.session_state["bankroll"] = self.risk.bankroll
-            # Update auth_state before closing
-            final_auth = api.headers.copy()
-            final_auth["cf_bm"] = api.session.cookies.get("__cf_bm")
-            self.memory.save_auth_state(final_auth)
+
+            try:
+                # Capture current browser state even on failure
+                if not api_success and client.page:
+                    final_session = await client.get_full_session_state()
+                    self.memory.save_full_session(final_session)
+                    self.memory.save_auth_state(final_session["auth_state"])
+            except: pass
 
             self.memory.save_session(self.session_state)
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.15 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.17 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
     machine = OmniMachineV31Refined()

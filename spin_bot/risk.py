@@ -12,7 +12,8 @@ class RiskEngine:
             "vault_locked": False,
             "tuition_spins": 0,
             "shutdown_until": None,
-            "target_multiplier": 10
+            "target_multiplier": 10,
+            "min_balance": 500.0 # V5.17.0 Floor protection
         }
 
     def update_peak_equity(self):
@@ -21,7 +22,7 @@ class RiskEngine:
             print(f"Peak Equity Updated: ₦{self.bankroll:.2f}")
 
     def check_circuit_breaker(self) -> bool:
-        """V5.15.0: Enhanced Circuit Breaker (Drawdown + 3-Strike Rule)."""
+        """V5.17.0: Enhanced Circuit Breaker (Floor + 3-Strike Rule)."""
         # 0. Shutdown Check
         shutdown_ts = self.state.get("shutdown_until")
         if shutdown_ts:
@@ -31,9 +32,10 @@ class RiskEngine:
                 print(f"CIRCUIT BREAKER: System in cooling mode until {shutdown_ts}")
                 return True
 
-        # 1. ₦500 Vault Protection
-        if self.bankroll <= 500:
-            print(f"VAULT PROTECTION: Balance ₦{self.bankroll} <= 500. Betting halted.")
+        # 1. Floor Protection (The Vault)
+        min_bal = self.state.get("min_balance", 500.0)
+        if self.bankroll < min_bal:
+            print(f"VAULT PROTECTION: Balance ₦{self.bankroll} < {min_bal}. Betting halted.")
             return True
 
         # 2. Drawdown Control
@@ -99,21 +101,27 @@ class RiskEngine:
             self.state["consecutive_losses"] = 0
             self.update_peak_equity()
 
-            # V5.16.1 Tuition history update
+            # V5.17.0 Tuition history update
             if self.state["mode"] == "TUITION":
                 if "tuition_history" not in self.state: self.state["tuition_history"] = []
                 self.state["tuition_history"].append(1)
 
-            # V5.16.1 Target Scaling & Simulated Withdrawal
-            realized_profit = self.bankroll - 1000.0 # Using 1000 as base
+            # V5.17.0 Target Scaling & Profit Securing (10X Recursive)
+            base_capital = 500.0
+            realized_profit = self.bankroll - base_capital
             if realized_profit > 0:
-                current_target = self.state.get("target_multiplier", 10) * 500
-                if self.bankroll >= current_target:
-                    print(f"V5.16 TARGET HIT: {current_target}. Executing simulated WITHDRAW(3000).")
-                    # Simulation: "Withdraw" 3000 by reducing bankroll
-                    self.bankroll -= 3000
-                    self.state["peak_equity"] = self.bankroll
-                    self.state["target_multiplier"] *= 10
+                current_target = base_capital + (realized_profit * 10) # 10x Escalation logic
+
+                # Check for securing profit (50% rule)
+                if realized_profit >= 1000: # Arbitrary threshold for securing
+                    secure_amount = realized_profit * 0.5
+                    new_floor = base_capital + secure_amount
+                    if new_floor > self.state.get("min_balance", 500):
+                        print(f"V5.17 PROFIT SECURED: Setting new floor to ₦{new_floor:.2f}")
+                        self.state["min_balance"] = new_floor
+
+                if self.bankroll >= 10000: # Scaling target
+                    print(f"V5.17 TARGET HIT. Moving to next recursion level.")
         else:
             self.state["consecutive_losses"] += 1
             if self.state["mode"] == "TUITION":

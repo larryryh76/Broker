@@ -88,13 +88,14 @@ class MemoryGraph:
         self.tokens.update_one({"id": "current_auth"}, {"$set": token_data}, upsert=True)
 
     def save_full_session(self, data: Dict):
-        """V5.15.0: Full Session Persistence (Cookies + Storage + V5.15 Tokens)."""
+        """V5.17.0: Self-Healing Full Session Persistence (Cookies + Storage + V5.17 Tokens)."""
         data["last_sync"] = datetime.now(timezone.utc)
-        self.sessions.update_one({"id": "active_v5_15"}, {"$set": data}, upsert=True)
+        # Use a consistent ID for the self-healing cycle
+        self.sessions.update_one({"id": "active_v5_17"}, {"$set": data}, upsert=True)
 
     def load_full_session(self) -> Optional[Dict]:
-        """V5.15.0: Load V5.15 immortal session state."""
-        return self.sessions.find_one({"id": "active_v5_15"})
+        """V5.17.0: Load V5.17 self-healing session state."""
+        return self.sessions.find_one({"id": "active_v5_17"})
 
     def save_auth_state(self, auth_data: Dict):
         """V5.15.0: Save specific 'Golden Tokens' and Cloudflare clearance."""

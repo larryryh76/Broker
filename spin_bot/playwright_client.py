@@ -79,27 +79,33 @@ class PlaywrightClient:
         # V5.9.4 Anti-Redirect Header
         await self.context.set_extra_http_headers({"X-Requested-With": "com.android.browser"})
 
-        # V5.15.0: Immortal Session Injection (Golden Tokens + Cookies + Storage)
+        # V5.17.0: Cross-Domain Injection (Football.com + SportyGames.com)
         if session_state and "auth_state" in session_state:
             self.auth_state.update(session_state["auth_state"])
 
-        # Inject __cf_bm if available
+        # V5.17.0: Map tokens to multiple domains to fix iframe auth inheritance
+        domains = [".football.com", ".sportygames.com", "www.football.com"]
         if self.auth_state.get("cf_bm"):
-            cf_cookie = {
-                "name": "__cf_bm",
-                "value": self.auth_state["cf_bm"],
-                "domain": ".football.com",
-                "path": "/",
-                "secure": True,
-                "httpOnly": True,
-                "sameSite": "None"
-            }
-            await self.context.add_cookies([cf_cookie])
+            for domain in domains:
+                cf_cookie = {
+                    "name": "__cf_bm",
+                    "value": self.auth_state["cf_bm"],
+                    "domain": domain,
+                    "path": "/",
+                    "secure": True,
+                    "httpOnly": True,
+                    "sameSite": "None"
+                }
+                await self.context.add_cookies([cf_cookie])
 
         if cookies:
             try:
-                await self.context.add_cookies(cookies)
-                self._log_execution("DEBUG: API session cookies injected into Browser context.")
+                # Mirror top-level cookies to iframe domain
+                for c in cookies:
+                    c_copy = c.copy()
+                    c_copy["domain"] = ".sportygames.com"
+                    await self.context.add_cookies([c, c_copy])
+                self._log_execution("DEBUG: Cross-Domain session cookies injected.")
             except Exception as e:
                 self._log_execution(f"DEBUG: Cookie injection failed: {e}")
 
@@ -120,21 +126,21 @@ class PlaywrightClient:
             local_storage["deviceId"] = self.auth_state["deviceId"]
 
         try:
-            # V5.16.0: Hardcoded defaults for LocalStorage as requested
+            # V5.17.0: Iframe Tunneling (localStorage Injection for all domains)
             local_storage.setdefault("keep_signed_in", "1")
             local_storage.setdefault("remember_me", "1")
             local_storage.setdefault("fcom_theme_theme", "classic")
 
-            # Use context.add_init_script to ensure it runs on all pages/frames before navigation
+            # Use context.add_init_script to ensure it runs on all pages AND iframes
             await self.context.add_init_script(f"""
-                if (window.location.hostname.includes('football.com')) {{
-                    const local = {json.dumps(local_storage)};
-                    const session = {json.dumps(storage.get('session', {}))};
+                const local = {json.dumps(local_storage)};
+                const session = {json.dumps(storage.get('session', {}))};
+                if (window.location.hostname.includes('football.com') || window.location.hostname.includes('sportygames.com')) {{
                     for (const k in local) localStorage.setItem(k, local[k]);
                     for (const k in session) sessionStorage.setItem(k, session[k]);
                 }}
             """)
-            self._log_execution("DEBUG: V5.16 Ghost Bypass Storage injected.")
+            self._log_execution("DEBUG: V5.17 Cross-Domain Storage Tunneling active.")
         except Exception as e:
             self._log_execution(f"DEBUG: Storage injection failed: {e}")
 
@@ -202,34 +208,36 @@ class PlaywrightClient:
             await self.page.screenshot(path="artifacts/error.png")
 
     async def navigate_to_game(self) -> bool:
-        """V5.16.0: Ghost Bypass Direct Navigation."""
-        # V5.16.0: Step B: Direct Endpoint Entry
+        """V5.17.0: Direct Iframe Tunneling Navigation."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.16 Ghost Bypass Navigation Attempt {attempt+1}...")
-
-                # Step B: Wait for Network to be Idle instead of a specific selector
+                self._log_execution(f"DEBUG: V5.17 Predator Tunneling Navigation Attempt {attempt+1}...")
                 await self.page.goto(target_url, wait_until="networkidle")
-
-                # Step A: The Blind Clearance
                 await self._handle_overlays()
+
+                # V5.17.0: Login Modal Breaker (Iframe Check)
+                self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+
+                try:
+                    # Check for login modal INSIDE the iframe
+                    login_text = self.game_frame.locator("text='Please login to start game', .m-login-btn").first
+                    if await login_text.is_visible(timeout=5000):
+                        self._log_execution("DEBUG: V5.17 Login Modal Breaker Triggered (In-Iframe Injection)...")
+                        await self._break_iframe_login()
+                except: pass
 
                 # Verify if we are logged in
                 try:
                     await self.page.wait_for_selector(".m-user-info, .m-balance", timeout=5000)
-                    self._log_execution("DEBUG: V5.16 Session Authenticated.")
+                    self._log_execution("DEBUG: Predator Session Authenticated.")
                 except:
                     self._log_execution("WARNING: Session not visually verified.")
 
                 # 4. Iframe Sync & UI Verification
                 try:
-                    self._log_execution("DEBUG: Waiting for Game Iframe (iframe[src*='sportygames'])...")
-                    # V5.13.1: Specific frame locator as requested
-                    self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
-
-                    # Wait for Game UI: canvas, .history, .results as requested
+                    self._log_execution("DEBUG: Waiting for Game Iframe Sync...")
                     ui_indicator = self.game_frame.locator("canvas, .history, .results, .history-list, .bet-panel").first
                     await ui_indicator.wait_for(state="visible", timeout=45000)
 
@@ -265,12 +273,31 @@ class PlaywrightClient:
                     break
             except: pass
 
-    async def _handle_overlays(self, retries: int = 5):
-        """V5.16.0: Blind Clearance & Force-Close Protocol."""
-        # Step A: The Blind Clearance
+    async def _break_iframe_login(self):
+        """V5.17.0: Manually injects accessToken into the Iframe LocalStorage."""
         try:
-            # Click at (0, 0) to dismiss unfocused modals/ads
-            await self.page.mouse.click(0, 0)
+            token = self.auth_state.get("accessToken")
+            if token:
+                # V5.17.0 Force Iframe Injection
+                await self.page.evaluate(f"""() => {{
+                    document.querySelectorAll('iframe').forEach(f => {{
+                        try {{
+                            f.contentWindow.localStorage.setItem('patron:id:accesstoken', '{token}');
+                            f.contentWindow.location.reload();
+                        }} catch(e) {{}}
+                    }});
+                }}""")
+                self._log_execution("DEBUG: Iframe Login Breaker: Token injected into iframe.")
+                await asyncio.sleep(3)
+        except Exception as e:
+            self._log_execution(f"DEBUG: Iframe breaker failed: {e}")
+
+    async def _handle_overlays(self, retries: int = 5):
+        """V5.17.0: Ghost Bypass & Force-Close Protocol."""
+        # V5.17.0 Ghost Bypass Click
+        try:
+            # Click at (10, 10) to clear transparent overlays as requested
+            await self.page.mouse.click(10, 10)
             # Tutorial tooltips
             tooltip_close = self.page.locator(".m-tool-tips-close").first
             if await tooltip_close.is_visible():
@@ -334,13 +361,13 @@ class PlaywrightClient:
         try:
             url = response.url.lower()
 
-            # V5.15.0 Token Interception Logic
-            if any(x in url for x in ["/api/ng/orders/", "/api/ng/factscenter/", "login"]):
+            # V5.17.0 Recursive Refresh Loop (Interceptor)
+            if any(x in url for x in ["/api/ng/orders/", "/api/ng/factscenter/", "config/refresh"]):
                 try:
                     data = await response.json()
                     new_token = data.get("accessToken") or data.get("data", {}).get("accessToken")
                     if new_token:
-                        self._log_execution(f"DEBUG: V5.15 Captured updated accessToken.")
+                        self._log_execution(f"DEBUG: V5.17 Captured updated accessToken.")
                         self.auth_state["accessToken"] = new_token
                 except: pass
 

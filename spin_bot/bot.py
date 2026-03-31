@@ -36,25 +36,14 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.15.0: OMNI-RECURSIVE IMMORTAL MACHINE."""
-        print(f"--- OMNI MACHINE CYCLE V5.15.0 (IMMORTAL SESSION) ---")
+        """V5.18.0: OMNI-RECURSIVE FRONT-DOOR MACHINE."""
+        print(f"--- OMNI MACHINE CYCLE V5.18.0 (FRONT-DOOR UI) ---")
 
-        # 1. Initialize State & Tokens
+        # 1. V5.18.0 UI-First Initialization
         full_session = self.memory.load_full_session() or {}
-        auth_v5_15 = self.memory.load_auth_state() or {}
 
-        # Inject Golden Tokens from ENV if memory is empty
-        if not auth_v5_15:
-            auth_v5_15 = {
-                "accessToken": os.getenv("GOLDEN_ACCESS_TOKEN", ""),
-                "refreshToken": os.getenv("GOLDEN_REFRESH_TOKEN", ""),
-                "puid": os.getenv("GOLDEN_PUID", ""),
-                "deviceId": os.getenv("GOLDEN_DEVICE_ID", ""),
-                "cf_bm": os.getenv("GOLDEN_CF_BM", "")
-            }
-
-        full_session["auth_state"] = auth_v5_15
-
+        # We still initialize API with saved state for fallback,
+        # but Playwright will be used for primary login.
         api = OmniAPIClient(session_data=full_session)
         client = PlaywrightClient("https://www.football.com")
 
@@ -62,40 +51,34 @@ class OmniMachineV31Refined:
         scraped = []
 
         try:
-            # 2. Attempt API Execution (PRIMARY)
-            print("DEBUG: Attempting PRIMARY path (API)...")
-            user = os.getenv("FOOTBALL_NG_LOGIN")
-            pw = os.getenv("FOOTBALL_NG_PASS")
+            # 2. V5.18.0 FRONT-DOOR UI AUTH (PRIMARY)
+            print("DEBUG: Starting V5.18 Front-Door UI Protocol...")
+            await client.setup() # No pre-injection
+            await client.login() # Manual UI Auth
 
-            if api.login(user, pw):
-                # V5.13.1: Persistence Sync
-                api_cookies = api.session.cookies.get_dict()
-                cookie_list = [{"name": k, "value": v, "domain": ".football.com", "path": "/"} for k, v in api_cookies.items()]
-                self.memory.save_full_session({"cookies": cookie_list})
-                self.memory.save_session_tokens({"cookies": cookie_list})
+            if await client.navigate_to_game():
+                print("DEBUG: UI Landing Success. Proceeding to Data extraction.")
+                # Capture and sync session for potential API calls
+                new_session = await client.get_full_session_state()
+                self.memory.save_full_session(new_session)
+                self.memory.save_auth_state(new_session["auth_state"])
+                api.apply_session(new_session)
+            else:
+                # API Fallback if UI Navigation specifically failed
+                print("WARNING: UI Navigation failed. Falling back to API Path...")
+                user = os.getenv("FOOTBALL_NG_LOGIN")
+                pw = os.getenv("FOOTBALL_NG_PASS")
+                if api.login(user, pw):
+                    api_history = api.get_spin_history()
+                    if api_history:
+                        print(f"DEBUG: API Fallback Success. Retrieved {len(api_history)} spins.")
+                        scraped = api_history
+                        api_success = True
 
-                api_history = api.get_spin_history()
-                if api_history:
-                    print(f"DEBUG: API Success. Retrieved {len(api_history)} spins.")
-                    scraped = api_history
-                    api_success = True
-
-            if not api_success:
-                print("DEBUG: API Path. Bootstrapping Playwright (Hybrid Fallback)...")
-                # 3. Playwright Boot
-                await client.setup(
-                    cookies=full_session.get("cookies") if full_session else None,
-                    session_state=full_session
-                )
-
-                if not await client.navigate_to_game():
-                    print("DEBUG: Direct navigation failed. Attempting UI Login...")
-                    await client.login()
-
-                    if not await client.navigate_to_game():
-                        print("CRITICAL: Failed to reach Game Environment.")
-                        await client.capture_failure_artifact("nav_fail_v5_17")
-                        return
+                if not api_success:
+                    print("CRITICAL: Both UI and API paths failed.")
+                    await client.capture_failure_artifact("dual_path_failure")
+                    return
 
             # V5.17.0: Mental State Sync (History + Weights)
             print("DEBUG: Synchronizing Intelligence...")

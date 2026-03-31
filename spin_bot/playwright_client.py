@@ -79,70 +79,9 @@ class PlaywrightClient:
         # V5.9.4 Anti-Redirect Header
         await self.context.set_extra_http_headers({"X-Requested-With": "com.android.browser"})
 
-        # V5.17.0: Cross-Domain Injection (Football.com + SportyGames.com)
-        if session_state and "auth_state" in session_state:
-            self.auth_state.update(session_state["auth_state"])
-
-        # V5.17.0: Map tokens to multiple domains to fix iframe auth inheritance
-        domains = [".football.com", ".sportygames.com", "www.football.com"]
-        if self.auth_state.get("cf_bm"):
-            for domain in domains:
-                cf_cookie = {
-                    "name": "__cf_bm",
-                    "value": self.auth_state["cf_bm"],
-                    "domain": domain,
-                    "path": "/",
-                    "secure": True,
-                    "httpOnly": True,
-                    "sameSite": "None"
-                }
-                await self.context.add_cookies([cf_cookie])
-
-        if cookies:
-            try:
-                # Mirror top-level cookies to iframe domain
-                for c in cookies:
-                    c_copy = c.copy()
-                    c_copy["domain"] = ".sportygames.com"
-                    await self.context.add_cookies([c, c_copy])
-                self._log_execution("DEBUG: Cross-Domain session cookies injected.")
-            except Exception as e:
-                self._log_execution(f"DEBUG: Cookie injection failed: {e}")
-
+        # V5.18.0: ABORT ALL INJECTIONS. Use Front-Door UI Login.
         self.page = await self.context.new_page()
-
-        # V5.15.0: Golden Token & Storage Injection
-        storage = session_state.get("storage", {}) if session_state else {}
-        local_storage = storage.get("local", {})
-
-        # Merge Golden Tokens into LocalStorage
-        if self.auth_state.get("accessToken"):
-            local_storage["patron:id:accesstoken"] = self.auth_state["accessToken"]
-        if self.auth_state.get("refreshToken"):
-            local_storage["patron:id:refreshtoken"] = self.auth_state["refreshToken"]
-        if self.auth_state.get("puid"):
-            local_storage["patron:id:puid"] = self.auth_state["puid"]
-        if self.auth_state.get("deviceId"):
-            local_storage["deviceId"] = self.auth_state["deviceId"]
-
-        try:
-            # V5.17.0: Iframe Tunneling (localStorage Injection for all domains)
-            local_storage.setdefault("keep_signed_in", "1")
-            local_storage.setdefault("remember_me", "1")
-            local_storage.setdefault("fcom_theme_theme", "classic")
-
-            # Use context.add_init_script to ensure it runs on all pages AND iframes
-            await self.context.add_init_script(f"""
-                const local = {json.dumps(local_storage)};
-                const session = {json.dumps(storage.get('session', {}))};
-                if (window.location.hostname.includes('football.com') || window.location.hostname.includes('sportygames.com')) {{
-                    for (const k in local) localStorage.setItem(k, local[k]);
-                    for (const k in session) sessionStorage.setItem(k, session[k]);
-                }}
-            """)
-            self._log_execution("DEBUG: V5.17 Cross-Domain Storage Tunneling active.")
-        except Exception as e:
-            self._log_execution(f"DEBUG: Storage injection failed: {e}")
+        self._log_execution("DEBUG: V5.18 Front-Door Protocol Active. Bypassing state injection.")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -157,55 +96,52 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.16 GHOST BYPASS LOGIN...")
+        self._log_execution(f"DEBUG: Initializing V5.18 FRONT-DOOR UI LOGIN...")
         try:
-            # 1. Direct Login Landing
-            login_url = "https://www.football.com/ng/m/independent_login"
-            await self.page.goto(login_url, wait_until="networkidle")
+            # STEP A: HOMEPAGE INITIALIZATION
+            homepage = "https://www.football.com/ng/"
+            await self.page.goto(homepage, wait_until="networkidle")
             await self._handle_overlays()
             await self._handle_regional_splash()
 
-            # 2. V5.16 Visible-Only Input Handling
-            self._log_execution("DEBUG: Entering credentials via visible selectors...")
+            # STEP B: TRIGGER LOGIN MODAL
+            login_trigger = self.page.locator("text='Log In', .m-btn-login, button:has-text('Log In')").first
+            await login_trigger.wait_for(state="visible", timeout=15000)
+            await login_trigger.click(force=True)
+            await asyncio.sleep(2)
 
-            # Resolve "Hidden Input" crash by targeting only visible elements
-            # Step 1: Phone number
-            phone_field = self.page.locator("input:visible").filter(has_text="Mobile Number").first
-            if not await phone_field.is_visible():
-                phone_field = self.page.locator("input[type='tel']:visible, input[placeholder*='Mobile']:visible").first
+            # STEP C: DEFEAT HIDDEN INPUTS & AUTHENTICATE
+            self._log_execution("DEBUG: Entering credentials via visible-only filters...")
 
-            await phone_field.fill(user)
+            # Fill Phone
+            phone_input = self.page.locator("input[placeholder*='Mobile']:visible, input[type='tel']:visible").first
+            await phone_input.fill(user)
 
-            # Step 2: Password
-            password_field = self.page.locator("input[type='password']:visible").first
-            await password_field.fill(pw)
+            # Fill Password
+            pass_input = self.page.locator("input[type='password']:visible").first
+            await pass_input.fill(pw)
 
-            # 5. Submission
-            login_btn = self.page.locator("button.m-btn-login:visible, .m-login-btn:visible, button:has-text('Log In'):visible").first
-            await login_btn.click(force=True)
+            # Click Submit
+            submit_btn = self.page.locator("button.m-login-btn:visible, button.m-btn-login:visible").first
+            await submit_btn.click(force=True)
 
-            # 6. Strict Verification (User Indicator or Modal Disappearance)
+            # STEP D: STRICT VERIFICATION
             try:
-                self._log_execution("DEBUG: Verifying session (30s timeout)...")
-                # Wait for user profile indicator OR modal disappearance
-                # wait_for_selector refactored to avoid = in CSS
-                await asyncio.wait([
-                    self.page.wait_for_selector(".m-user-info", state="visible"),
-                    self.page.wait_for_selector("input[type='password']", state="hidden")
-                ], return_when=asyncio.FIRST_COMPLETED, timeout=30000)
-
-                self._log_execution("LOGIN SUCCESS")
+                self._log_execution("DEBUG: Verifying Front-Door Login (30s)...")
+                # Wait for balance or deposit button as proof of auth
+                await self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=30000)
+                self._log_execution("FRONT-DOOR LOGIN SUCCESS")
             except Exception as e:
-                self._log_execution(f"CRITICAL: TRUE LOGIN FAILED: {e}")
-                await self.capture_failure_artifact("login_verify_fail")
+                self._log_execution(f"CRITICAL: UI AUTH REJECTED: {e}")
+                await self.capture_failure_artifact("auth_rejected")
                 import sys
                 sys.exit(1)
 
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: Login UI Error: {e}")
-            await self.page.screenshot(path="artifacts/error.png")
+            self._log_execution(f"CRITICAL: V5.18 Login Error: {e}")
+            await self.capture_failure_artifact("login_error")
 
     async def navigate_to_game(self) -> bool:
         """V5.17.0: Direct Iframe Tunneling Navigation."""

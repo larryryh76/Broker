@@ -72,17 +72,13 @@ class PlaywrightClient:
             locale="en-NG",
             timezone_id="Africa/Lagos",
             ignore_https_errors=True,
+            bypass_csp=True,
             proxy=proxy_config
         )
 
         self.page = await self.context.new_page()
 
-        # V5.19.0 WAF Stealth
-        if stealth:
-            try: await stealth(self.page)
-            except: pass
-
-        self._log_execution("DEBUG: V5.19 Titan Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.20 Aurora Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -97,12 +93,13 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.19 TITAN LOGIN...")
+        self._log_execution(f"DEBUG: Initializing V5.20 AURORA LOGIN...")
         try:
-            # V5.19.0: Visible Input Enforcement
-            self._log_execution("DEBUG: Entering credentials via visible-only filters...")
+            # V5.20.0: Anti-Hidden Input Protocol
+            self._log_execution("DEBUG: Entering credentials via Anti-Trap selectors...")
 
-            # Fill Phone
+            # Fill Phone (V5.20 Anti-Trap: Ignore hidden nodes)
+            # Use strict visibility filters to bypass the hidden input traps
             phone_input = self.page.locator("input[placeholder*='Mobile']:visible, input[type='tel']:visible").first
             await phone_input.fill(user)
 
@@ -111,10 +108,10 @@ class PlaywrightClient:
             await pass_input.fill(pw)
 
             # Click Submit
-            submit_btn = self.page.locator("button.m-login-btn:visible, button.btn-primary:visible:has-text('Log In')").first
+            submit_btn = self.page.locator("button.m-login-btn:visible, button.btn-primary:visible:has-text('Log In'), .m-btn-login:visible").first
             await submit_btn.click(force=True)
 
-            # STEP D: TITAN VERIFICATION
+            # STEP D: AURORA VERIFICATION
             try:
                 self._log_execution("DEBUG: Verifying Titan Auth (30s)...")
                 await self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=30000)
@@ -134,28 +131,42 @@ class PlaywrightClient:
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.19.0: Titan Protocol - Modal Breaker Navigation."""
+        """V5.20.0: Aurora Protocol - Triple-Threat Modal Breaker."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.19 Titan Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.20 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
                 await self._handle_overlays()
 
-                # STEP B: BOOTSTRAP MODAL BYPASS
-                # Target the blocking modal footer login trigger (__BVID__45)
-                modal_login_btn = self.page.locator(".modal-footer .btn-primary:has-text('Login')")
+                # STEP B: TRIPLE-THREAT MODAL BREAKER (V5.20)
+                modal_btn = self.page.locator("button.btn-primary:has-text('Login'), .modal-footer .btn-primary")
 
-                if await modal_login_btn.is_visible(timeout=5000):
-                    self._log_execution("DEBUG: Modal Trap detected. Triggering Breaker...")
-                    await modal_login_btn.click(force=True)
-                    await asyncio.sleep(2)
+                if await modal_btn.is_visible(timeout=5000):
+                    self._log_execution("DEBUG: Modal Trap Detected. Executing Triple-Threat Breaker...")
+
+                    # 1. Random Mouse Jitter (Anti-WAF)
+                    await self.page.mouse.move(random.randint(5, 50), random.randint(5, 50))
+
+                    # 2. JS Dispatch
+                    await modal_btn.evaluate("node => node.click()")
+
+                    # 3. Physical Click Fallback
+                    await modal_btn.click(force=True, delay=150)
+
+                    # 4. Verification & Hard Navigation Fallback
+                    try:
+                        await self.page.wait_for_url("**/login**", timeout=4000)
+                    except:
+                        self._log_execution("DEBUG: Modal Click Failed. Forcing Hard Navigation to Login...")
+                        await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
+
                     await self.login()
 
-                # V5.17.0: Iframe Sync
+                # V5.20.0: Iframe Sync
                 self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
 
                 # Verify if we are logged in

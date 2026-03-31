@@ -36,49 +36,31 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.18.0: OMNI-RECURSIVE FRONT-DOOR MACHINE."""
-        print(f"--- OMNI MACHINE CYCLE V5.18.0 (FRONT-DOOR UI) ---")
+        """V5.19.0: OMNI-RECURSIVE TITAN MACHINE."""
+        print(f"--- OMNI MACHINE CYCLE V5.19.0 (TITAN PROTOCOL) ---")
 
-        # 1. V5.18.0 UI-First Initialization
+        # 1. Titan Initialization (API Deprecated for Auth)
         full_session = self.memory.load_full_session() or {}
-
-        # We still initialize API with saved state for fallback,
-        # but Playwright will be used for primary login.
-        api = OmniAPIClient(session_data=full_session)
         client = PlaywrightClient("https://www.football.com")
 
         api_success = False
         scraped = []
 
         try:
-            # 2. V5.18.0 FRONT-DOOR UI AUTH (PRIMARY)
-            print("DEBUG: Starting V5.18 Front-Door UI Protocol...")
-            await client.setup() # No pre-injection
-            await client.login() # Manual UI Auth
+            # 2. TITAN UI AUTH (PRIMARY)
+            print("DEBUG: Starting V5.19 Titan UI Protocol...")
+            await client.setup()
 
             if await client.navigate_to_game():
-                print("DEBUG: UI Landing Success. Proceeding to Data extraction.")
-                # Capture and sync session for potential API calls
+                print("DEBUG: Titan Landing Success.")
+                # Capture session for data operations only
                 new_session = await client.get_full_session_state()
                 self.memory.save_full_session(new_session)
                 self.memory.save_auth_state(new_session["auth_state"])
-                api.apply_session(new_session)
             else:
-                # API Fallback if UI Navigation specifically failed
-                print("WARNING: UI Navigation failed. Falling back to API Path...")
-                user = os.getenv("FOOTBALL_NG_LOGIN")
-                pw = os.getenv("FOOTBALL_NG_PASS")
-                if api.login(user, pw):
-                    api_history = api.get_spin_history()
-                    if api_history:
-                        print(f"DEBUG: API Fallback Success. Retrieved {len(api_history)} spins.")
-                        scraped = api_history
-                        api_success = True
-
-                if not api_success:
-                    print("CRITICAL: Both UI and API paths failed.")
-                    await client.capture_failure_artifact("dual_path_failure")
-                    return
+                print("CRITICAL: Titan Protocol failed. Terminating to prevent flagging.")
+                await client.capture_failure_artifact("titan_failure")
+                sys.exit(1)
 
             # V5.17.0: Mental State Sync (History + Weights)
             print("DEBUG: Synchronizing Intelligence...")
@@ -115,14 +97,17 @@ class OmniMachineV31Refined:
 
             # 4. Final Sync and Processing
             # 4. Final Sync and State Persistence
-            if not api_success:
-                new_session = await client.get_full_session_state()
-                new_session["endpoints"] = client.discovered_endpoints
-                self.memory.save_full_session(new_session)
-                self.memory.save_auth_state(new_session["auth_state"])
-                api.apply_session(new_session)
+            new_session = await client.get_full_session_state()
+            new_session["endpoints"] = client.discovered_endpoints
+            self.memory.save_full_session(new_session)
+            self.memory.save_auth_state(new_session["auth_state"])
 
-                # Structured Data Synchronization
+            # Use API only for history retrieval if possible
+            api = OmniAPIClient(session_data=new_session)
+            api_history = api.get_spin_history()
+            if api_history:
+                scraped = api_history
+            else:
                 extraction = await client.capture_history_texts()
                 scraped = extraction["results"]
 
@@ -170,21 +155,13 @@ class OmniMachineV31Refined:
                 if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.7:
                     print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']}")
 
-                    bet_success = False
-                    if api_success:
-                        res = api.place_bet(decision["direction"], decision["amount"])
-                        if "error" not in res:
-                            print(f"API BET SUCCESS: {res}")
-                            bet_success = True
-                    else:
-                        bet_success = await client.place_ui_bet(decision["direction"], decision["amount"])
+                    bet_success = await client.place_ui_bet(decision["direction"], decision["amount"])
 
                     if bet_success:
                         await asyncio.sleep(15)
                         # Re-verify results
-                        if api_success:
-                            outcomes = api.get_spin_history()
-                        else:
+                        outcomes = api.get_spin_history()
+                        if not outcomes:
                             extraction = await client.capture_history_texts()
                             outcomes = extraction.get("results", [])
 

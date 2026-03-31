@@ -58,10 +58,7 @@ class PlaywrightClient:
         ]
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
 
-        # V5.9.4 Mobile/Stealth Configuration
-        iphone_13 = self.playwright.devices["iPhone 13"]
-        iphone_13['viewport'] = {'width': 390, 'height': 844}
-
+        # V5.19.0 TITAN PROTOCOL: Mobile Safari Footprint
         proxy_server = os.getenv("PROXY_SERVER")
         proxy_config = {"server": proxy_server} if proxy_server else None
         if proxy_config and os.getenv("PROXY_USERNAME"):
@@ -69,19 +66,23 @@ class PlaywrightClient:
             proxy_config["password"] = os.getenv("PROXY_PASSWORD")
 
         self.context = await self.browser.new_context(
-            **iphone_13,
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+            viewport={'width': 390, 'height': 844},
+            is_mobile=True,
             locale="en-NG",
             timezone_id="Africa/Lagos",
             ignore_https_errors=True,
             proxy=proxy_config
         )
 
-        # V5.9.4 Anti-Redirect Header
-        await self.context.set_extra_http_headers({"X-Requested-With": "com.android.browser"})
-
-        # V5.18.0: ABORT ALL INJECTIONS. Use Front-Door UI Login.
         self.page = await self.context.new_page()
-        self._log_execution("DEBUG: V5.18 Front-Door Protocol Active. Bypassing state injection.")
+
+        # V5.19.0 WAF Stealth
+        if stealth:
+            try: await stealth(self.page)
+            except: pass
+
+        self._log_execution("DEBUG: V5.19 Titan Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -96,21 +97,9 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.18 FRONT-DOOR UI LOGIN...")
+        self._log_execution(f"DEBUG: Initializing V5.19 TITAN LOGIN...")
         try:
-            # STEP A: HOMEPAGE INITIALIZATION
-            homepage = "https://www.football.com/ng/"
-            await self.page.goto(homepage, wait_until="networkidle")
-            await self._handle_overlays()
-            await self._handle_regional_splash()
-
-            # STEP B: TRIGGER LOGIN MODAL
-            login_trigger = self.page.locator("text='Log In', .m-btn-login, button:has-text('Log In')").first
-            await login_trigger.wait_for(state="visible", timeout=15000)
-            await login_trigger.click(force=True)
-            await asyncio.sleep(2)
-
-            # STEP C: DEFEAT HIDDEN INPUTS & AUTHENTICATE
+            # V5.19.0: Visible Input Enforcement
             self._log_execution("DEBUG: Entering credentials via visible-only filters...")
 
             # Fill Phone
@@ -122,52 +111,57 @@ class PlaywrightClient:
             await pass_input.fill(pw)
 
             # Click Submit
-            submit_btn = self.page.locator("button.m-login-btn:visible, button.m-btn-login:visible").first
+            submit_btn = self.page.locator("button.m-login-btn:visible, button.btn-primary:visible:has-text('Log In')").first
             await submit_btn.click(force=True)
 
-            # STEP D: STRICT VERIFICATION
+            # STEP D: TITAN VERIFICATION
             try:
-                self._log_execution("DEBUG: Verifying Front-Door Login (30s)...")
-                # Wait for balance or deposit button as proof of auth
+                self._log_execution("DEBUG: Verifying Titan Auth (30s)...")
                 await self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=30000)
-                self._log_execution("FRONT-DOOR LOGIN SUCCESS")
+                self._log_execution("TITAN LOGIN SUCCESS")
             except Exception as e:
                 self._log_execution(f"CRITICAL: UI AUTH REJECTED: {e}")
-                await self.capture_failure_artifact("auth_rejected")
+                await self.capture_failure_artifact("titan_auth_rejected")
                 import sys
                 sys.exit(1)
 
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.18 Login Error: {e}")
-            await self.capture_failure_artifact("login_error")
+            self._log_execution(f"CRITICAL: V5.19 Login Error: {e}")
+            await self.capture_failure_artifact("titan_login_error")
+            import sys
+            sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.17.0: Direct Iframe Tunneling Navigation."""
+        """V5.19.0: Titan Protocol - Modal Breaker Navigation."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.17 Predator Tunneling Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.19 Titan Navigation Attempt {attempt+1}...")
+
+                # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
                 await self._handle_overlays()
 
-                # V5.17.0: Login Modal Breaker (Iframe Check)
-                self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
+                # STEP B: BOOTSTRAP MODAL BYPASS
+                # Target the blocking modal footer login trigger (__BVID__45)
+                modal_login_btn = self.page.locator(".modal-footer .btn-primary:has-text('Login')")
 
-                try:
-                    # Check for login modal INSIDE the iframe
-                    login_text = self.game_frame.locator("text='Please login to start game', .m-login-btn").first
-                    if await login_text.is_visible(timeout=5000):
-                        self._log_execution("DEBUG: V5.17 Login Modal Breaker Triggered (In-Iframe Injection)...")
-                        await self._break_iframe_login()
-                except: pass
+                if await modal_login_btn.is_visible(timeout=5000):
+                    self._log_execution("DEBUG: Modal Trap detected. Triggering Breaker...")
+                    await modal_login_btn.click(force=True)
+                    await asyncio.sleep(2)
+                    await self.login()
+
+                # V5.17.0: Iframe Sync
+                self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
 
                 # Verify if we are logged in
                 try:
                     await self.page.wait_for_selector(".m-user-info, .m-balance", timeout=5000)
-                    self._log_execution("DEBUG: Predator Session Authenticated.")
+                    self._log_execution("DEBUG: Titan Session Authenticated.")
                 except:
                     self._log_execution("WARNING: Session not visually verified.")
 

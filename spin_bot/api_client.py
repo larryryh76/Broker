@@ -93,40 +93,8 @@ class OmniAPIClient:
         print(f"DEBUG: V5.15 Immortal Session applied with {len([k for k,v in self.endpoints.items() if v])} valid endpoints.")
 
     def ensure_authenticated(self, user: str, passw: str) -> bool:
-        """V5.13.1 Self-Sorting Login: Verifies session or performs direct POST auth."""
-        print(f"DEBUG: Ensuring API authentication for {user}...")
-
-        # 1. Test existing session
-        try:
-            # Simple balance check as health probe
-            balance = self.get_balance()
-            if balance > 0:
-                print("DEBUG: Existing API session valid.")
-                return True
-        except: pass
-
-        # 2. Perform direct POST login if session invalid
-        print("DEBUG: Session invalid or missing. Attempting direct POST login...")
-        auth_url = "https://www.football.com/api/ng/auth/login" # Presumed endpoint
-        payload = {"mobile": user, "password": passw, "remember": True}
-
-        try:
-            response = self.session.post(auth_url, json=payload, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                # Capture token if present in body
-                token = data.get("token") or data.get("data", {}).get("token")
-                if token:
-                    self.session.headers.update({"Authorization": f"Bearer {token}"})
-
-                print("DEBUG: API Login successful (POST).")
-                return True
-            else:
-                print(f"DEBUG: API POST Login failed ({response.status_code}).")
-        except Exception as e:
-            print(f"DEBUG: API Auth Error: {e}")
-
-        return False
+        """V5.19.0: API Authentication Deprecated. Logic handles session reuse only."""
+        return True # Rely on UI session capture
 
     def login(self, user: str, passw: str) -> bool:
         return self.ensure_authenticated(user, passw)

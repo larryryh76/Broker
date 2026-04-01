@@ -37,8 +37,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.20.0: OMNI-RECURSIVE AURORA MACHINE."""
-        print(f"--- OMNI MACHINE CYCLE V5.20.0 (AURORA PROTOCOL) ---")
+        """V5.20.1: OMNI-RECURSIVE AURORA MACHINE."""
+        print(f"--- OMNI MACHINE CYCLE V5.20.1 (AURORA PROTOCOL) ---")
 
         # 1. Aurora Initialization (API Deprecated for Auth)
         full_session = self.memory.load_full_session() or {}
@@ -49,14 +49,14 @@ class OmniMachineV31Refined:
 
         try:
             # 2. AURORA UI AUTH (PRIMARY)
-            print("DEBUG: Starting V5.20 Aurora UI Protocol...")
-            # Load Golden Tokens/Secrets from environment
+            print("DEBUG: Starting V5.20.1 Aurora UI Protocol...")
             # Ensure critical vars are present
             if not os.getenv("FOOTBALL_NG_LOGIN") or not os.getenv("FOOTBALL_NG_PASS"):
                 print("CRITICAL: Missing GitHub Secrets (FOOTBALL_NG_LOGIN/PASS).")
                 sys.exit(1)
 
-            await client.setup()
+            # V5.20.1: Pass full_session for Immortal injection
+            await client.setup(session_state=full_session)
 
             if await client.navigate_to_game():
                 print("DEBUG: Aurora Landing Success.")
@@ -69,10 +69,10 @@ class OmniMachineV31Refined:
                 await client.capture_failure_artifact("aurora_failure")
                 sys.exit(1)
 
-            # V5.20.0: Mental State Sync (History + Weights)
+            # V5.20.1: Mental State Sync (History + Weights)
             print("DEBUG: Synchronizing Intelligence...")
 
-            # V5.13.1: Strict Dashboard Verification (Deposit Button)
+            # V5.20.1: Strict Dashboard Verification (Deposit Button)
             if not api_success:
                 try:
                     # Deposit button check as proof of successful landing
@@ -84,11 +84,11 @@ class OmniMachineV31Refined:
                     print("WARNING: Dashboard verification failed.")
                     await client.page.screenshot(path="artifacts/error.png")
 
-            # V5.11.0: Betting Environment Entry & Verification
+            # V5.20.1: Betting Environment Entry & Verification
             if not api_success:
                 try:
                     print("DEBUG: Entering and Verifying Betting Environment (60s timeout)...")
-                    # V5.11.0: Explicit wait for 'UP' or 'DOWN' buttons as absolute proof of game load
+                    # V5.20.1: Explicit wait for 'UP' or 'DOWN' buttons as absolute proof of game load
                     # The PlaywrightClient already handles the transition/fallback
                     if not client.game_frame:
                         raise Exception("Game Iframe not attached.")
@@ -118,7 +118,7 @@ class OmniMachineV31Refined:
                 extraction = await client.capture_history_texts()
                 scraped = extraction["results"]
 
-            # Sequence-Hash Deduplication (V5.13.0)
+            # V5.20.1: Sequence-Hash Deduplication
             for i, outcome in enumerate(scraped):
                 # Pattern generated from the last 4 outcomes + current
                 context = scraped[:i]
@@ -143,11 +143,11 @@ class OmniMachineV31Refined:
                 win_rate = sum(th) / len(th) if th else 0
 
                 if mm_conf < 0.60:
-                    print(f"V5.20 TUITION: Markov Confidence {mm_conf:.2f} < 60%. Staying in Observation.")
+                    print(f"V5.20.1 TUITION: Markov Confidence {mm_conf:.2f} < 60%. Staying in Observation.")
                     return
 
                 self.session_state["mode"] = "SNIPER"
-                print(f"V5.20 PROMOTION: SNIPER Activated. (Markov Conf: {mm_conf:.2f} | Win Rate: {win_rate:.2f})")
+                print(f"V5.20.1 PROMOTION: SNIPER Activated. (Markov Conf: {mm_conf:.2f} | Win Rate: {win_rate:.2f})")
             else:
                 # Default SNIPER if criteria met
                 self.session_state["mode"] = "SNIPER"
@@ -187,11 +187,11 @@ class OmniMachineV31Refined:
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.17 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.20.1 Cycle: {e}")
             try: await client.capture_failure_artifact("cycle_crash")
             except: pass
         finally:
-            # V5.20.0: Mandatory Persistence Commit (Self-Healing)
+            # V5.20.1: Mandatory Persistence Commit (Self-Healing)
             self.session_state["bankroll"] = self.risk.bankroll
 
             try:
@@ -206,7 +206,7 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.20 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.20.1 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
     machine = OmniMachineV31Refined()

@@ -46,7 +46,7 @@ class PlaywrightClient:
             self._log_execution(f"DEBUG: Saved artifacts for {name}")
         except: pass
 
-    async def setup(self, cookies: List[Dict] = None, session_state: Dict = None):
+    async def setup(self, session_state: Dict = None):
         self.playwright = await async_playwright().start()
         launch_args = [
             "--disable-blink-features=AutomationControlled",
@@ -76,6 +76,27 @@ class PlaywrightClient:
             proxy=proxy_config
         )
 
+        # V5.20.1: Immortal Session Injection (Cookies + Storage)
+        if session_state:
+            try:
+                if "cookies" in session_state:
+                    await self.context.add_cookies(session_state["cookies"])
+
+                if "storage" in session_state:
+                    storage = session_state["storage"]
+                    # Injection via init script to ensure consistency
+                    await self.context.add_init_script(f"""
+                        const local = {json.dumps(storage.get('local', {}))};
+                        const session = {json.dumps(storage.get('session', {}))};
+                        if (window.location.hostname.includes('football.com')) {{
+                            for (const k in local) localStorage.setItem(k, local[k]);
+                            for (const k in session) sessionStorage.setItem(k, session[k]);
+                        }}
+                    """)
+                self._log_execution("DEBUG: Immortal Session Injected into Browser Context.")
+            except Exception as e:
+                self._log_execution(f"DEBUG: Session injection failed: {e}")
+
         self.page = await self.context.new_page()
 
         self._log_execution("DEBUG: V5.20 Aurora Protocol Active (Safari Stealth).")
@@ -93,18 +114,24 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.20 AURORA LOGIN...")
+        self._log_execution(f"DEBUG: Initializing V5.20.1 AURORA LOGIN (HARD-NAV FIX)...")
         try:
-            # V5.20.0: Anti-Hidden Input Protocol
-            self._log_execution("DEBUG: Entering credentials via Anti-Trap selectors...")
+            # V5.20.1: Hard-Nav to Login URL if needed
+            if "login" not in self.page.url:
+                self._log_execution("DEBUG: Forcing navigation to login page...")
+                await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
 
-            # Fill Phone (V5.20 Anti-Trap: Ignore hidden nodes)
-            # Use strict visibility filters to bypass the hidden input traps
+            # V5.20.1: Strict Visibility Verification before .fill()
+            self._log_execution("DEBUG: Entering credentials with strict visibility checks...")
+
+            # Fill Phone
             phone_input = self.page.locator("input[placeholder*='Mobile']:visible, input[type='tel']:visible").first
+            await phone_input.wait_for(state="visible", timeout=15000)
             await phone_input.fill(user)
 
             # Fill Password
             pass_input = self.page.locator("input[type='password']:visible").first
+            await pass_input.wait_for(state="visible", timeout=5000)
             await pass_input.fill(pw)
 
             # Click Submit
@@ -131,42 +158,32 @@ class PlaywrightClient:
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.20.0: Aurora Protocol - Triple-Threat Modal Breaker."""
+        """V5.20.1: Aurora Protocol - Hard-Nav Modal Breaker."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.20 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.20.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
                 await self._handle_overlays()
 
-                # STEP B: TRIPLE-THREAT MODAL BREAKER (V5.20)
-                modal_btn = self.page.locator("button.btn-primary:has-text('Login'), .modal-footer .btn-primary")
+                # STEP B: HARD-NAV MODAL BREAKER (V5.20.1)
+                # Side-step unresponsive frontend triggers by detecting modal and forcing URL change
+                modal_detected = self.page.locator("button.btn-primary:has-text('Login'), .modal-footer .btn-primary").first
 
-                if await modal_btn.is_visible(timeout=5000):
-                    self._log_execution("DEBUG: Modal Trap Detected. Executing Triple-Threat Breaker...")
-
-                    # 1. Random Mouse Jitter (Anti-WAF)
-                    await self.page.mouse.move(random.randint(5, 50), random.randint(5, 50))
-
-                    # 2. JS Dispatch
-                    await modal_btn.evaluate("node => node.click()")
-
-                    # 3. Physical Click Fallback
-                    await modal_btn.click(force=True, delay=150)
-
-                    # 4. Verification & Hard Navigation Fallback
-                    try:
-                        await self.page.wait_for_url("**/login**", timeout=4000)
-                    except:
-                        self._log_execution("DEBUG: Modal Click Failed. Forcing Hard Navigation to Login...")
-                        await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
-
+                try:
+                    # Fix V5.20.1: is_visible() does not accept timeout. Use wait_for instead.
+                    await modal_detected.wait_for(state="visible", timeout=5000)
+                    self._log_execution("DEBUG: Modal Trap Detected. Forcing Hard Navigation to Login...")
+                    await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
                     await self.login()
+                except:
+                    # No modal detected or already logged in
+                    pass
 
-                # V5.20.0: Iframe Sync
+                # V5.20.1: Iframe Sync
                 self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
 
                 # Verify if we are logged in

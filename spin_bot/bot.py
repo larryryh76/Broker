@@ -37,8 +37,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.20.1: OMNI-RECURSIVE AURORA MACHINE."""
-        print(f"--- OMNI MACHINE CYCLE V5.20.1 (AURORA PROTOCOL) ---")
+        """V5.20.2: OMNI-RECURSIVE AURORA MACHINE."""
+        print(f"--- OMNI MACHINE CYCLE V5.20.2 (AURORA PROTOCOL) ---")
 
         # 1. Aurora Initialization (API Deprecated for Auth)
         full_session = self.memory.load_full_session() or {}
@@ -187,7 +187,7 @@ class OmniMachineV31Refined:
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.20.1 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.20.2 Cycle: {e}")
             try: await client.capture_failure_artifact("cycle_crash")
             except: pass
         finally:
@@ -206,7 +206,7 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.20.1 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.20.2 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
     machine = OmniMachineV31Refined()

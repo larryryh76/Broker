@@ -114,12 +114,22 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.20.1 AURORA LOGIN (HARD-NAV FIX)...")
+        self._log_execution(f"DEBUG: Initializing V5.20.2 AURORA LOGIN (WAP FIX)...")
         try:
             # V5.20.1: Hard-Nav to Login URL if needed
             if "login" not in self.page.url:
                 self._log_execution("DEBUG: Forcing navigation to login page...")
                 await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
+
+            # V5.20.2: WAP Redirect Handling
+            # If redirected to livescore/WAP view, trigger the login drawer
+            try:
+                header_login_trigger = self.page.locator("text=/^(Log In|Login)$/i").first
+                if await header_login_trigger.is_visible(timeout=5000):
+                    self._log_execution("DEBUG: WAP View Detected. Triggering login drawer...")
+                    await header_login_trigger.click(force=True)
+                    await asyncio.sleep(1)
+            except: pass
 
             # V5.20.1: Strict Visibility Verification before .fill()
             self._log_execution("DEBUG: Entering credentials with strict visibility checks...")

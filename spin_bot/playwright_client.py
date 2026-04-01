@@ -46,7 +46,7 @@ class PlaywrightClient:
             self._log_execution(f"DEBUG: Saved artifacts for {name}")
         except: pass
 
-    async def setup(self, cookies: List[Dict] = None, session_state: Dict = None):
+    async def setup(self, session_state: Dict = None):
         self.playwright = await async_playwright().start()
         launch_args = [
             "--disable-blink-features=AutomationControlled",
@@ -72,17 +72,34 @@ class PlaywrightClient:
             locale="en-NG",
             timezone_id="Africa/Lagos",
             ignore_https_errors=True,
+            bypass_csp=True,
             proxy=proxy_config
         )
 
+        # V5.20.1: Immortal Session Injection (Cookies + Storage)
+        if session_state:
+            try:
+                if "cookies" in session_state:
+                    await self.context.add_cookies(session_state["cookies"])
+
+                if "storage" in session_state:
+                    storage = session_state["storage"]
+                    # Injection via init script to ensure consistency
+                    await self.context.add_init_script(f"""
+                        const local = {json.dumps(storage.get('local', {}))};
+                        const session = {json.dumps(storage.get('session', {}))};
+                        if (window.location.hostname.includes('football.com')) {{
+                            for (const k in local) localStorage.setItem(k, local[k]);
+                            for (const k in session) sessionStorage.setItem(k, session[k]);
+                        }}
+                    """)
+                self._log_execution("DEBUG: Immortal Session Injected into Browser Context.")
+            except Exception as e:
+                self._log_execution(f"DEBUG: Session injection failed: {e}")
+
         self.page = await self.context.new_page()
 
-        # V5.19.0 WAF Stealth
-        if stealth:
-            try: await stealth(self.page)
-            except: pass
-
-        self._log_execution("DEBUG: V5.19 Titan Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.20 Aurora Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -97,24 +114,31 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.19 TITAN LOGIN...")
+        self._log_execution(f"DEBUG: Initializing V5.20.1 AURORA LOGIN (HARD-NAV FIX)...")
         try:
-            # V5.19.0: Visible Input Enforcement
-            self._log_execution("DEBUG: Entering credentials via visible-only filters...")
+            # V5.20.1: Hard-Nav to Login URL if needed
+            if "login" not in self.page.url:
+                self._log_execution("DEBUG: Forcing navigation to login page...")
+                await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
+
+            # V5.20.1: Strict Visibility Verification before .fill()
+            self._log_execution("DEBUG: Entering credentials with strict visibility checks...")
 
             # Fill Phone
             phone_input = self.page.locator("input[placeholder*='Mobile']:visible, input[type='tel']:visible").first
+            await phone_input.wait_for(state="visible", timeout=15000)
             await phone_input.fill(user)
 
             # Fill Password
             pass_input = self.page.locator("input[type='password']:visible").first
+            await pass_input.wait_for(state="visible", timeout=5000)
             await pass_input.fill(pw)
 
             # Click Submit
-            submit_btn = self.page.locator("button.m-login-btn:visible, button.btn-primary:visible:has-text('Log In')").first
+            submit_btn = self.page.locator("button.m-login-btn:visible, button.btn-primary:visible:has-text('Log In'), .m-btn-login:visible").first
             await submit_btn.click(force=True)
 
-            # STEP D: TITAN VERIFICATION
+            # STEP D: AURORA VERIFICATION
             try:
                 self._log_execution("DEBUG: Verifying Titan Auth (30s)...")
                 await self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=30000)
@@ -134,28 +158,32 @@ class PlaywrightClient:
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.19.0: Titan Protocol - Modal Breaker Navigation."""
+        """V5.20.1: Aurora Protocol - Hard-Nav Modal Breaker."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.19 Titan Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.20.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
                 await self._handle_overlays()
 
-                # STEP B: BOOTSTRAP MODAL BYPASS
-                # Target the blocking modal footer login trigger (__BVID__45)
-                modal_login_btn = self.page.locator(".modal-footer .btn-primary:has-text('Login')")
+                # STEP B: HARD-NAV MODAL BREAKER (V5.20.1)
+                # Side-step unresponsive frontend triggers by detecting modal and forcing URL change
+                modal_detected = self.page.locator("button.btn-primary:has-text('Login'), .modal-footer .btn-primary").first
 
-                if await modal_login_btn.is_visible(timeout=5000):
-                    self._log_execution("DEBUG: Modal Trap detected. Triggering Breaker...")
-                    await modal_login_btn.click(force=True)
-                    await asyncio.sleep(2)
+                try:
+                    # Fix V5.20.1: is_visible() does not accept timeout. Use wait_for instead.
+                    await modal_detected.wait_for(state="visible", timeout=5000)
+                    self._log_execution("DEBUG: Modal Trap Detected. Forcing Hard Navigation to Login...")
+                    await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
                     await self.login()
+                except:
+                    # No modal detected or already logged in
+                    pass
 
-                # V5.17.0: Iframe Sync
+                # V5.20.1: Iframe Sync
                 self.game_frame = self.page.frame_locator("iframe[src*='sportygames']")
 
                 # Verify if we are logged in

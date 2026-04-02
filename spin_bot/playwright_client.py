@@ -99,11 +99,14 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        self._log_execution("DEBUG: V5.20 Aurora Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.21.1 Aurora Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
         self.page.on("response", self._log_response)
+
+        # V5.21.1: UI Sensitivity & Modal Handling
+        await self._apply_v21_ui_enhancements()
 
         if stealth:
             try: await stealth(self.page)
@@ -114,7 +117,7 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.20.2 AURORA LOGIN (WAP FIX)...")
+        self._log_execution(f"DEBUG: Initializing V5.21.1 AURORA LOGIN (WAP FIX)...")
         try:
             # V5.20.1: Hard-Nav to Login URL if needed
             if "login" not in self.page.url:
@@ -125,7 +128,7 @@ class PlaywrightClient:
             # If redirected to livescore/WAP view, trigger the login drawer
             try:
                 header_login_trigger = self.page.locator("text=/^(Log In|Login)$/i").first
-                if await header_login_trigger.is_visible(timeout=5000):
+                if await header_login_trigger.is_visible():
                     self._log_execution("DEBUG: WAP View Detected. Triggering login drawer...")
                     await header_login_trigger.click(force=True)
                     await asyncio.sleep(1)
@@ -162,21 +165,22 @@ class PlaywrightClient:
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.19 Login Error: {e}")
+            self._log_execution(f"CRITICAL: V5.21.1 Login Error: {e}")
             await self.capture_failure_artifact("titan_login_error")
             import sys
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.20.1: Aurora Protocol - Hard-Nav Modal Breaker."""
+        """V5.21.1: Aurora Protocol - Hard-Nav Modal Breaker & UI Sensitivity."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.20.1 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.21.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
+                await self._apply_v21_ui_enhancements()
                 await self._handle_overlays()
 
                 # STEP B: HARD-NAV MODAL BREAKER (V5.20.1)
@@ -210,6 +214,7 @@ class PlaywrightClient:
                     await ui_indicator.wait_for(state="visible", timeout=45000)
 
                     self._log_execution("IFRAME FOUND")
+                    await self.hide_init_loader()
                     return True
 
                 except Exception as e:
@@ -226,6 +231,146 @@ class PlaywrightClient:
                 await asyncio.sleep(2)
 
         return False
+
+    async def _apply_v21_ui_enhancements(self):
+        """V5.21.1: Implements UI Sensitivity, Modal Handling, and Asset Resilience."""
+        try:
+            self._log_execution("DEBUG: Applying V5.21.1 UI Enhancements...")
+            await self.page.add_init_script("""
+                (function() {
+                    // 1. Asset Resilience: Preconnect/DNS-Prefetch
+                    const domains = ['https://www.football.com', 'https://s.football.com/games/'];
+                    domains.forEach(d => {
+                        ['preconnect', 'dns-prefetch'].forEach(rel => {
+                            const link = document.createElement('link');
+                            link.rel = rel;
+                            link.href = d;
+                            document.head.appendChild(link);
+                        });
+                    });
+
+                    // 2. Asset Retry Hook
+                    window.addEventListener('error', function(e) {
+                        const target = e.target;
+                        if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+                            const retryCount = parseInt(target.getAttribute('data-retry') || '0');
+                            if (retryCount < 2) {
+                                console.log(`DEBUG: Retrying asset load: ${target.src || target.href}`);
+                                const newTarget = document.createElement(target.tagName);
+                                if (target.tagName === 'SCRIPT') {
+                                    newTarget.src = target.src;
+                                    newTarget.async = true;
+                                } else {
+                                    newTarget.rel = 'stylesheet';
+                                    newTarget.href = target.href;
+                                }
+                                newTarget.setAttribute('data-retry', retryCount + 1);
+                                document.head.appendChild(newTarget);
+                            } else {
+                                console.error('FATAL ERROR: Asset failed to load after 2 retries.');
+                            }
+                        }
+                    }, true);
+
+                    // 3. Theme-Based Loading UI & Z-Index Management
+                    function applyThemeStyle() {
+                        const theme = document.documentElement.getAttribute('data-theme') || 'light';
+                        const brand = window.BRAN_NAME || 'football';
+                        const loader = document.querySelector('.app-init-loader-wrap');
+                        if (loader) {
+                            if (theme === 'light') {
+                                loader.style.backgroundColor = '#f4f4f4';
+                                const spinner = loader.querySelector('.spinner-icon');
+                                if (spinner) spinner.style.backgroundColor = '#e0e1e2';
+                            } else {
+                                if (brand === 'Encore') {
+                                    loader.style.backgroundColor = '#100e26';
+                                } else {
+                                    loader.style.backgroundColor = '#000000';
+                                }
+                            }
+                        }
+                    }
+
+                    // MutationObserver to handle dynamic elements and modal stack
+                    const observer = new MutationObserver((mutations) => {
+                        applyThemeStyle();
+
+                        // Z-Index Management
+                        const backdrops = document.querySelectorAll('.modal-backdrop');
+                        const contents = document.querySelectorAll('.modal-content');
+
+                        backdrops.forEach((b, i) => {
+                            b.style.zIndex = (1052 + (i * 10)).toString();
+                        });
+                        contents.forEach((c, i) => {
+                            c.style.zIndex = (1055 + (i * 10)).toString();
+                        });
+                    });
+                    observer.observe(document.body, { childList: true, subtree: true });
+
+                    // 4. "Login required" Listener
+                    const originalFetch = window.fetch;
+                    window.fetch = async (...args) => {
+                        try {
+                            const response = await originalFetch(...args);
+                            if (response.status === 401) {
+                                triggerLoginModal();
+                            }
+                            return response;
+                        } catch (e) {
+                            throw e;
+                        }
+                    };
+
+                    function triggerLoginModal() {
+                        if (document.getElementById('omni-login-modal')) return;
+
+                        const modal = document.createElement('div');
+                        modal.id = 'omni-login-modal';
+                        modal.innerHTML = `
+                            <div class="modal-backdrop" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+                                <div class="modal-content" style="background:white;padding:20px;border-radius:8px;text-align:center;max-width:80%;">
+                                    <p style="color:red;font-weight:bold;">Error! Please login to start game.</p>
+                                    <div style="margin-top:20px;">
+                                        <button id="omni-login-primary" style="background:#007bff;color:white;border:none;padding:10px 20px;border-radius:4px;margin-right:10px;">Login</button>
+                                        <button id="omni-login-secondary" style="background:#6c757d;color:white;border:none;padding:10px 20px;border-radius:4px;">Exit</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(modal);
+
+                        document.getElementById('omni-login-primary').onclick = () => {
+                            window.location.href = '/ng/login';
+                        };
+                        document.getElementById('omni-login-secondary').onclick = () => {
+                            modal.remove();
+                            window.location.href = '/ng/m/';
+                        };
+                    }
+
+                    // Also check for specific text patterns in existing UI
+                    setInterval(() => {
+                        if (document.body.innerText.includes('Error! Please login to start game')) {
+                            triggerLoginModal();
+                        }
+                    }, 2000);
+
+                })();
+            """)
+        except Exception as e:
+            self._log_execution(f"DEBUG: Failed to apply V5.21 enhancements: {e}")
+
+    async def hide_init_loader(self):
+        """V5.21.1: Hides the application initialization loader."""
+        try:
+            self._log_execution("DEBUG: Hiding App Init Loader...")
+            await self.page.evaluate("""() => {
+                const loader = document.querySelector('.app-init-loader-wrap');
+                if (loader) loader.style.display = 'none';
+            }""")
+        except: pass
 
     async def _handle_regional_splash(self):
         """V5.13.1: Refactored Splash Bypass to avoid invalid selectors."""

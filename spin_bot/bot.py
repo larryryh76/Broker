@@ -17,7 +17,7 @@ class OmniMachineV31Refined:
 
         # 2. Reconstruct System State
         self.session_state = self.memory.load_session() or {
-            "bankroll": 1000.0, # V5.20.1: Start > 500 to pass Vault floor
+            "bankroll": 1000.0, # V5.21.1: Start > 500 to pass Vault floor
             "mode": "TUITION",
             "peak_equity": 1000.0,
             "vault_locked": False,
@@ -37,8 +37,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.20.2: OMNI-RECURSIVE AURORA MACHINE."""
-        print(f"--- OMNI MACHINE CYCLE V5.20.2 (AURORA PROTOCOL) ---")
+        """V5.21.1: OMNI-RECURSIVE AURORA MACHINE."""
+        print(f"--- OMNI MACHINE CYCLE V5.21.1 (AURORA PROTOCOL) ---")
 
         # 1. Aurora Initialization (API Deprecated for Auth)
         full_session = self.memory.load_full_session() or {}
@@ -49,7 +49,7 @@ class OmniMachineV31Refined:
 
         try:
             # 2. AURORA UI AUTH (PRIMARY)
-            print("DEBUG: Starting V5.20.1 Aurora UI Protocol...")
+            print("DEBUG: Starting V5.21.1 Aurora UI Protocol...")
             # Ensure critical vars are present
             if not os.getenv("FOOTBALL_NG_LOGIN") or not os.getenv("FOOTBALL_NG_PASS"):
                 print("CRITICAL: Missing GitHub Secrets (FOOTBALL_NG_LOGIN/PASS).")
@@ -118,7 +118,7 @@ class OmniMachineV31Refined:
                 extraction = await client.capture_history_texts()
                 scraped = extraction["results"]
 
-            # V5.20.1: Sequence-Hash Deduplication
+            # V5.21.1: Sequence-Hash Deduplication
             for i, outcome in enumerate(scraped):
                 # Pattern generated from the last 4 outcomes + current
                 context = scraped[:i]
@@ -134,7 +134,7 @@ class OmniMachineV31Refined:
                 self.session_state["mode"] = "TUITION"
                 print(f"98% PROTOCOL: TUITION (LEARNING) active. ({spin_count}/200 spins)")
             elif self.session_state["mode"] == "TUITION" and self.session_state["tuition_spins"] >= 30:
-                # V5.20.1: Markov Confidence Escalation
+                # V5.21.1: Markov Confidence Escalation
                 from spin_bot.models import MarkovModel
                 mm = MarkovModel(all_spins).predict()
                 mm_conf = max(mm.values())
@@ -143,11 +143,11 @@ class OmniMachineV31Refined:
                 win_rate = sum(th) / len(th) if th else 0
 
                 if mm_conf < 0.60:
-                    print(f"V5.20.1 TUITION: Markov Confidence {mm_conf:.2f} < 60%. Staying in Observation.")
+                    print(f"V5.21.1 TUITION: Markov Confidence {mm_conf:.2f} < 60%. Staying in Observation.")
                     return
 
                 self.session_state["mode"] = "SNIPER"
-                print(f"V5.20.1 PROMOTION: SNIPER Activated. (Markov Conf: {mm_conf:.2f} | Win Rate: {win_rate:.2f})")
+                print(f"V5.21.1 PROMOTION: SNIPER Activated. (Markov Conf: {mm_conf:.2f} | Win Rate: {win_rate:.2f})")
             else:
                 # Default SNIPER if criteria met
                 self.session_state["mode"] = "SNIPER"
@@ -187,11 +187,11 @@ class OmniMachineV31Refined:
             client.save_cycle_logs(confidence, spin_count)
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.20.2 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.21.1 Cycle: {e}")
             try: await client.capture_failure_artifact("cycle_crash")
             except: pass
         finally:
-            # V5.20.1: Mandatory Persistence Commit (Self-Healing)
+            # V5.21.1: Mandatory Persistence Commit (Self-Healing)
             self.session_state["bankroll"] = self.risk.bankroll
 
             try:
@@ -206,7 +206,7 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.20.2 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.21.1 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
 if __name__ == "__main__":
     machine = OmniMachineV31Refined()

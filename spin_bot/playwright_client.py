@@ -99,7 +99,7 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        self._log_execution("DEBUG: V5.21.1 Aurora Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.22.1 Aurora Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -117,39 +117,51 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.21.1 AURORA LOGIN (WAP FIX)...")
+        self._log_execution(f"DEBUG: Initializing V5.22.1 AURORA LOGIN (WAP BYPASS)...")
         try:
-            # V5.20.1: Hard-Nav to Login URL if needed
-            if "login" not in self.page.url:
-                self._log_execution("DEBUG: Forcing navigation to login page...")
-                await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
+            # V5.22.1: WAP OVERLAY CARPET BOMB: Attempt to open the mobile login drawer
+            self._log_execution("DEBUG: Triggering WAP Login overlay...")
+            wap_triggers = [
+                "text='Log In'",
+                "text='Login'",
+                ".m-btn-login",
+                ".icon-profile",
+                "text='Me'",
+                "a[href*='/login']"
+            ]
 
-            # V5.20.2: WAP Redirect Handling
-            # If redirected to livescore/WAP view, trigger the login drawer
-            try:
-                header_login_trigger = self.page.locator("text=/^(Log In|Login)$/i").first
-                if await header_login_trigger.is_visible():
-                    self._log_execution("DEBUG: WAP View Detected. Triggering login drawer...")
-                    await header_login_trigger.click(force=True)
-                    await asyncio.sleep(1)
-            except: pass
+            drawer_opened = False
+            for selector in wap_triggers:
+                try:
+                    trigger = self.page.locator(selector).first
+                    # Use wait_for(state='visible') to simulate timeout as is_visible() does not support it
+                    await trigger.wait_for(state="visible", timeout=1500)
+                    if await trigger.is_visible():
+                        await trigger.click()
+                        self._log_execution(f"DEBUG: WAP overlay opened via '{selector}'")
+                        drawer_opened = True
+                        break
+                except:
+                    continue
 
-            # V5.20.1: Strict Visibility Verification before .fill()
-            self._log_execution("DEBUG: Entering credentials with strict visibility checks...")
+            if not drawer_opened:
+                self._log_execution("WARNING: No WAP login trigger found. The form might already be open or the layout changed.")
 
-            # Fill Phone
-            phone_input = self.page.locator("input[placeholder*='Mobile']:visible, input[type='tel']:visible").first
+            # V5.22.1: EXPLICIT WAIT FOR THE INPUT (Now visible because drawer is open)
+            self._log_execution("DEBUG: Waiting for the login form to render...")
+            phone_input = self.page.locator("input[type='tel'], input[placeholder*='Mobile'], input[name='phone']").first
             await phone_input.wait_for(state="visible", timeout=15000)
+
+            self._log_execution("DEBUG: Entering credentials...")
+            await phone_input.click()
             await phone_input.fill(user)
 
-            # Fill Password
             pass_input = self.page.locator("input[type='password']:visible").first
-            await pass_input.wait_for(state="visible", timeout=5000)
             await pass_input.fill(pw)
 
-            # Click Submit
-            submit_btn = self.page.locator("button.m-login-btn:visible, button.btn-primary:visible:has-text('Log In'), .m-btn-login:visible").first
-            await submit_btn.click(force=True)
+            # SUBMIT VIA VISIBLE BUTTON
+            submit_btn = self.page.locator("button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible").first
+            await submit_btn.click()
 
             # STEP D: AURORA VERIFICATION
             try:
@@ -165,33 +177,39 @@ class PlaywrightClient:
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.21.1 Login Error: {e}")
+            self._log_execution(f"CRITICAL: V5.22.1 Login Error: {e}")
             await self.capture_failure_artifact("titan_login_error")
             import sys
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.21.1: Aurora Protocol - Hard-Nav Modal Breaker & UI Sensitivity."""
+        """V5.22.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.21.1 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.22.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
                 await self._apply_v21_ui_enhancements()
                 await self._handle_overlays()
 
-                # STEP B: HARD-NAV MODAL BREAKER (V5.20.1)
-                # Side-step unresponsive frontend triggers by detecting modal and forcing URL change
-                modal_detected = self.page.locator("button.btn-primary:has-text('Login'), .modal-footer .btn-primary").first
-
+                # STEP B: HARD-NAV MODAL BREAKER (V5.22.1 WAP BYPASS)
+                # Escape the game modal by forcing navigation to root
+                modal_detected = self.page.locator(".modal-content").first
                 try:
-                    # Fix V5.20.1: is_visible() does not accept timeout. Use wait_for instead.
                     await modal_detected.wait_for(state="visible", timeout=5000)
-                    self._log_execution("DEBUG: Modal Trap Detected. Forcing Hard Navigation to Login...")
-                    await self.page.goto("https://www.football.com/ng/login", wait_until="networkidle")
+                    self._log_execution("DEBUG: Modal Trap detected. Forcing navigation to clear state...")
+
+                    # 1. Navigate to the Nigerian mobile root to minimize cross-region redirects
+                    await self.page.goto("https://www.football.com/ng/m/", wait_until="domcontentloaded")
+
+                    # 2. Wait for the forced WAP /livescore redirect to fully settle
+                    # V5.22.1: Mandatory wait
+                    await asyncio.sleep(3)
+                    self._log_execution(f"DEBUG: Settled on WAP URL: {self.page.url}")
+
                     await self.login()
                 except:
                     # No modal detected or already logged in

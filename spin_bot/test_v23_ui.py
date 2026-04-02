@@ -35,14 +35,16 @@ async def test_hide_init_loader_injection():
         assert "display = 'none'" in args[0]
 
 @pytest.mark.asyncio
-async def test_v22_wap_bypass_logic():
+async def test_v23_login_logic():
     with patch('spin_bot.playwright_client.async_playwright'):
         client = PlaywrightClient("https://www.football.com")
-        client.page = MagicMock() # Use MagicMock for the page to avoid coroutine issues with .locator
+        client.page = MagicMock()
         client.page.locator = MagicMock()
         client._handle_overlays = AsyncMock()
         client._log_execution = MagicMock()
         client.capture_failure_artifact = AsyncMock()
+        client.page.url = "https://www.football.com/ng/m/independent_login"
+        client.page.goto = AsyncMock()
 
         # Mock locator to return visible triggers
         mock_trigger = MagicMock()
@@ -56,6 +58,7 @@ async def test_v22_wap_bypass_logic():
         mock_phone.wait_for = AsyncMock()
         mock_phone.click = AsyncMock()
         mock_phone.fill = AsyncMock()
+        mock_phone.is_visible = AsyncMock(return_value=True)
 
         mock_pass = MagicMock()
         mock_pass.fill = AsyncMock()
@@ -64,7 +67,7 @@ async def test_v22_wap_bypass_logic():
         mock_submit.click = AsyncMock()
 
         def side_effect(selector):
-            if "input" in selector or "Mobile" in selector:
+            if "input" in selector or "Phone" in selector or "Mobile" in selector:
                 m = MagicMock()
                 m.first = mock_phone
                 return m
@@ -83,18 +86,13 @@ async def test_v22_wap_bypass_logic():
 
         client.page.locator.side_effect = side_effect
         client.page.wait_for_selector = AsyncMock()
+        client.page.wait_for_url = AsyncMock()
 
         with patch.dict('os.environ', {'FOOTBALL_NG_LOGIN': '12345', 'FOOTBALL_NG_PASS': 'pass'}):
-            # Test login method
-            # It should iterate through wap_triggers and call click() on the first visible one
-            # Then fill phone and password
-
-            # Since we are mocking everything, we just want to ensure it doesn't crash
-            # and follows the expected flow.
-
-            # Mock sys.exit to avoid test termination
             with patch('sys.exit'):
-                await client.login()
+                # Mock asyncio.gather and asyncio.wait_for to avoid waiting forever
+                with patch('asyncio.wait_for', AsyncMock()):
+                    await client.login()
 
             # Check if at least one trigger was clicked
             assert mock_trigger.first.click.called

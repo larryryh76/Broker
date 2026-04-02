@@ -58,7 +58,7 @@ class PlaywrightClient:
         ]
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
 
-        # V5.19.0 TITAN PROTOCOL: Mobile Safari Footprint
+        # V5.23.1 TECHNICAL ANALYSIS: iPhone X Viewport 375x812
         proxy_server = os.getenv("PROXY_SERVER")
         proxy_config = {"server": proxy_server} if proxy_server else None
         if proxy_config and os.getenv("PROXY_USERNAME"):
@@ -66,8 +66,8 @@ class PlaywrightClient:
             proxy_config["password"] = os.getenv("PROXY_PASSWORD")
 
         self.context = await self.browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-            viewport={'width': 390, 'height': 844},
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+            viewport={'width': 375, 'height': 812},
             is_mobile=True,
             locale="en-NG",
             timezone_id="Africa/Lagos",
@@ -99,7 +99,7 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        self._log_execution("DEBUG: V5.22.1 Aurora Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.23.1 Aurora Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -117,13 +117,20 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.22.1 AURORA LOGIN (WAP BYPASS)...")
+        self._log_execution(f"DEBUG: Initializing V5.23.1 AURORA LOGIN (MOBILE OPTIMIZED)...")
         try:
+            # V5.23.1: Navigate to the specialized mobile login root
+            login_url = "https://www.football.com/ng/m/independent_login"
+            if login_url not in self.page.url:
+                self._log_execution(f"DEBUG: Navigating to mobile login: {login_url}...")
+                await self.page.goto(login_url, wait_until="networkidle")
+
             # V5.22.1: WAP OVERLAY CARPET BOMB: Attempt to open the mobile login drawer
             self._log_execution("DEBUG: Triggering WAP Login overlay...")
             wap_triggers = [
                 "text='Log In'",
                 "text='Login'",
+                "button.login-btn",
                 ".m-btn-login",
                 ".icon-profile",
                 "text='Me'",
@@ -134,7 +141,7 @@ class PlaywrightClient:
             for selector in wap_triggers:
                 try:
                     trigger = self.page.locator(selector).first
-                    # Use wait_for(state='visible') to simulate timeout as is_visible() does not support it
+                    # Use wait_for(state='visible') to simulate timeout
                     await trigger.wait_for(state="visible", timeout=1500)
                     if await trigger.is_visible():
                         await trigger.click()
@@ -145,12 +152,29 @@ class PlaywrightClient:
                     continue
 
             if not drawer_opened:
-                self._log_execution("WARNING: No WAP login trigger found. The form might already be open or the layout changed.")
+                self._log_execution("WARNING: No WAP login trigger found. Form might already be open.")
 
-            # V5.22.1: EXPLICIT WAIT FOR THE INPUT (Now visible because drawer is open)
+            # V5.23.1: EXPLICIT WAIT FOR THE INPUT (Now visible because drawer is open)
             self._log_execution("DEBUG: Waiting for the login form to render...")
-            phone_input = self.page.locator("input[type='tel'], input[placeholder*='Mobile'], input[name='phone']").first
-            await phone_input.wait_for(state="visible", timeout=15000)
+
+            # Prioritize Phone Number placeholder then input[type='tel'] then .un-input-wrapper input
+            phone_input = None
+            for sel in [
+                "input[placeholder*='Phone Number']",
+                "input[type='tel']",
+                ".un-input-wrapper input",
+                "input[placeholder*='Mobile']"
+            ]:
+                try:
+                    loc = self.page.locator(sel).first
+                    await loc.wait_for(state="visible", timeout=5000)
+                    if await loc.is_visible():
+                        phone_input = loc
+                        break
+                except: continue
+
+            if not phone_input:
+                raise Exception("Phone input not found after drawer open.")
 
             self._log_execution("DEBUG: Entering credentials...")
             await phone_input.click()
@@ -160,16 +184,30 @@ class PlaywrightClient:
             await pass_input.fill(pw)
 
             # SUBMIT VIA VISIBLE BUTTON
-            submit_btn = self.page.locator("button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible").first
+            submit_btn = self.page.locator("button.login-btn:visible, button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible").first
             await submit_btn.click()
 
             # STEP D: AURORA VERIFICATION
             try:
                 self._log_execution("DEBUG: Verifying Titan Auth (30s)...")
-                await self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=30000)
+                # Wait for redirect to /me or presence of balance
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        self.page.wait_for_url("**/me", timeout=30000),
+                        self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=30000)
+                    ),
+                    timeout=35000
+                )
                 self._log_execution("TITAN LOGIN SUCCESS")
             except Exception as e:
-                self._log_execution(f"CRITICAL: UI AUTH REJECTED: {e}")
+                # V5.23.1 Check for Error Messages
+                error_div = self.page.locator(".m-error, .error-msg, .m-tips").first
+                if await error_div.is_visible():
+                    msg = await error_div.text_content()
+                    self._log_execution(f"CRITICAL: UI AUTH REJECTED: {msg}")
+                else:
+                    self._log_execution(f"CRITICAL: UI AUTH REJECTED: {e}")
+
                 await self.capture_failure_artifact("titan_auth_rejected")
                 import sys
                 sys.exit(1)
@@ -177,18 +215,18 @@ class PlaywrightClient:
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.22.1 Login Error: {e}")
+            self._log_execution(f"CRITICAL: V5.23.1 Login Error: {e}")
             await self.capture_failure_artifact("titan_login_error")
             import sys
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.22.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
+        """V5.23.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.22.1 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.23.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
@@ -196,19 +234,18 @@ class PlaywrightClient:
                 await self._handle_overlays()
 
                 # STEP B: HARD-NAV MODAL BREAKER (V5.22.1 WAP BYPASS)
-                # Escape the game modal by forcing navigation to root
+                # Escape the game modal by forcing navigation to mobile root
                 modal_detected = self.page.locator(".modal-content").first
                 try:
                     await modal_detected.wait_for(state="visible", timeout=5000)
                     self._log_execution("DEBUG: Modal Trap detected. Forcing navigation to clear state...")
 
-                    # 1. Navigate to the Nigerian mobile root to minimize cross-region redirects
-                    await self.page.goto("https://www.football.com/ng/m/", wait_until="domcontentloaded")
+                    # V5.23.1: Navigate to the independent login directly if trapped
+                    await self.page.goto("https://www.football.com/ng/m/independent_login", wait_until="networkidle")
 
-                    # 2. Wait for the forced WAP /livescore redirect to fully settle
-                    # V5.22.1: Mandatory wait
+                    # 2. Wait for redirects to fully settle
                     await asyncio.sleep(3)
-                    self._log_execution(f"DEBUG: Settled on WAP URL: {self.page.url}")
+                    self._log_execution(f"DEBUG: Settled on URL: {self.page.url}")
 
                     await self.login()
                 except:

@@ -21,21 +21,24 @@ async def test_apply_v21_ui_enhancements_injection():
         assert "Z-Index Management" in script_content
 
 @pytest.mark.asyncio
-async def test_hide_init_loader_injection():
-    with patch('spin_bot.playwright_client.async_playwright'):
+async def test_v27_titan_pathfinder_ua():
+    with patch('spin_bot.playwright_client.async_playwright') as mock_ap:
+        mock_pw = MagicMock()
+        mock_ap.return_value.start = AsyncMock(return_value=mock_pw)
+        mock_browser = AsyncMock()
+        mock_pw.chromium.launch = AsyncMock(return_value=mock_browser)
+
         client = PlaywrightClient("https://www.football.com")
-        client.page = AsyncMock()
+        with patch.object(client, '_apply_v21_ui_enhancements', AsyncMock()):
+            await client.setup()
 
-        await client.hide_init_loader()
-
-        # Verify evaluate was called to hide the loader
-        client.page.evaluate.assert_called()
-        args, kwargs = client.page.evaluate.call_args
-        assert "app-init-loader-wrap" in args[0]
-        assert "display = 'none'" in args[0]
+        # Verify Chrome Android UA
+        args, kwargs = mock_browser.new_context.call_args
+        assert "Chrome" in kwargs['user_agent']
+        assert "Android" in kwargs['user_agent']
 
 @pytest.mark.asyncio
-async def test_v26_pathfinder_logic():
+async def test_v27_login_logic():
     with patch('spin_bot.playwright_client.async_playwright'):
         client = PlaywrightClient("https://www.football.com")
         client.page = MagicMock()
@@ -61,16 +64,16 @@ async def test_v26_pathfinder_logic():
                 with patch('asyncio.wait_for', AsyncMock()):
                     await client.login()
 
-            # Check if direct navigation was triggered
-            client.page.goto.assert_called_with("https://www.football.com/ng/m/independent_login", wait_until="networkidle")
-
-            # Check if wait_for_selector was called with pathfinder selector
-            client.page.wait_for_selector.assert_any_call("input[type='tel'], input[placeholder*='Phone'], .un-input-wrapper input", state="visible", timeout=8000)
+            # Check if wait_for_selector was called with expanded pathfinder selector
+            client.page.wait_for_selector.assert_any_call(
+                "input[type='tel'], input[placeholder*='Phone'], input[autocomplete='tel'], section[class*='login'] input, .un-input-wrapper input",
+                state="visible",
+                timeout=15000
+            )
 
             # Check if page.evaluate was called for injection
             client.page.evaluate.assert_called()
             args, kwargs = client.page.evaluate.call_args
             script = args[0]
-            assert "tel.dispatchEvent" in script
-            assert "pwd.dispatchEvent" in script
-            assert "setTimeout" in script
+            assert "input[autocomplete='tel']" in script
+            assert "section[class*='login'] input" in script

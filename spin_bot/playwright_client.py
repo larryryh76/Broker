@@ -58,7 +58,7 @@ class PlaywrightClient:
         ]
         self.browser = await self.playwright.chromium.launch(headless=True, args=launch_args)
 
-        # V5.23.1 TECHNICAL ANALYSIS: iPhone X Viewport 375x812
+        # V5.27.1 TITAN PROTOCOL: Standard Chrome/Android footprint for better rendering
         proxy_server = os.getenv("PROXY_SERVER")
         proxy_config = {"server": proxy_server} if proxy_server else None
         if proxy_config and os.getenv("PROXY_USERNAME"):
@@ -66,7 +66,7 @@ class PlaywrightClient:
             proxy_config["password"] = os.getenv("PROXY_PASSWORD")
 
         self.context = await self.browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+            user_agent="Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
             viewport={'width': 375, 'height': 812},
             is_mobile=True,
             locale="en-NG",
@@ -99,7 +99,7 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        self._log_execution("DEBUG: V5.26.1 Pathfinder Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.27.1 Titan Pathfinder Protocol Active (Chrome Android).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -113,11 +113,25 @@ class PlaywrightClient:
             except: pass
         await self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
+    async def _clear_login_modals(self):
+        """V5.27.1: Aggressively closes overlays before login interaction."""
+        try:
+            # Common close selectors for promotion/bonus popups
+            selectors = [".m-close", ".close-icon", ".m-icon-close", "button:has-text('OK')", "button:has-text('Close')"]
+            for sel in selectors:
+                try:
+                    btn = self.page.locator(sel).first
+                    if await btn.is_visible():
+                        self._log_execution(f"DEBUG: Pre-Login Overlay ({sel}) detected. Closing...")
+                        await btn.click(timeout=2000, force=True)
+                except: pass
+        except: pass
+
     async def login(self, retry: bool = True):
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.26.1 AURORA LOGIN (PATHFINDER)...")
+        self._log_execution(f"DEBUG: Initializing V5.27.1 AURORA LOGIN (TITAN PATHFINDER)...")
         try:
             # V5.26.1: PATHFINDER - Force Navigate to the Login Page directly to bypass drawer issues
             login_url = "https://www.football.com/ng/m/independent_login"
@@ -127,18 +141,28 @@ class PlaywrightClient:
             # Wait for the page to settle
             await asyncio.sleep(2)
 
-            # V5.26.1: Use an 'Everything' selector to catch the input regardless of wrapper
-            input_selector = "input[type='tel'], input[placeholder*='Phone'], .un-input-wrapper input"
+            # V5.27.1 Clear any modal trap
+            await self._clear_login_modals()
+
+            # V5.27.1: Expanded Selector Logic to catch the input regardless of rename or iframe move
+            input_selector = "input[type='tel'], input[placeholder*='Phone'], input[autocomplete='tel'], section[class*='login'] input, .un-input-wrapper input"
 
             try:
-                self._log_execution("DEBUG: Attempting V5.26.1 Direct Page Injection...")
-                await self.page.wait_for_selector(input_selector, state="visible", timeout=8000)
+                self._log_execution("DEBUG: Attempting V5.27.1 Direct Page Injection (15s Timeout)...")
+                await self.page.wait_for_selector(input_selector, state="visible", timeout=15000)
 
                 # We use Javascript injection here because it is immune to 'overlay' blocks
                 await self.page.evaluate(f"""(u, p) => {{
-                    const tel = document.querySelector("input[type='tel']") || document.querySelector("input[placeholder*='Phone']");
+                    const tel = document.querySelector("input[type='tel']") ||
+                                document.querySelector("input[placeholder*='Phone']") ||
+                                document.querySelector("input[autocomplete='tel']") ||
+                                document.querySelector("section[class*='login'] input") ||
+                                document.querySelector(".un-input-wrapper input");
+
                     const pwd = document.querySelector("input[type='password']");
-                    const btn = document.querySelector("button.login-btn") || document.querySelector(".un-login-btn") || document.querySelector(".login-submit-btn");
+                    const btn = document.querySelector("button.login-btn") ||
+                                document.querySelector(".un-login-btn") ||
+                                document.querySelector(".login-submit-btn");
 
                     if (tel && pwd) {{
                         tel.value = u;
@@ -152,13 +176,13 @@ class PlaywrightClient:
                 }}""", user, pw)
 
             except Exception as e:
-                self._log_execution(f"CRITICAL: V5.26.1 Pathfinder Failed. Capture: pathfinder_fail. Error: {e}")
+                self._log_execution(f"CRITICAL: V5.27.1 Pathfinder Failed. Capture: pathfinder_fail. Error: {e}")
                 await self.capture_failure_artifact("pathfinder_fail")
                 raise e
 
             # STEP D: AURORA VERIFICATION
             try:
-                self._log_execution("DEBUG: Verifying Pathfinder Session (10s)...")
+                self._log_execution("DEBUG: Verifying Titan Pathfinder Session (10s)...")
                 # Wait for redirect to /me, /m/home or presence of balance
                 await asyncio.wait_for(
                     asyncio.gather(
@@ -168,7 +192,7 @@ class PlaywrightClient:
                     ),
                     timeout=12000
                 )
-                self._log_execution("PATHFINDER LOGIN SUCCESS")
+                self._log_execution("TITAN PATHFINDER LOGIN SUCCESS")
             except Exception as e:
                 # Check for Error Messages
                 error_div = self.page.locator(".m-error, .error-msg, .m-tips").first
@@ -185,30 +209,30 @@ class PlaywrightClient:
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.26.1 Login Error: {e}")
+            self._log_execution(f"CRITICAL: V5.27.1 Login Error: {e}")
             await self.capture_failure_artifact("pathfinder_login_error")
             import sys
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.26.1: Aurora Protocol - Hard-Nav Modal Breaker & Pathfinder Integration."""
+        """V5.27.1: Aurora Protocol - Hard-Nav Modal Breaker & Pathfinder Integration."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.26.1 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.27.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
                 await self._apply_v21_ui_enhancements()
                 await self._handle_overlays()
 
-                # STEP B: HARD-NAV MODAL BREAKER (V5.26.1 PATHFINDER)
+                # STEP B: HARD-NAV MODAL BREAKER (V5.27.1 PATHFINDER)
                 # Escape the game modal by forcing navigation to independent login
                 modal_detected = self.page.locator(".modal-content").first
                 try:
                     await modal_detected.wait_for(state="visible", timeout=5000)
-                    self._log_execution("DEBUG: Modal Trap detected. Forcing Pathfinder redirection...")
+                    self._log_execution("DEBUG: Modal Trap detected. Forcing Titan Pathfinder redirection...")
 
                     await self.login()
                 except:

@@ -99,7 +99,7 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        self._log_execution("DEBUG: V5.25.1 Aurora Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.26.1 Pathfinder Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -117,88 +117,58 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.25.1 AURORA LOGIN (DIRECT INJECTION)...")
+        self._log_execution(f"DEBUG: Initializing V5.26.1 AURORA LOGIN (PATHFINDER)...")
         try:
-            # V5.23.1: Navigate to the specialized mobile login root
+            # V5.26.1: PATHFINDER - Force Navigate to the Login Page directly to bypass drawer issues
             login_url = "https://www.football.com/ng/m/independent_login"
-            if login_url not in self.page.url:
-                self._log_execution(f"DEBUG: Navigating to mobile login: {login_url}...")
-                await self.page.goto(login_url, wait_until="networkidle")
+            self._log_execution(f"DEBUG: Navigating directly to Login Endpoint...")
+            await self.page.goto(login_url, wait_until="networkidle")
 
-            # V5.22.1: WAP OVERLAY CARPET BOMB: Attempt to open the mobile login drawer
-            self._log_execution("DEBUG: Triggering WAP Login overlay...")
-            wap_triggers = [
-                "text='Log In'",
-                "text='Login'",
-                "button.login-btn",
-                ".m-btn-login",
-                ".icon-profile",
-                "text='Me'",
-                "a[href*='/login']"
-            ]
+            # Wait for the page to settle
+            await asyncio.sleep(2)
 
-            drawer_opened = False
-            for selector in wap_triggers:
-                try:
-                    trigger = self.page.locator(selector).first
-                    # Use wait_for(state='visible') to simulate timeout
-                    await trigger.wait_for(state="visible", timeout=1500)
-                    if await trigger.is_visible():
-                        await trigger.click(force=True)
-                        self._log_execution(f"DEBUG: WAP overlay opened via '{selector}'")
-                        drawer_opened = True
-                        break
-                except:
-                    continue
+            # V5.26.1: Use an 'Everything' selector to catch the input regardless of wrapper
+            input_selector = "input[type='tel'], input[placeholder*='Phone'], .un-input-wrapper input"
 
-            if not drawer_opened:
-                self._log_execution("WARNING: No WAP login trigger found. Form might already be open.")
-
-            # V5.25.1: DIRECT JAVASCRIPT INJECTION (The "Immortal" method)
-            # This bypasses the 'inputs hidden' error by talking directly to the browser engine
-            self._log_execution("DEBUG: Executing V5.25.1 Direct DOM Injection...")
             try:
-                # Wait for the container to be present in the DOM
-                await self.page.wait_for_selector("input[type='tel'], .un-input-wrapper input", state="attached", timeout=5000)
+                self._log_execution("DEBUG: Attempting V5.26.1 Direct Page Injection...")
+                await self.page.wait_for_selector(input_selector, state="visible", timeout=8000)
 
+                # We use Javascript injection here because it is immune to 'overlay' blocks
                 await self.page.evaluate(f"""(u, p) => {{
-                    const phoneInput = document.querySelector("input[type='tel']") || document.querySelector(".un-input-wrapper input");
-                    const passInput = document.querySelector("input[type='password']");
-                    const loginBtn = document.querySelector("button.login-btn") || document.querySelector(".login-submit-btn") || document.querySelector("button[type='submit']");
+                    const tel = document.querySelector("input[type='tel']") || document.querySelector("input[placeholder*='Phone']");
+                    const pwd = document.querySelector("input[type='password']");
+                    const btn = document.querySelector("button.login-btn") || document.querySelector(".un-login-btn") || document.querySelector(".login-submit-btn");
 
-                    if (phoneInput && passInput) {{
-                        phoneInput.value = u;
-                        // Trigger input events so the site's React/Vue state updates
-                        phoneInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        phoneInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-                        passInput.value = p;
-                        passInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        passInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-                        if (loginBtn) {{
-                            loginBtn.click();
-                        }}
+                    if (tel && pwd) {{
+                        tel.value = u;
+                        tel.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        tel.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        pwd.value = p;
+                        pwd.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        pwd.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        setTimeout(() => {{ if(btn) btn.click(); }}, 500);
                     }}
                 }}""", user, pw)
 
             except Exception as e:
-                self._log_execution(f"CRITICAL: V5.25.1 Injection Failed. Capture: drawer_inputs_hidden. Error: {e}")
-                await self.capture_failure_artifact("drawer_inputs_hidden")
+                self._log_execution(f"CRITICAL: V5.26.1 Pathfinder Failed. Capture: pathfinder_fail. Error: {e}")
+                await self.capture_failure_artifact("pathfinder_fail")
                 raise e
 
             # STEP D: AURORA VERIFICATION
             try:
-                self._log_execution("DEBUG: Verifying Aurora Session (10s)...")
-                # Wait for redirect to /me or presence of balance
+                self._log_execution("DEBUG: Verifying Pathfinder Session (10s)...")
+                # Wait for redirect to /me, /m/home or presence of balance
                 await asyncio.wait_for(
                     asyncio.gather(
+                        self.page.wait_for_url("**/m/home", timeout=10000),
                         self.page.wait_for_url("**/me", timeout=10000),
                         self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=10000)
                     ),
                     timeout=12000
                 )
-                self._log_execution("TITAN LOGIN SUCCESS")
+                self._log_execution("PATHFINDER LOGIN SUCCESS")
             except Exception as e:
                 # Check for Error Messages
                 error_div = self.page.locator(".m-error, .error-msg, .m-tips").first
@@ -208,44 +178,37 @@ class PlaywrightClient:
                 else:
                     self._log_execution(f"CRITICAL: UI AUTH REJECTED: {e}")
 
-                await self.capture_failure_artifact("titan_auth_rejected")
+                await self.capture_failure_artifact("pathfinder_auth_rejected")
                 import sys
                 sys.exit(1)
 
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.25.1 Login Error: {e}")
-            await self.capture_failure_artifact("titan_login_error")
+            self._log_execution(f"CRITICAL: V5.26.1 Login Error: {e}")
+            await self.capture_failure_artifact("pathfinder_login_error")
             import sys
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.25.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
+        """V5.26.1: Aurora Protocol - Hard-Nav Modal Breaker & Pathfinder Integration."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.25.1 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.26.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
                 await self._apply_v21_ui_enhancements()
                 await self._handle_overlays()
 
-                # STEP B: HARD-NAV MODAL BREAKER (V5.22.1 WAP BYPASS)
-                # Escape the game modal by forcing navigation to mobile root
+                # STEP B: HARD-NAV MODAL BREAKER (V5.26.1 PATHFINDER)
+                # Escape the game modal by forcing navigation to independent login
                 modal_detected = self.page.locator(".modal-content").first
                 try:
                     await modal_detected.wait_for(state="visible", timeout=5000)
-                    self._log_execution("DEBUG: Modal Trap detected. Forcing navigation to clear state...")
-
-                    # V5.23.1: Navigate to the independent login directly if trapped
-                    await self.page.goto("https://www.football.com/ng/m/independent_login", wait_until="networkidle")
-
-                    # 2. Wait for redirects to fully settle
-                    await asyncio.sleep(3)
-                    self._log_execution(f"DEBUG: Settled on URL: {self.page.url}")
+                    self._log_execution("DEBUG: Modal Trap detected. Forcing Pathfinder redirection...")
 
                     await self.login()
                 except:

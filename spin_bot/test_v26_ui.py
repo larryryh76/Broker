@@ -35,7 +35,7 @@ async def test_hide_init_loader_injection():
         assert "display = 'none'" in args[0]
 
 @pytest.mark.asyncio
-async def test_v25_direct_injection_logic():
+async def test_v26_pathfinder_logic():
     with patch('spin_bot.playwright_client.async_playwright'):
         client = PlaywrightClient("https://www.football.com")
         client.page = MagicMock()
@@ -43,36 +43,17 @@ async def test_v25_direct_injection_logic():
         client._handle_overlays = AsyncMock()
         client._log_execution = MagicMock()
         client.capture_failure_artifact = AsyncMock()
-        client.page.url = "https://www.football.com/ng/m/independent_login"
         client.page.goto = AsyncMock()
-        client.page.click = AsyncMock()
         client.page.evaluate = AsyncMock()
         client.page.wait_for_selector = AsyncMock()
         client.page.wait_for_url = AsyncMock()
 
-        # Mock locator for WAP triggers
-        mock_trigger = MagicMock()
-        mock_trigger.first = MagicMock()
-        mock_trigger.first.wait_for = AsyncMock()
-        mock_trigger.first.is_visible = AsyncMock(return_value=True)
-        mock_trigger.first.click = AsyncMock()
+        # Mock locator for error messages
+        mock_error = MagicMock()
+        mock_error.first = MagicMock()
+        mock_error.first.is_visible = AsyncMock(return_value=False)
 
-        # Setup page.locator to return different things for different selectors
-        def side_effect(selector):
-            if selector == "text='Login'":
-                m = MagicMock()
-                m.first = mock_trigger.first
-                return m
-            elif "error" in selector:
-                m = MagicMock()
-                m.first = MagicMock(is_visible=AsyncMock(return_value=False))
-                return m
-            else:
-                m = MagicMock()
-                m.first = mock_trigger.first
-                return m
-
-        client.page.locator.side_effect = side_effect
+        client.page.locator.return_value = mock_error
 
         with patch.dict('os.environ', {'FOOTBALL_NG_LOGIN': '12345', 'FOOTBALL_NG_PASS': 'pass'}):
             with patch('sys.exit'):
@@ -80,13 +61,16 @@ async def test_v25_direct_injection_logic():
                 with patch('asyncio.wait_for', AsyncMock()):
                     await client.login()
 
-            # Check if wait_for_selector was called for input[type='tel'] with state='attached'
-            client.page.wait_for_selector.assert_any_call("input[type='tel'], .un-input-wrapper input", state="attached", timeout=5000)
+            # Check if direct navigation was triggered
+            client.page.goto.assert_called_with("https://www.football.com/ng/m/independent_login", wait_until="networkidle")
 
-            # Check if page.evaluate was called (this is the direct injection)
+            # Check if wait_for_selector was called with pathfinder selector
+            client.page.wait_for_selector.assert_any_call("input[type='tel'], input[placeholder*='Phone'], .un-input-wrapper input", state="visible", timeout=8000)
+
+            # Check if page.evaluate was called for injection
             client.page.evaluate.assert_called()
             args, kwargs = client.page.evaluate.call_args
             script = args[0]
-            assert "dispatchEvent" in script
-            assert "phoneInput.value = u" in script
-            assert "passInput.value = p" in script
+            assert "tel.dispatchEvent" in script
+            assert "pwd.dispatchEvent" in script
+            assert "setTimeout" in script

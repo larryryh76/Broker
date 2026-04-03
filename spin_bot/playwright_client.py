@@ -66,7 +66,7 @@ class PlaywrightClient:
             proxy_config["password"] = os.getenv("PROXY_PASSWORD")
 
         self.context = await self.browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
             viewport={'width': 375, 'height': 812},
             is_mobile=True,
             locale="en-NG",
@@ -99,7 +99,7 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        self._log_execution("DEBUG: V5.23.1 Aurora Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.24.1 Aurora Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -117,7 +117,7 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.23.1 AURORA LOGIN (MOBILE OPTIMIZED)...")
+        self._log_execution(f"DEBUG: Initializing V5.24.1 AURORA LOGIN (ANIMATION PATCH)...")
         try:
             # V5.23.1: Navigate to the specialized mobile login root
             login_url = "https://www.football.com/ng/m/independent_login"
@@ -154,7 +154,11 @@ class PlaywrightClient:
             if not drawer_opened:
                 self._log_execution("WARNING: No WAP login trigger found. Form might already be open.")
 
-            # V5.23.1: EXPLICIT WAIT FOR THE INPUT (Now visible because drawer is open)
+            # V5.24.1: MECHANICAL DELAY for drawer animation
+            self._log_execution("DEBUG: Waiting for drawer animation (1s)...")
+            await asyncio.sleep(1)
+
+            # V5.24.1: Robust Selector Search for Animated Drawer
             self._log_execution("DEBUG: Waiting for the login form to render...")
 
             # Prioritize Phone Number placeholder then input[type='tel'] then .un-input-wrapper input
@@ -167,6 +171,7 @@ class PlaywrightClient:
             ]:
                 try:
                     loc = self.page.locator(sel).first
+                    # Force wait until the element is actually ready to receive text
                     await loc.wait_for(state="visible", timeout=5000)
                     if await loc.is_visible():
                         phone_input = loc
@@ -174,6 +179,8 @@ class PlaywrightClient:
                 except: continue
 
             if not phone_input:
+                self._log_execution("DEBUG: Drawer open but inputs hidden. Capturing failure artifact.")
+                await self.capture_failure_artifact("drawer_inputs_hidden")
                 raise Exception("Phone input not found after drawer open.")
 
             self._log_execution("DEBUG: Entering credentials...")
@@ -183,8 +190,8 @@ class PlaywrightClient:
             pass_input = self.page.locator("input[type='password']:visible").first
             await pass_input.fill(pw)
 
-            # SUBMIT VIA VISIBLE BUTTON
-            submit_btn = self.page.locator("button.login-btn:visible, button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible").first
+            # V5.24.1: Click the 'real' login button inside the drawer
+            submit_btn = self.page.locator("button.login-btn:visible, .login-submit-btn:visible, button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible").first
             await submit_btn.click()
 
             # STEP D: AURORA VERIFICATION
@@ -215,18 +222,18 @@ class PlaywrightClient:
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.23.1 Login Error: {e}")
+            self._log_execution(f"CRITICAL: V5.24.1 Login Error: {e}")
             await self.capture_failure_artifact("titan_login_error")
             import sys
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.23.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
+        """V5.24.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.23.1 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.24.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")
@@ -330,7 +337,7 @@ class PlaywrightClient:
                     // 3. Theme-Based Loading UI & Z-Index Management
                     function applyThemeStyle() {
                         const theme = document.documentElement.getAttribute('data-theme') || 'light';
-                        const brand = window.BRAN_NAME || 'football';
+                        const brand = window.BRAND_NAME || 'football';
                         const loader = document.querySelector('.app-init-loader-wrap');
                         if (loader) {
                             if (theme === 'light') {

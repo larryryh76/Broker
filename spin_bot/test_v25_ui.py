@@ -35,7 +35,7 @@ async def test_hide_init_loader_injection():
         assert "display = 'none'" in args[0]
 
 @pytest.mark.asyncio
-async def test_v24_login_logic():
+async def test_v25_direct_injection_logic():
     with patch('spin_bot.playwright_client.async_playwright'):
         client = PlaywrightClient("https://www.football.com")
         client.page = MagicMock()
@@ -45,39 +45,27 @@ async def test_v24_login_logic():
         client.capture_failure_artifact = AsyncMock()
         client.page.url = "https://www.football.com/ng/m/independent_login"
         client.page.goto = AsyncMock()
+        client.page.click = AsyncMock()
+        client.page.evaluate = AsyncMock()
+        client.page.wait_for_selector = AsyncMock()
+        client.page.wait_for_url = AsyncMock()
 
-        # Mock locator to return visible triggers
+        # Mock locator for WAP triggers
         mock_trigger = MagicMock()
         mock_trigger.first = MagicMock()
         mock_trigger.first.wait_for = AsyncMock()
         mock_trigger.first.is_visible = AsyncMock(return_value=True)
         mock_trigger.first.click = AsyncMock()
 
-        # Mock input fields
-        mock_phone = MagicMock()
-        mock_phone.wait_for = AsyncMock()
-        mock_phone.click = AsyncMock()
-        mock_phone.fill = AsyncMock()
-        mock_phone.is_visible = AsyncMock(return_value=True)
-
-        mock_pass = MagicMock()
-        mock_pass.fill = AsyncMock()
-
-        mock_submit = MagicMock()
-        mock_submit.click = AsyncMock()
-
+        # Setup page.locator to return different things for different selectors
         def side_effect(selector):
-            if "input" in selector or "Phone" in selector or "Mobile" in selector or "tel" in selector or "un-input" in selector:
+            if selector == "text='Login'":
                 m = MagicMock()
-                m.first = mock_phone
+                m.first = mock_trigger.first
                 return m
-            elif "password" in selector:
+            elif "error" in selector:
                 m = MagicMock()
-                m.first = mock_pass
-                return m
-            elif "button" in selector or "submit" in selector:
-                m = MagicMock()
-                m.first = mock_submit
+                m.first = MagicMock(is_visible=AsyncMock(return_value=False))
                 return m
             else:
                 m = MagicMock()
@@ -85,19 +73,20 @@ async def test_v24_login_logic():
                 return m
 
         client.page.locator.side_effect = side_effect
-        client.page.wait_for_selector = AsyncMock()
-        client.page.wait_for_url = AsyncMock()
 
         with patch.dict('os.environ', {'FOOTBALL_NG_LOGIN': '12345', 'FOOTBALL_NG_PASS': 'pass'}):
             with patch('sys.exit'):
-                # Mock asyncio.wait_for and asyncio.sleep
+                # Mock asyncio.wait_for to avoid waiting forever
                 with patch('asyncio.wait_for', AsyncMock()):
-                    with patch('asyncio.sleep', AsyncMock()):
-                        await client.login()
+                    await client.login()
 
-            # Check if at least one trigger was clicked
-            assert mock_trigger.first.click.called
-            # Check if phone was filled
-            assert mock_phone.fill.called
-            # Check if submit was clicked
-            assert mock_submit.click.called
+            # Check if wait_for_selector was called for input[type='tel'] with state='attached'
+            client.page.wait_for_selector.assert_any_call("input[type='tel'], .un-input-wrapper input", state="attached", timeout=5000)
+
+            # Check if page.evaluate was called (this is the direct injection)
+            client.page.evaluate.assert_called()
+            args, kwargs = client.page.evaluate.call_args
+            script = args[0]
+            assert "dispatchEvent" in script
+            assert "phoneInput.value = u" in script
+            assert "passInput.value = p" in script

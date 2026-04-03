@@ -99,7 +99,7 @@ class PlaywrightClient:
 
         self.page = await self.context.new_page()
 
-        self._log_execution("DEBUG: V5.24.1 Aurora Protocol Active (Safari Stealth).")
+        self._log_execution("DEBUG: V5.25.1 Aurora Protocol Active (Safari Stealth).")
 
         self.page.set_default_timeout(60000)
         self.page.on("request", self._log_request)
@@ -117,7 +117,7 @@ class PlaywrightClient:
         user = os.getenv("FOOTBALL_NG_LOGIN")
         pw = os.getenv("FOOTBALL_NG_PASS")
         if not user or not pw: return
-        self._log_execution(f"DEBUG: Initializing V5.24.1 AURORA LOGIN (ANIMATION PATCH)...")
+        self._log_execution(f"DEBUG: Initializing V5.25.1 AURORA LOGIN (DIRECT INJECTION)...")
         try:
             # V5.23.1: Navigate to the specialized mobile login root
             login_url = "https://www.football.com/ng/m/independent_login"
@@ -144,7 +144,7 @@ class PlaywrightClient:
                     # Use wait_for(state='visible') to simulate timeout
                     await trigger.wait_for(state="visible", timeout=1500)
                     if await trigger.is_visible():
-                        await trigger.click()
+                        await trigger.click(force=True)
                         self._log_execution(f"DEBUG: WAP overlay opened via '{selector}'")
                         drawer_opened = True
                         break
@@ -154,60 +154,53 @@ class PlaywrightClient:
             if not drawer_opened:
                 self._log_execution("WARNING: No WAP login trigger found. Form might already be open.")
 
-            # V5.24.1: MECHANICAL DELAY for drawer animation
-            self._log_execution("DEBUG: Waiting for drawer animation (1s)...")
-            await asyncio.sleep(1)
+            # V5.25.1: DIRECT JAVASCRIPT INJECTION (The "Immortal" method)
+            # This bypasses the 'inputs hidden' error by talking directly to the browser engine
+            self._log_execution("DEBUG: Executing V5.25.1 Direct DOM Injection...")
+            try:
+                # Wait for the container to be present in the DOM
+                await self.page.wait_for_selector("input[type='tel'], .un-input-wrapper input", state="attached", timeout=5000)
 
-            # V5.24.1: Robust Selector Search for Animated Drawer
-            self._log_execution("DEBUG: Waiting for the login form to render...")
+                await self.page.evaluate(f"""(u, p) => {{
+                    const phoneInput = document.querySelector("input[type='tel']") || document.querySelector(".un-input-wrapper input");
+                    const passInput = document.querySelector("input[type='password']");
+                    const loginBtn = document.querySelector("button.login-btn") || document.querySelector(".login-submit-btn") || document.querySelector("button[type='submit']");
 
-            # Prioritize Phone Number placeholder then input[type='tel'] then .un-input-wrapper input
-            phone_input = None
-            for sel in [
-                "input[placeholder*='Phone Number']",
-                "input[type='tel']",
-                ".un-input-wrapper input",
-                "input[placeholder*='Mobile']"
-            ]:
-                try:
-                    loc = self.page.locator(sel).first
-                    # Force wait until the element is actually ready to receive text
-                    await loc.wait_for(state="visible", timeout=5000)
-                    if await loc.is_visible():
-                        phone_input = loc
-                        break
-                except: continue
+                    if (phoneInput && passInput) {{
+                        phoneInput.value = u;
+                        // Trigger input events so the site's React/Vue state updates
+                        phoneInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        phoneInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
 
-            if not phone_input:
-                self._log_execution("DEBUG: Drawer open but inputs hidden. Capturing failure artifact.")
+                        passInput.value = p;
+                        passInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        passInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+
+                        if (loginBtn) {{
+                            loginBtn.click();
+                        }}
+                    }}
+                }}""", user, pw)
+
+            except Exception as e:
+                self._log_execution(f"CRITICAL: V5.25.1 Injection Failed. Capture: drawer_inputs_hidden. Error: {e}")
                 await self.capture_failure_artifact("drawer_inputs_hidden")
-                raise Exception("Phone input not found after drawer open.")
-
-            self._log_execution("DEBUG: Entering credentials...")
-            await phone_input.click()
-            await phone_input.fill(user)
-
-            pass_input = self.page.locator("input[type='password']:visible").first
-            await pass_input.fill(pw)
-
-            # V5.24.1: Click the 'real' login button inside the drawer
-            submit_btn = self.page.locator("button.login-btn:visible, .login-submit-btn:visible, button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible").first
-            await submit_btn.click()
+                raise e
 
             # STEP D: AURORA VERIFICATION
             try:
-                self._log_execution("DEBUG: Verifying Titan Auth (30s)...")
+                self._log_execution("DEBUG: Verifying Aurora Session (10s)...")
                 # Wait for redirect to /me or presence of balance
                 await asyncio.wait_for(
                     asyncio.gather(
-                        self.page.wait_for_url("**/me", timeout=30000),
-                        self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=30000)
+                        self.page.wait_for_url("**/me", timeout=10000),
+                        self.page.wait_for_selector(".m-balance, button:has-text('Deposit')", state="visible", timeout=10000)
                     ),
-                    timeout=35000
+                    timeout=12000
                 )
                 self._log_execution("TITAN LOGIN SUCCESS")
             except Exception as e:
-                # V5.23.1 Check for Error Messages
+                # Check for Error Messages
                 error_div = self.page.locator(".m-error, .error-msg, .m-tips").first
                 if await error_div.is_visible():
                     msg = await error_div.text_content()
@@ -222,18 +215,18 @@ class PlaywrightClient:
             await asyncio.sleep(2)
             await self._handle_overlays()
         except Exception as e:
-            self._log_execution(f"CRITICAL: V5.24.1 Login Error: {e}")
+            self._log_execution(f"CRITICAL: V5.25.1 Login Error: {e}")
             await self.capture_failure_artifact("titan_login_error")
             import sys
             sys.exit(1)
 
     async def navigate_to_game(self) -> bool:
-        """V5.24.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
+        """V5.25.1: Aurora Protocol - Hard-Nav Modal Breaker & WAP Redirect Handling."""
         target_url = "https://www.football.com/ng/games/spin-da-bottle"
 
         for attempt in range(3):
             try:
-                self._log_execution(f"DEBUG: V5.24.1 Aurora Navigation Attempt {attempt+1}...")
+                self._log_execution(f"DEBUG: V5.25.1 Aurora Navigation Attempt {attempt+1}...")
 
                 # STEP A: DIRECT NAVIGATION
                 await self.page.goto(target_url, wait_until="networkidle")

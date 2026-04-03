@@ -35,7 +35,7 @@ async def test_hide_init_loader_injection():
         assert "display = 'none'" in args[0]
 
 @pytest.mark.asyncio
-async def test_v23_login_logic():
+async def test_v24_login_logic():
     with patch('spin_bot.playwright_client.async_playwright'):
         client = PlaywrightClient("https://www.football.com")
         client.page = MagicMock()
@@ -67,7 +67,7 @@ async def test_v23_login_logic():
         mock_submit.click = AsyncMock()
 
         def side_effect(selector):
-            if "input" in selector or "Phone" in selector or "Mobile" in selector:
+            if "input" in selector or "Phone" in selector or "Mobile" in selector or "tel" in selector or "un-input" in selector:
                 m = MagicMock()
                 m.first = mock_phone
                 return m
@@ -90,9 +90,10 @@ async def test_v23_login_logic():
 
         with patch.dict('os.environ', {'FOOTBALL_NG_LOGIN': '12345', 'FOOTBALL_NG_PASS': 'pass'}):
             with patch('sys.exit'):
-                # Mock asyncio.gather and asyncio.wait_for to avoid waiting forever
+                # Mock asyncio.wait_for and asyncio.sleep
                 with patch('asyncio.wait_for', AsyncMock()):
-                    await client.login()
+                    with patch('asyncio.sleep', AsyncMock()):
+                        await client.login()
 
             # Check if at least one trigger was clicked
             assert mock_trigger.first.click.called

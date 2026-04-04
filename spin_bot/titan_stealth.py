@@ -87,19 +87,36 @@ class TitanStealthClient:
             except: pass
         self.page.set_default_timeout(15000)
 
+    async def _force_clear_overlays(self):
+        """NUCLEAR OPTION: Force-remove blocking dialogs and masks via JS."""
+        try:
+            await self.page.evaluate("""() => {
+                const selectors = ['.dialog-mask', '.m-region-pop', '.m-modal-mask', '.m-mask'];
+                selectors.forEach(s => {
+                    const el = document.querySelector(s);
+                    if (el) el.remove();
+                });
+                document.body.style.overflow = 'auto'; // Re-enable scrolling
+            }""")
+            print("DEBUG: Force-cleared overlays via DOM injection.")
+        except: pass
+
     async def handle_region_trap(self):
         """V5.27.1: Region Trap - Select Nigeria to set session context."""
         try:
-            modal = self.page.locator("[data-cms-key='location_preference']").first
-            if await modal.is_visible():
-                print("DEBUG: Region Trap detected. Selecting Nigeria...")
-                # Must select country, not just close
-                nigeria_item = self.page.locator(".m-list-item").filter(has_text="Nigeria").first
-                await nigeria_item.wait_for(state="visible", timeout=5000)
-                await nigeria_item.click(force=True)
+            # First attempt: Selection via UI
+            nigeria_selection = self.page.locator('.m-list-item').filter(has_text="Nigeria").first
+            try:
+                # Short timeout for selection check
+                await nigeria_selection.wait_for(state="visible", timeout=3000)
+                await nigeria_selection.click(force=True)
+                print("DEBUG: Successfully clicked Nigeria region.")
                 await asyncio.sleep(2)
+            except:
+                # Fallback to Nuclear option if blocked or not found
+                await self._force_clear_overlays()
         except Exception as e:
-            print(f"DEBUG: Region trap check skipped/failed: {e}")
+            print(f"DEBUG: Region trap handling skipped/failed: {e}")
 
     async def capture_failure(self, name: str):
         try:
@@ -113,7 +130,8 @@ class TitanStealthClient:
 
     async def human_type(self, selector: str, text: str):
         try:
-            await self.page.locator(selector).first.click()
+            # Use force=True to bypass any remaining invisible layers
+            await self.page.locator(selector).first.click(force=True)
             for char in text:
                 await self.page.keyboard.type(char)
                 await asyncio.sleep(random.uniform(0.05, 0.15))
@@ -122,7 +140,7 @@ class TitanStealthClient:
             raise e
 
     async def login(self) -> bool:
-        print("DEBUG: Starting Project Titan-Stealth login flow...")
+        print("DEBUG: Starting Project Titan-Stealth login flow (NUCLEAR PATCH)...")
         await self.setup_db()
 
         state = self.load_storage_state()
@@ -132,7 +150,7 @@ class TitanStealthClient:
             # Step 1: Navigate
             await self.page.goto(self.login_url, wait_until="networkidle")
 
-            # Step 2: Handle Region Trap
+            # Step 2: Handle Region Trap & Overlays
             await self.handle_region_trap()
 
             # Step 3: Check if already logged in via state
@@ -157,7 +175,7 @@ class TitanStealthClient:
             await self.human_type(pass_sel, self.password)
 
             login_btn = self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first
-            await login_btn.click()
+            await login_btn.click(force=True)
 
             # Step 5: Verify
             try:

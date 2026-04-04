@@ -37,8 +37,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.27.5: OMNI-RECURSIVE TITAN MACHINE (DYNAMIC INTERCEPTOR)."""
-        print(f"--- OMNI MACHINE CYCLE V5.27.5 (INTERCEPTOR PROTOCOL) ---")
+        """V5.28.1: OMNI-RECURSIVE TITAN MACHINE (HEURISTIC INTERCEPTOR)."""
+        print(f"--- OMNI MACHINE CYCLE V5.28.1 (INTERCEPTOR PROTOCOL) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()
@@ -54,7 +54,7 @@ class OmniMachineV31Refined:
                 print("CRITICAL: Missing GitHub Secrets (FOOTBALL_NG_LOGIN/PASS).")
                 sys.exit(1)
 
-            # Perform Login (Handling MongoDB session persistence internally)
+            # Perform Login
             if await client.login():
                 print("DEBUG: Titan Landing Success.")
             else:
@@ -63,9 +63,11 @@ class OmniMachineV31Refined:
 
             # 3. Betting Environment Entry & Verification
             print("DEBUG: Entering and Verifying Betting Environment...")
-            # We navigate to game using the authenticated client page
             target_url = "https://www.football.com/ng/games/spin-da-bottle"
             await client.page.goto(target_url, wait_until="networkidle")
+
+            # Standard transition
+            await client.hide_init_loader()
 
             # Modal handling on game page
             try:
@@ -116,7 +118,6 @@ class OmniMachineV31Refined:
                 if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.7:
                     print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']}")
 
-                    # Implementation of UI bet on frame
                     bet_success = await self._place_frame_bet(game_frame, decision["direction"], decision["amount"])
 
                     if bet_success:
@@ -135,7 +136,7 @@ class OmniMachineV31Refined:
                     print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f}]")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.27.5 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.28.1 Cycle: {e}")
             await client.capture_failure("cycle_crash")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
@@ -143,19 +144,20 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.27.5 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.28.1 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []
         try:
-            loc = frame.locator(".history-list, .recent-results, .history-item").first
+            # Bug Fix: don't use .first if we want all texts
+            loc = frame.locator(".history-item, .result-item, .history_ball")
             texts = await loc.all_inner_texts()
             for text in texts:
                 t = text.strip().upper()
                 if "UP" in t or "U" in t: results.append("U")
                 elif "DOWN" in t or "D" in t: results.append("D")
                 elif "MIDDLE" in t or "M" in t: results.append("M")
-            return results[::-1]
+            return results[::-1] # Ensure chronological
         except: return []
 
     async def _place_frame_bet(self, frame, direction: str, amount: float) -> bool:

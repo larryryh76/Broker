@@ -31,6 +31,9 @@ class TitanStealthClient:
         self.page = None
         self.execution_log = []
 
+        # V5.28.1 Heuristic Filters
+        self.tracker_keywords = ["google-analytics", "googletagmanager", "doubleclick", "facebook", "pixel", "analytics", "collect?"]
+
     def _log(self, message: str):
         print(message)
         self.execution_log.append(f"[{time.ctime()}] {message}")
@@ -40,7 +43,6 @@ class TitanStealthClient:
             self._log("WARNING: MONGODB_URI not set. Session persistence disabled.")
             return
         try:
-            # Use explicit is not None comparisons as per memory
             if self.db_client is None:
                 self.db_client = MongoClient(self.mongodb_uri)
                 self.db = self.db_client.get_database("spin_bot")
@@ -72,19 +74,26 @@ class TitanStealthClient:
         except Exception as e:
             self._log(f"ERROR: Failed to save storage_state: {e}")
 
+    def _is_valid_auth_endpoint(self, url: str) -> bool:
+        """V5.28.1: Heuristic filter to reject trackers and prioritize real API endpoints."""
+        url_lower = url.lower()
+        if "football.com" not in url_lower: return False
+        if any(tk in url_lower for tk in self.tracker_keywords): return False
+        return any(kw in url_lower for kw in ["auth", "login", "sign-in", "api/ng/"])
+
     async def _on_request(self, request: Request):
-        url = request.url.lower()
-        if any(kw in url for kw in ["auth", "login", "sign-in"]):
-            # self._log(f"DEBUG: Outbound Request Sniffed -> {request.url}")
+        url = request.url
+        if self._is_valid_auth_endpoint(url):
+            self._log(f"DEBUG: Outbound Request Sniffed -> {url}")
             if request.method == "POST":
-                self.discovered_login_url = request.url
+                self.discovered_login_url = url
 
     async def _on_response(self, response: Response):
-        url = response.url.lower()
-        if any(kw in url for kw in ["auth", "login", "sign-in"]):
+        url = response.url
+        if self._is_valid_auth_endpoint(url):
             if response.status in [401, 403]:
-                self._log(f"DEBUG: Auth Response {response.status} -> {response.url} (Captured as dynamic endpoint)")
-                self.discovered_login_url = response.url
+                self._log(f"DEBUG: Auth Response {response.status} -> {url} (Captured as dynamic endpoint)")
+                self.discovered_login_url = url
 
     async def _on_framenavigated(self, frame):
         if frame == self.page.main_frame:
@@ -96,10 +105,8 @@ class TitanStealthClient:
                     self.save_storage_state(state)
                 except: pass
 
-    async def setup_browser(self, storage_state: Optional[Dict[str, Any]] = None):
+    async def setup(self, storage_state: Optional[Dict[str, Any]] = None):
         self.playwright = await async_playwright().start()
-        # Oppo A3x Fingerprint Protocol (V5.27.5)
-        # headless=True for CI environment stability
         self.browser = await self.playwright.chromium.launch(headless=True)
 
         self.context = await self.browser.new_context(
@@ -115,7 +122,6 @@ class TitanStealthClient:
             ignore_https_errors=True
         )
 
-        # Pre-emptive Region Cookie
         await self.context.add_cookies([{
             "name": "region", "value": "NG", "domain": "www.football.com", "path": "/", "expires": time.time() + 31536000
         }])
@@ -163,6 +169,12 @@ class TitanStealthClient:
                             else { newTarget.rel = 'stylesheet'; newTarget.href = target.href; }
                             newTarget.setAttribute('data-retry', retryCount + 1);
                             document.head.appendChild(newTarget);
+                        } else {
+                            // Fatal Error UI
+                            const errorBanner = document.createElement('div');
+                            errorBanner.style = "position:fixed;top:0;left:0;width:100%;background:red;color:white;z-index:10000;text-align:center;padding:10px;";
+                            errorBanner.innerText = "Fatal Error: Critical assets failed to load.";
+                            document.body.appendChild(errorBanner);
                         }
                     }
                 }, true);
@@ -226,7 +238,8 @@ class TitanStealthClient:
         try:
             ready_state = await self.page.evaluate("document.readyState")
             if ready_state != "complete":
-                await self.page.wait_for_function("document.readyState === 'complete'", timeout=5000)
+                try: await self.page.wait_for_function("document.readyState === 'complete'", timeout=5000)
+                except: pass
 
             # Preference: Clicking Nigeria to trigger hydration
             nigeria_btn = self.page.locator('div.m-list-item[data-op="region_country-item"]').filter(has_text="Nigeria").first
@@ -255,6 +268,16 @@ class TitanStealthClient:
                 await asyncio.sleep(random.uniform(0.5, 1.5))
         except: pass
 
+    async def hide_init_loader(self):
+        """V5.21.1: Standard Transition - Hide initial loader when ready."""
+        try:
+            await self.page.evaluate("""() => {
+                const loader = document.querySelector('.app-init-loader-wrap');
+                if (loader) loader.style.display = 'none';
+            }""")
+            self._log("DEBUG: App Init Loader hidden.")
+        except: pass
+
     async def api_login_fallback(self) -> bool:
         target = self.discovered_login_url or self.api_login_url
         self._log(f"DEBUG: Executing Self-Healing API Fallback -> {target}")
@@ -266,14 +289,18 @@ class TitanStealthClient:
                 state = await self.context.storage_state()
                 self.save_storage_state(state)
                 return True
+            else:
+                self._log(f"DEBUG: API Fallback failed (Status: {response.status}).")
+                return False
+        except Exception as e:
+            self._log(f"DEBUG: API Fallback crash: {e}")
             return False
-        except: return False
 
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Project Titan-Stealth (THE INTERCEPTOR)...")
+        self._log("DEBUG: Starting Project Titan-Stealth (HEURISTIC INTERCEPTOR)...")
         await self.setup_db()
         state = self.load_storage_state()
-        await self.setup_browser(storage_state=state)
+        await self.setup(storage_state=state)
 
         try:
             await self.page.goto(self.login_url, wait_until="networkidle")

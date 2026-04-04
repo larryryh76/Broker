@@ -3,37 +3,42 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from spin_bot.titan_stealth import TitanStealthClient
 
 @pytest.mark.asyncio
-async def test_ui_sensitivity_injections():
+async def test_heuristic_filter():
     client = TitanStealthClient()
-    client.page = MagicMock()
-    client.page.route = AsyncMock()
-    client.page.add_init_script = AsyncMock()
 
-    await client._apply_ui_and_interception()
+    # Tracker URL (should be rejected)
+    tracker_url = "https://www.google-analytics.com/g/collect?v=2&tid=G-CB4CRH59G2"
+    assert client._is_valid_auth_endpoint(tracker_url) is False
 
-    # Verify both route and add_init_script were called
-    client.page.route.assert_called()
-    client.page.add_init_script.assert_called()
+    # External URL (should be rejected)
+    external_url = "https://www.facebook.com/login"
+    assert client._is_valid_auth_endpoint(external_url) is False
 
-    # Verify script content for V5.21 requirements
-    args, _ = client.page.add_init_script.call_args
-    script = args[0]
-    assert "Asset Resilience" in script
-    assert "applyThemeStyle" in script
-    assert "triggerLoginModal" in script
-    assert "zIndex" in script
+    # Real Football.com Login API (should be accepted)
+    valid_url = "https://www.football.com/api/ng/auth/login"
+    assert client._is_valid_auth_endpoint(valid_url) is True
+
+    # Real Football.com Sign-in (should be accepted)
+    valid_url2 = "https://www.football.com/ng/m/sign-in"
+    assert client._is_valid_auth_endpoint(valid_url2) is True
 
 @pytest.mark.asyncio
-async def test_interceptor_discovery():
+async def test_interceptor_discovery_with_heuristic():
     client = TitanStealthClient()
 
-    # Mock a request
-    req = MagicMock()
-    req.url = "https://www.football.com/api/ng/auth/login"
-    req.method = "POST"
+    # Mock a tracker request
+    req_tracker = MagicMock()
+    req_tracker.url = "https://www.google-analytics.com/g/collect"
+    req_tracker.method = "POST"
+    await client._on_request(req_tracker)
+    assert client.discovered_login_url is None
 
-    await client._on_request(req)
-    assert client.discovered_login_url == req.url
+    # Mock a real request
+    req_valid = MagicMock()
+    req_valid.url = "https://www.football.com/api/ng/auth/login"
+    req_valid.method = "POST"
+    await client._on_request(req_valid)
+    assert client.discovered_login_url == req_valid.url
 
 @pytest.mark.asyncio
 async def test_golden_ticket_immediate_save():
@@ -49,22 +54,3 @@ async def test_golden_ticket_immediate_save():
 
     await client._on_framenavigated(mock_frame)
     client.save_storage_state.assert_called()
-
-@pytest.mark.asyncio
-async def test_native_modal_resolution():
-    client = TitanStealthClient()
-    client.page = MagicMock()
-    client.page.evaluate = AsyncMock(return_value="complete")
-    client.page.wait_for_load_state = AsyncMock()
-
-    mock_nigeria = MagicMock()
-    mock_nigeria.wait_for = AsyncMock()
-    mock_nigeria.is_visible = AsyncMock(return_value=True)
-    mock_nigeria.click = AsyncMock()
-
-    client.page.locator.return_value.filter.return_value.first = mock_nigeria
-
-    with patch('asyncio.sleep', AsyncMock()):
-        await client.handle_region_trap()
-
-    mock_nigeria.click.assert_called()

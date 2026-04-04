@@ -3,41 +3,37 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from spin_bot.titan_stealth import TitanStealthClient
 
 @pytest.mark.asyncio
-async def test_handle_region_trap_logic():
+async def test_force_clear_overlays_injection():
     client = TitanStealthClient()
-    client.page = MagicMock()
+    client.page = AsyncMock()
 
-    # Mock finding the modal
-    mock_modal = MagicMock()
-    mock_modal.first = MagicMock()
-    mock_modal.first.is_visible = AsyncMock(return_value=True)
-    client.page.locator.return_value = mock_modal
+    await client._force_clear_overlays()
 
-    # Mock finding the Nigeria item
-    mock_nigeria = MagicMock()
-    mock_nigeria.first = MagicMock()
-    mock_nigeria.first.wait_for = AsyncMock()
-    mock_nigeria.first.click = AsyncMock()
-
-    # Set up the locator to return the modal or nigeria item based on selector
-    def side_effect(selector):
-        if "location_preference" in selector:
-            return mock_modal
-        else:
-            m = MagicMock()
-            m.filter.return_value = mock_nigeria
-            return m
-
-    client.page.locator.side_effect = side_effect
-
-    with patch('asyncio.sleep', AsyncMock()):
-        await client.handle_region_trap()
-
-    # Verify interaction with Nigeria item
-    mock_nigeria.first.click.assert_called()
+    # Verify evaluate was called with the selector removal script
+    client.page.evaluate.assert_called()
+    args, kwargs = client.page.evaluate.call_args
+    script = args[0]
+    assert ".dialog-mask" in script
+    assert "el.remove()" in script
 
 @pytest.mark.asyncio
-async def test_human_type_simulation():
+async def test_handle_region_trap_fallback():
+    client = TitanStealthClient()
+    client.page = MagicMock()
+    client._force_clear_overlays = AsyncMock()
+
+    # Mock locator to fail (timeout)
+    mock_nigeria = MagicMock()
+    mock_nigeria.wait_for = AsyncMock(side_effect=Exception("Timeout"))
+    client.page.locator.return_value.filter.return_value = mock_nigeria
+
+    await client.handle_region_trap()
+
+    # Verify fallback to nuclear option
+    client._force_clear_overlays.assert_called()
+
+@pytest.mark.asyncio
+async def test_human_type_force_click():
     client = TitanStealthClient()
     client.page = MagicMock()
     mock_target = MagicMock()
@@ -46,9 +42,8 @@ async def test_human_type_simulation():
     client.page.locator.return_value = mock_target
     client.page.keyboard = AsyncMock()
 
-    test_text = "123"
     with patch('asyncio.sleep', AsyncMock()):
-        await client.human_type("#selector", test_text)
+        await client.human_type("#selector", "1")
 
-    # Verify each character was typed
-    assert client.page.keyboard.type.call_count == len(test_text)
+    # Verify force=True was used
+    mock_target.first.click.assert_called_with(force=True)

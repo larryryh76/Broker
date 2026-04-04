@@ -37,69 +37,59 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.28.1: OMNI-RECURSIVE TITAN MACHINE (HEURISTIC INTERCEPTOR)."""
-        print(f"--- OMNI MACHINE CYCLE V5.28.1 (INTERCEPTOR PROTOCOL) ---")
+        """V5.29.1: OMNI-RECURSIVE TITAN MACHINE (FIREBASE WAP PROTOCOL)."""
+        print(f"--- OMNI MACHINE CYCLE V5.29.1 (FIREBASE WAP) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()
 
-        api_success = False
         scraped = []
 
         try:
-            # 2. TITAN AUTH (DYNAMIC SNIFFING)
-            print("DEBUG: Executing Titan-Stealth Auth Sequence...")
-            # Ensure critical vars are present
+            # 2. TITAN AUTH (FIREBASE BYPASS)
+            print("DEBUG: Executing Firebase WAP Auth Sequence...")
             if not os.getenv("FOOTBALL_NG_LOGIN") or not os.getenv("FOOTBALL_NG_PASS"):
-                print("CRITICAL: Missing GitHub Secrets (FOOTBALL_NG_LOGIN/PASS).")
+                print("CRITICAL: Missing GitHub Secrets.")
                 sys.exit(1)
 
-            # Perform Login
             if await client.login():
-                print("DEBUG: Titan Landing Success.")
+                print("DEBUG: Titan Auth Success.")
             else:
-                print("CRITICAL: Titan Protocol failed. Terminating to prevent flagging.")
+                print("CRITICAL: Titan Auth failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry & Verification
+            # 3. Betting Environment Entry & Hydration
             print("DEBUG: Entering and Verifying Betting Environment...")
             target_url = "https://www.football.com/ng/games/spin-da-bottle"
             await client.page.goto(target_url, wait_until="networkidle")
 
-            # Standard transition
+            # V5.21.1 Standard Transition
             await client.hide_init_loader()
 
-            # Modal handling on game page
-            try:
-                close_btn = client.page.locator('i.m-icon-close[data-op="region-close"]')
-                if await close_btn.is_visible(): await close_btn.click()
-            except: pass
+            # V5.29.1 Sync with Vue.js Hydration
+            await client.wait_for_vue_hydration()
 
             # Iframe Sync
             game_frame = client.page.frame_locator("iframe[src*='sportygames']")
             ui_indicator = game_frame.locator("canvas, .history, .results, .history-list, .bet-panel").first
             await ui_indicator.wait_for(state="visible", timeout=45000)
-            print("DEBUG: Betting Environment reached and verified.")
+            print("DEBUG: Betting Environment fully hydrated.")
 
             # 4. Final Sync and Processing
-            new_storage = await client.context.storage_state()
-            # Bridge to OmniAPIClient for history retrieval
-            api = OmniAPIClient(session_data={"storage_state": new_storage, "discovered_login_url": client.discovered_login_url})
+            storage = await client.context.storage_state()
+            api = OmniAPIClient(session_data={"storage_state": storage})
 
             api_history = api.get_spin_history()
             if api_history:
                 scraped = api_history
             else:
-                # Fallback to UI scrape
                 extraction = await self._capture_history_ui(game_frame)
                 scraped = extraction
 
-            # Deduplication and mental state update
-            for i, outcome in enumerate(scraped):
-                context = scraped[:i]
-                self.memory.log_spin(outcome, history_context=context)
+            for outcome in scraped:
+                self.memory.log_spin(outcome)
 
-            # Accuracy Protocol
+            # 4. Accuracy Protocol
             all_spins = self.memory.get_latest_spins(500)
             spin_count = len(all_spins)
             probs = self.brain.predict(all_spins)
@@ -109,8 +99,17 @@ class OmniMachineV31Refined:
                 self.session_state["mode"] = "TUITION"
                 print(f"98% PROTOCOL: TUITION active. ({spin_count}/200 spins)")
             else:
-                self.session_state["mode"] = "SNIPER"
-                print(f"98% PROTOCOL: SNIPER Active. (N={spin_count})")
+                # V5.17 Markov Confidence Escalation check
+                from spin_bot.models import MarkovModel
+                mm = MarkovModel(all_spins).predict()
+                mm_conf = max(mm.values())
+
+                if mm_conf >= 0.60:
+                    self.session_state["mode"] = "SNIPER"
+                    print(f"98% PROTOCOL: SNIPER Active. (N={spin_count}, Conf: {mm_conf:.2f})")
+                else:
+                    self.session_state["mode"] = "TUITION"
+                    print(f"98% PROTOCOL: TUITION (LEARNING) active due to low confidence ({mm_conf:.2f}).")
 
             # 5. EXECUTION
             if self.session_state["mode"] == "SNIPER":
@@ -122,7 +121,6 @@ class OmniMachineV31Refined:
 
                     if bet_success:
                         await asyncio.sleep(15)
-                        # Result verification
                         outcomes = api.get_spin_history()
                         if outcomes:
                             actual = outcomes[-1]
@@ -130,13 +128,14 @@ class OmniMachineV31Refined:
                             if actual == "M": win = False
                             print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
                             self.brain.update_weights(all_spins, actual)
-                            self.risk.bankroll += (decision["amount"] * 1.95 if win else -decision["amount"])
+                            payout = decision["amount"] * 1.95 if win else 0
+                            self.risk.bankroll += (payout - decision["amount"])
                             self.risk.update_result(win)
                 else:
-                    print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f}]")
+                    print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.28.1 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.29.1 Cycle: {e}")
             await client.capture_failure("cycle_crash")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
@@ -144,12 +143,11 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.28.1 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.29.1 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []
         try:
-            # Bug Fix: don't use .first if we want all texts
             loc = frame.locator(".history-item, .result-item, .history_ball")
             texts = await loc.all_inner_texts()
             for text in texts:
@@ -157,7 +155,7 @@ class OmniMachineV31Refined:
                 if "UP" in t or "U" in t: results.append("U")
                 elif "DOWN" in t or "D" in t: results.append("D")
                 elif "MIDDLE" in t or "M" in t: results.append("M")
-            return results[::-1] # Ensure chronological
+            return results[::-1]
         except: return []
 
     async def _place_frame_bet(self, frame, direction: str, amount: float) -> bool:

@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any
 class TitanStealthClient:
     def __init__(self):
         self.login_url = "https://www.football.com/ng/m/independent_login"
+        self.api_login_url = "https://www.football.com/api/ng/auth/login"
         self.mongodb_uri = os.getenv("MONGODB_URI")
         self.phone = os.getenv("FOOTBALL_NG_LOGIN")
         self.password = os.getenv("FOOTBALL_NG_PASS")
@@ -67,18 +68,28 @@ class TitanStealthClient:
         self.playwright = await async_playwright().start()
         self.browser = await self.playwright.chromium.launch(headless=True)
 
-        # Titan-Stealth Emulation Specs
+        # V5.27.4: Oppo A3x Fingerprint Protocol
         self.context = await self.browser.new_context(
-            user_agent="Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
-            viewport={'width': 390, 'height': 844},
+            user_agent="Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
+            viewport={'width': 360, 'height': 800},
             is_mobile=True,
             has_touch=True,
             locale="en-NG",
             timezone_id="Africa/Lagos",
-            geolocation={"latitude": 6.5244, "longitude": 3.3792}, # Lagos, Nigeria
+            geolocation={"latitude": 6.5244, "longitude": 3.3792},
             permissions=["geolocation"],
             storage_state=storage_state
         )
+
+        # Pre-empt the Location Modal by injecting the region cookie
+        await self.context.add_cookies([{
+            "name": "region",
+            "value": "NG",
+            "domain": "www.football.com",
+            "path": "/",
+            "expires": time.time() + 31536000 # 1 year
+        }])
+        print("DEBUG: Pre-emptive Region Cookie Injected.")
 
         self.page = await self.context.new_page()
         if stealth:
@@ -88,25 +99,14 @@ class TitanStealthClient:
         self.page.set_default_timeout(15000)
 
     async def handle_region_trap(self):
-        """V5.27.3: Vue.js State Sync Patch - Native Resolution over DOM manipulation."""
+        """V5.27.3: Vue.js State Sync - Handled pre-emptively via cookies in V5.27.4."""
         try:
-            # Native click to resolve modal and update Vue state
             close_btn = self.page.locator('i.m-icon-close[data-op="region-close"]')
-            print("DEBUG: Waiting for Vue.js to mount UI...")
-            try:
-                await close_btn.wait_for(state="visible", timeout=5000)
-                if await close_btn.is_visible():
-                    await close_btn.click()
-                    print("DEBUG: Closed region modal via native framework click.")
-
-                    # Mandatory delay for Vue components to mount (inputs)
-                    print("DEBUG: Waiting for Vue component mounting (2s)...")
-                    await asyncio.sleep(2)
-            except:
-                print("DEBUG: Modal not present or already resolved.")
-
-        except Exception as e:
-            print(f"DEBUG: Region trap handling skipped/failed: {e}")
+            if await close_btn.is_visible():
+                await close_btn.click()
+                print("DEBUG: Closed region modal via native click.")
+                await asyncio.sleep(2)
+        except: pass
 
     async def capture_failure(self, name: str):
         try:
@@ -128,8 +128,36 @@ class TitanStealthClient:
             print(f"ERROR during human typing: {e}")
             raise e
 
+    async def api_login_fallback(self) -> bool:
+        """V5.27.4: Raw POST login fallback to bypass UI rendering issues."""
+        print("DEBUG: Executing API-First login fallback...")
+        try:
+            payload = {
+                "mobile": self.phone,
+                "password": self.password,
+                "remember": True
+            }
+            # Use the context's request for automatic cookie management
+            response = await self.context.request.post(
+                self.api_login_url,
+                data=payload,
+                headers={"Referer": self.login_url}
+            )
+
+            if response.status == 200:
+                print("DEBUG: API Login Successful. Committing state...")
+                new_state = await self.context.storage_state()
+                self.save_storage_state(new_state)
+                return True
+            else:
+                print(f"DEBUG: API Login failed with status {response.status}")
+                return False
+        except Exception as e:
+            print(f"DEBUG: API fallback crash: {e}")
+            return False
+
     async def login(self) -> bool:
-        print("DEBUG: Starting Project Titan-Stealth login flow (VUE STATE SYNC)...")
+        print("DEBUG: Starting Project Titan-Stealth login flow (OPPO FINGERPRINT PROTOCOL)...")
         await self.setup_db()
 
         state = self.load_storage_state()
@@ -139,35 +167,36 @@ class TitanStealthClient:
             # Step 1: Navigate
             await self.page.goto(self.login_url, wait_until="networkidle")
 
-            # Step 2: Handle Region Trap (Native interaction only)
+            # Step 2: Modal Handling
             await self.handle_region_trap()
 
-            # Step 3: Check if already logged in via state
+            # Step 3: Check Login Status
             if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
                 print("DEBUG: Session valid. Skipping login.")
                 return True
 
-            # Step 4: Perform login if not authenticated
-            print("DEBUG: Session invalid or not found. Performing fresh login...")
-
-            if not self.phone or not self.password:
-                print("CRITICAL: Missing credentials (FOOTBALL_NG_LOGIN/PASS).")
-                return False
-
-            # Target raw inputs as generated by the framework
+            # Step 4: Perform UI Login
+            print("DEBUG: Session invalid. Performing fresh UI login...")
             phone_sel = "input[type='tel']"
-            pass_sel = "input[type='password']"
 
-            # Final wait for inputs
             try:
-                await self.page.wait_for_selector(phone_sel, state="visible", timeout=10000)
-            except Exception as e:
-                print(f"DEBUG: Inputs not visible after Vue mounting delay: {e}")
-                await self.capture_failure("inputs_missing_vue_sync")
-                raise e
+                # Attempt to find inputs
+                await self.page.wait_for_selector(phone_sel, state="visible", timeout=5000)
+            except:
+                # Pro-Tip: Trigger scroll to force Vue hydration
+                print("DEBUG: Primary inputs not visible. Triggering scroll event...")
+                await self.page.mouse.wheel(0, 500)
+                await asyncio.sleep(2)
+
+                try:
+                    await self.page.wait_for_selector(phone_sel, state="visible", timeout=5000)
+                except:
+                    # Final UI failure -> API Fallback
+                    print("WARNING: UI login fields not found. Falling back to API login.")
+                    return await self.api_login_fallback()
 
             await self.human_type(phone_sel, self.phone)
-            await self.human_type(pass_sel, self.password)
+            await self.human_type("input[type='password']", self.password)
 
             login_btn = self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first
             await login_btn.click()
@@ -176,20 +205,16 @@ class TitanStealthClient:
             try:
                 await self.page.wait_for_url("**/me", timeout=15000)
                 print("DEBUG: Titan-Stealth Login Success.")
-
-                # Step 6: Save state
                 new_state = await self.context.storage_state()
                 self.save_storage_state(new_state)
                 return True
             except:
-                print("CRITICAL: Redirect to /me failed.")
-                await self.capture_failure("login_redirect_fail")
-                return False
+                print("CRITICAL: Redirect to /me failed. Retrying via API fallback.")
+                return await self.api_login_fallback()
 
         except Exception as e:
-            print(f"CRITICAL: Titan-Stealth Flow failed: {e}")
-            await self.capture_failure("titan_flow_crash")
-            return False
+            print(f"CRITICAL: Titan-Stealth UI Flow failed: {e}. Attempting API fallback.")
+            return await self.api_login_fallback()
 
     async def close(self):
         if self.context: await self.context.close()

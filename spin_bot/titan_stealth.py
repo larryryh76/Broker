@@ -87,52 +87,23 @@ class TitanStealthClient:
             except: pass
         self.page.set_default_timeout(15000)
 
-    async def _force_clear_overlays(self):
-        """NUCLEAR OPTION: Force-remove blocking dialogs and masks via JS."""
-        try:
-            await self.page.evaluate("""() => {
-                const selectors = ['.dialog-mask', '.m-region-pop', '.m-modal-mask', '.m-mask'];
-                selectors.forEach(s => {
-                    const el = document.querySelector(s);
-                    if (el) el.remove();
-                });
-                document.body.style.overflow = 'auto'; // Re-enable scrolling
-            }""")
-            print("DEBUG: Force-cleared overlays via DOM injection.")
-        except: pass
-
     async def handle_region_trap(self):
-        """V5.27.2: State-Machine Patch - Interaction over Removal."""
+        """V5.27.3: Vue.js State Sync Patch - Native Resolution over DOM manipulation."""
         try:
-            # Explicitly target and click the Nigeria option to trigger state transition
-            # Using multiple selector attempts for the country item
-            selectors = [
-                'div.m-list-item[data-op="region_country-item"]',
-                '.m-list-item:has-text("Nigeria")',
-                'text="Nigeria"'
-            ]
+            # Native click to resolve modal and update Vue state
+            close_btn = self.page.locator('i.m-icon-close[data-op="region-close"]')
+            print("DEBUG: Waiting for Vue.js to mount UI...")
+            try:
+                await close_btn.wait_for(state="visible", timeout=5000)
+                if await close_btn.is_visible():
+                    await close_btn.click()
+                    print("DEBUG: Closed region modal via native framework click.")
 
-            triggered = False
-            for sel in selectors:
-                try:
-                    target = self.page.locator(sel).filter(has_text="Nigeria").first
-                    # FIX: is_visible() does not support timeout. Use wait_for instead.
-                    await target.wait_for(state="visible", timeout=3000)
-                    if await target.is_visible():
-                        print(f"DEBUG: Region Trap detected. Clicking Nigeria via {sel}...")
-                        await target.click(force=True)
-                        triggered = True
-                        break
-                except: continue
-
-            if triggered:
-                # Pro-Tip: Mechanical delay for site Javascript to rebuild the form
-                print("DEBUG: State transition triggered. Waiting for hydration (5s)...")
-                await asyncio.sleep(5)
-                await self.page.wait_for_load_state("networkidle")
-            else:
-                # Fallback to Nuclear if no click target found but page looks blocked
-                await self._force_clear_overlays()
+                    # Mandatory delay for Vue components to mount (inputs)
+                    print("DEBUG: Waiting for Vue component mounting (2s)...")
+                    await asyncio.sleep(2)
+            except:
+                print("DEBUG: Modal not present or already resolved.")
 
         except Exception as e:
             print(f"DEBUG: Region trap handling skipped/failed: {e}")
@@ -149,8 +120,7 @@ class TitanStealthClient:
 
     async def human_type(self, selector: str, text: str):
         try:
-            # Use force=True to bypass any remaining invisible layers
-            await self.page.locator(selector).first.click(force=True)
+            await self.page.locator(selector).first.click()
             for char in text:
                 await self.page.keyboard.type(char)
                 await asyncio.sleep(random.uniform(0.05, 0.15))
@@ -159,7 +129,7 @@ class TitanStealthClient:
             raise e
 
     async def login(self) -> bool:
-        print("DEBUG: Starting Project Titan-Stealth login flow (STATE-MACHINE PATCH)...")
+        print("DEBUG: Starting Project Titan-Stealth login flow (VUE STATE SYNC)...")
         await self.setup_db()
 
         state = self.load_storage_state()
@@ -169,68 +139,45 @@ class TitanStealthClient:
             # Step 1: Navigate
             await self.page.goto(self.login_url, wait_until="networkidle")
 
-            # Step 2: Handle Region Trap & Overlays (Interaction-based)
+            # Step 2: Handle Region Trap (Native interaction only)
             await self.handle_region_trap()
 
-            # Step 3: Check Ready State
-            ready_state = await self.page.evaluate("document.readyState")
-            print(f"DEBUG: Document Ready State: {ready_state}")
-            if ready_state != "complete":
-                print("DEBUG: Waiting for complete ready state...")
-                try:
-                    await self.page.wait_for_function("document.readyState === 'complete'", timeout=5000)
-                except: pass
-
-            # Step 4: Check if already logged in via state
+            # Step 3: Check if already logged in via state
             if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
                 print("DEBUG: Session valid. Skipping login.")
                 return True
 
-            # Step 5: Perform login if not authenticated
+            # Step 4: Perform login if not authenticated
             print("DEBUG: Session invalid or not found. Performing fresh login...")
 
             if not self.phone or not self.password:
                 print("CRITICAL: Missing credentials (FOOTBALL_NG_LOGIN/PASS).")
                 return False
 
-            # Wait for inputs with "Tab Switch" fallback
-            phone_sel = "input[type='tel'], input[placeholder*='Phone'], .un-input-wrapper input"
+            # Target raw inputs as generated by the framework
+            phone_sel = "input[type='tel']"
+            pass_sel = "input[type='password']"
 
+            # Final wait for inputs
             try:
-                await self.page.wait_for_selector(phone_sel, state="visible", timeout=5000)
-            except:
-                print("DEBUG: Primary inputs not visible. Attempting Tab Switch fallback...")
-                # Attempt to click Login tab or similar trigger
-                tab_selectors = [".m-tabs-item", "text='Login'", "button:has-text('Login')"]
-                for tab in tab_selectors:
-                    try:
-                        btn = self.page.locator(tab).first
-                        if await btn.is_visible():
-                            await btn.click(force=True)
-                            await asyncio.sleep(1)
-                    except: continue
-
-                # Final wait for inputs
-                try:
-                    await self.page.wait_for_selector(phone_sel, state="visible", timeout=10000)
-                except Exception as e:
-                    print(f"DEBUG: Inputs still not visible after tab switch: {e}")
-                    raise e
+                await self.page.wait_for_selector(phone_sel, state="visible", timeout=10000)
+            except Exception as e:
+                print(f"DEBUG: Inputs not visible after Vue mounting delay: {e}")
+                await self.capture_failure("inputs_missing_vue_sync")
+                raise e
 
             await self.human_type(phone_sel, self.phone)
-
-            pass_sel = "input[type='password']"
             await self.human_type(pass_sel, self.password)
 
             login_btn = self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first
-            await login_btn.click(force=True)
+            await login_btn.click()
 
-            # Step 6: Verify
+            # Step 5: Verify
             try:
                 await self.page.wait_for_url("**/me", timeout=15000)
                 print("DEBUG: Titan-Stealth Login Success.")
 
-                # Step 7: Save state
+                # Step 6: Save state
                 new_state = await self.context.storage_state()
                 self.save_storage_state(new_state)
                 return True

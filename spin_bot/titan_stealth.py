@@ -102,19 +102,38 @@ class TitanStealthClient:
         except: pass
 
     async def handle_region_trap(self):
-        """V5.27.1: Region Trap - Select Nigeria to set session context."""
+        """V5.27.2: State-Machine Patch - Interaction over Removal."""
         try:
-            # First attempt: Selection via UI
-            nigeria_selection = self.page.locator('.m-list-item').filter(has_text="Nigeria").first
-            try:
-                # Short timeout for selection check
-                await nigeria_selection.wait_for(state="visible", timeout=3000)
-                await nigeria_selection.click(force=True)
-                print("DEBUG: Successfully clicked Nigeria region.")
-                await asyncio.sleep(2)
-            except:
-                # Fallback to Nuclear option if blocked or not found
+            # Explicitly target and click the Nigeria option to trigger state transition
+            # Using multiple selector attempts for the country item
+            selectors = [
+                'div.m-list-item[data-op="region_country-item"]',
+                '.m-list-item:has-text("Nigeria")',
+                'text="Nigeria"'
+            ]
+
+            triggered = False
+            for sel in selectors:
+                try:
+                    target = self.page.locator(sel).filter(has_text="Nigeria").first
+                    # FIX: is_visible() does not support timeout. Use wait_for instead.
+                    await target.wait_for(state="visible", timeout=3000)
+                    if await target.is_visible():
+                        print(f"DEBUG: Region Trap detected. Clicking Nigeria via {sel}...")
+                        await target.click(force=True)
+                        triggered = True
+                        break
+                except: continue
+
+            if triggered:
+                # Pro-Tip: Mechanical delay for site Javascript to rebuild the form
+                print("DEBUG: State transition triggered. Waiting for hydration (5s)...")
+                await asyncio.sleep(5)
+                await self.page.wait_for_load_state("networkidle")
+            else:
+                # Fallback to Nuclear if no click target found but page looks blocked
                 await self._force_clear_overlays()
+
         except Exception as e:
             print(f"DEBUG: Region trap handling skipped/failed: {e}")
 
@@ -140,7 +159,7 @@ class TitanStealthClient:
             raise e
 
     async def login(self) -> bool:
-        print("DEBUG: Starting Project Titan-Stealth login flow (NUCLEAR PATCH)...")
+        print("DEBUG: Starting Project Titan-Stealth login flow (STATE-MACHINE PATCH)...")
         await self.setup_db()
 
         state = self.load_storage_state()
@@ -150,24 +169,53 @@ class TitanStealthClient:
             # Step 1: Navigate
             await self.page.goto(self.login_url, wait_until="networkidle")
 
-            # Step 2: Handle Region Trap & Overlays
+            # Step 2: Handle Region Trap & Overlays (Interaction-based)
             await self.handle_region_trap()
 
-            # Step 3: Check if already logged in via state
+            # Step 3: Check Ready State
+            ready_state = await self.page.evaluate("document.readyState")
+            print(f"DEBUG: Document Ready State: {ready_state}")
+            if ready_state != "complete":
+                print("DEBUG: Waiting for complete ready state...")
+                try:
+                    await self.page.wait_for_function("document.readyState === 'complete'", timeout=5000)
+                except: pass
+
+            # Step 4: Check if already logged in via state
             if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
                 print("DEBUG: Session valid. Skipping login.")
                 return True
 
-            # Step 4: Perform login if not authenticated
+            # Step 5: Perform login if not authenticated
             print("DEBUG: Session invalid or not found. Performing fresh login...")
 
             if not self.phone or not self.password:
                 print("CRITICAL: Missing credentials (FOOTBALL_NG_LOGIN/PASS).")
                 return False
 
-            # Wait for inputs
+            # Wait for inputs with "Tab Switch" fallback
             phone_sel = "input[type='tel'], input[placeholder*='Phone'], .un-input-wrapper input"
-            await self.page.wait_for_selector(phone_sel, state="visible", timeout=15000)
+
+            try:
+                await self.page.wait_for_selector(phone_sel, state="visible", timeout=5000)
+            except:
+                print("DEBUG: Primary inputs not visible. Attempting Tab Switch fallback...")
+                # Attempt to click Login tab or similar trigger
+                tab_selectors = [".m-tabs-item", "text='Login'", "button:has-text('Login')"]
+                for tab in tab_selectors:
+                    try:
+                        btn = self.page.locator(tab).first
+                        if await btn.is_visible():
+                            await btn.click(force=True)
+                            await asyncio.sleep(1)
+                    except: continue
+
+                # Final wait for inputs
+                try:
+                    await self.page.wait_for_selector(phone_sel, state="visible", timeout=10000)
+                except Exception as e:
+                    print(f"DEBUG: Inputs still not visible after tab switch: {e}")
+                    raise e
 
             await self.human_type(phone_sel, self.phone)
 
@@ -177,12 +225,12 @@ class TitanStealthClient:
             login_btn = self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first
             await login_btn.click(force=True)
 
-            # Step 5: Verify
+            # Step 6: Verify
             try:
                 await self.page.wait_for_url("**/me", timeout=15000)
                 print("DEBUG: Titan-Stealth Login Success.")
 
-                # Step 6: Save state
+                # Step 7: Save state
                 new_state = await self.context.storage_state()
                 self.save_storage_state(new_state)
                 return True

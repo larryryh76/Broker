@@ -3,6 +3,7 @@ import asyncio
 import json
 import time
 import random
+import requests
 from playwright.async_api import async_playwright, Page, BrowserContext, Request, Response
 try:
     from playwright_stealth import stealth_async as stealth
@@ -17,11 +18,12 @@ from typing import Optional, Dict, Any, List
 class TitanStealthClient:
     def __init__(self):
         self.login_url = "https://www.football.com/ng/m/independent_login"
-        self.api_login_url = "https://www.football.com/api/ng/auth/login"
-        self.discovered_login_url = None
+        self.api_login_url = "https://www.football.com/api/ng/users/login"
+        self.firebase_url = "https://firebaseinstallations.googleapis.com/v1/projects/footballdotcom-78535/installations"
         self.mongodb_uri = os.getenv("MONGODB_URI")
         self.phone = os.getenv("FOOTBALL_NG_LOGIN")
         self.password = os.getenv("FOOTBALL_NG_PASS")
+        self.firebase_api_key = os.getenv("FIREBASE_API_KEY", "AIzaSyAs-J2n8Y9Y5Y5Y5Y5Y5Y5Y5Y5Y5Y5Y5Y")
         self.db_client = None
         self.db = None
         self.collection = None
@@ -30,9 +32,8 @@ class TitanStealthClient:
         self.context = None
         self.page = None
         self.execution_log = []
-
-        # V5.28.1 Heuristic Filters
-        self.tracker_keywords = ["google-analytics", "googletagmanager", "doubleclick", "facebook", "pixel", "analytics", "collect?"]
+        self.firebase_token = None
+        self.fid = None
 
     def _log(self, message: str):
         print(message)
@@ -74,36 +75,59 @@ class TitanStealthClient:
         except Exception as e:
             self._log(f"ERROR: Failed to save storage_state: {e}")
 
-    def _is_valid_auth_endpoint(self, url: str) -> bool:
-        """V5.28.1: Heuristic filter to reject trackers and prioritize real API endpoints."""
-        url_lower = url.lower()
-        if "football.com" not in url_lower: return False
-        if any(tk in url_lower for tk in self.tracker_keywords): return False
-        return any(kw in url_lower for kw in ["auth", "login", "sign-in", "api/ng/"])
+    async def _get_firebase_token(self) -> bool:
+        """V5.29.1: Registers Firebase installation for project 'footballdotcom-78535'."""
+        self._log("DEBUG: Executing Firebase Handshake...")
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.firebase_api_key
+            }
+            payload = {"appId": "1:753470331102:web:ae7465077d2fa908d70a4f", "authVersion": "FIS_v2"}
 
-    async def _on_request(self, request: Request):
-        url = request.url
-        if self._is_valid_auth_endpoint(url):
-            self._log(f"DEBUG: Outbound Request Sniffed -> {url}")
-            if request.method == "POST":
-                self.discovered_login_url = url
+            # Using requests for simple handshake
+            res = requests.post(self.firebase_url, json=payload, headers=headers, timeout=10)
+            if res.status_code in [200, 201]:
+                data = res.json()
+                self.fid = data.get("fid")
+                self.firebase_token = data.get("authToken", {}).get("token")
+                self._log(f"DEBUG: Firebase Handshake Success.")
+                return True
+            else:
+                self._log(f"DEBUG: Firebase Registration failed (Status: {res.status_code})")
+                return False
+        except Exception as e:
+            self._log(f"ERROR: Firebase Handshake crash: {e}")
+            return False
 
-    async def _on_response(self, response: Response):
-        url = response.url
-        if self._is_valid_auth_endpoint(url):
-            if response.status in [401, 403]:
-                self._log(f"DEBUG: Auth Response {response.status} -> {url} (Captured as dynamic endpoint)")
-                self.discovered_login_url = url
+    async def _api_login_wap(self) -> Optional[str]:
+        """V5.29.1: Direct API Login using Firebase-authenticated WAP protocol."""
+        if not self.firebase_token:
+            if not await self._get_firebase_token(): return None
 
-    async def _on_framenavigated(self, frame):
-        if frame == self.page.main_frame:
-            url = self.page.url
-            if "/me" in url or "/m/home" in url:
-                self._log(f"DEBUG: Golden Ticket detected (URL: {url}). Saving state immediately!")
-                try:
-                    state = await self.context.storage_state()
-                    self.save_storage_state(state)
-                except: pass
+        self._log("DEBUG: Performing Direct WAP API Login...")
+        try:
+            headers = {
+                "x-platform": "WAP",
+                "x-app-id": "1:753470331102:web:ae7465077d2fa908d70a4f",
+                "Authorization": f"Bearer {self.firebase_token}",
+                "Content-Type": "application/json",
+                "Referer": "https://www.football.com/ng/m/independent_login"
+            }
+            payload = {
+                "phone": self.phone,
+                "password": self.password,
+                "countryCode": "Nigeria",
+                "fid": self.fid
+            }
+            res = requests.post(self.api_login_url, json=payload, headers=headers, timeout=10)
+            if res.status_code == 200:
+                token = res.json().get("data", {}).get("loginToken")
+                self._log("DEBUG: WAP API Login Success.")
+                return token
+        except Exception as e:
+            self._log(f"ERROR: WAP API Login failed: {e}")
+        return None
 
     async def setup(self, storage_state: Optional[Dict[str, Any]] = None):
         self.playwright = await async_playwright().start()
@@ -122,14 +146,15 @@ class TitanStealthClient:
             ignore_https_errors=True
         )
 
+        # Inject region and potentially auth token manually into cookies/localStorage
         await self.context.add_cookies([{
             "name": "region", "value": "NG", "domain": "www.football.com", "path": "/", "expires": time.time() + 31536000
         }])
 
         self.page = await self.context.new_page()
 
-        # V5.21.1 UI Sensitivity & Dynamic Interception
-        await self._apply_ui_and_interception()
+        # V5.21 UI Sensitivity logic
+        await self._apply_ui_sensitivity()
 
         if stealth:
             try: await stealth(self.page)
@@ -137,19 +162,11 @@ class TitanStealthClient:
 
         self.page.set_default_timeout(15000)
 
-    async def _apply_ui_and_interception(self):
-        self._log("DEBUG: Applying V5.21.1 UI Sensitivity & Interceptor Logic...")
-
-        # Network Interception setup
-        await self.page.route("**/*", lambda route: route.continue_())
-        self.page.on("request", self._on_request)
-        self.page.on("response", self._on_response)
-        self.page.on("framenavigated", self._on_framenavigated)
-
-        # JS Injections for V5.21 UI Enhancement
+    async def _apply_ui_sensitivity(self):
+        self._log("DEBUG: Applying V5.21 UI Sensitivity Suite...")
         await self.page.add_init_script("""
             (function() {
-                // 1. Asset Resilience
+                // 1. Asset Resilience (Preconnect & DNS-Prefetch)
                 const domains = ['https://www.football.com', 'https://s.football.com/games/'];
                 domains.forEach(d => {
                     ['preconnect', 'dns-prefetch'].forEach(rel => {
@@ -159,6 +176,7 @@ class TitanStealthClient:
                     });
                 });
 
+                // 2. Asset Retry Hook
                 window.addEventListener('error', function(e) {
                     const target = e.target;
                     if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
@@ -171,15 +189,15 @@ class TitanStealthClient:
                             document.head.appendChild(newTarget);
                         } else {
                             // Fatal Error UI
-                            const errorBanner = document.createElement('div');
-                            errorBanner.style = "position:fixed;top:0;left:0;width:100%;background:red;color:white;z-index:10000;text-align:center;padding:10px;";
-                            errorBanner.innerText = "Fatal Error: Critical assets failed to load.";
-                            document.body.appendChild(errorBanner);
+                            const banner = document.createElement('div');
+                            banner.style = "position:fixed;top:0;left:0;width:100%;background:red;color:white;z-index:10000;text-align:center;padding:10px;";
+                            banner.innerText = "Fatal Error: Critical UI assets failed to load.";
+                            document.body.appendChild(banner);
                         }
                     }
                 }, true);
 
-                // 2. Theme & Loader Styling
+                // 3. Theme & Loader Styling
                 function applyThemeStyle() {
                     const theme = document.documentElement.getAttribute('data-theme') || 'light';
                     const brand = window.BRAND_NAME || 'football';
@@ -195,20 +213,12 @@ class TitanStealthClient:
                     }
                 }
 
-                const observer = new MutationObserver(() => {
-                    applyThemeStyle();
-                    // Z-Index Stacking
-                    document.querySelectorAll('.modal-backdrop').forEach((b, i) => b.style.zIndex = (1052 + (i*10)).toString());
-                    document.querySelectorAll('.modal-content').forEach((c, i) => c.style.zIndex = (1055 + (i*10)).toString());
-                });
-                observer.observe(document.body, { childList: true, subtree: true });
-
-                // 3. Global Auth Listener
+                // 4. Modal Stacking & Auth Listener
                 const originalFetch = window.fetch;
                 window.fetch = async (...args) => {
-                    const response = await originalFetch(...args);
-                    if (response.status === 401) triggerLoginModal();
-                    return response;
+                    const res = await originalFetch(...args);
+                    if (res.status === 401) triggerLoginModal();
+                    return res;
                 };
 
                 function triggerLoginModal() {
@@ -216,15 +226,22 @@ class TitanStealthClient:
                     const modal = document.createElement('div');
                     modal.id = 'omni-login-modal';
                     modal.innerHTML = `
-                        <div class="modal-backdrop" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
-                            <div class="modal-content" style="background:white;padding:20px;border-radius:8px;text-align:center;">
+                        <div class="modal-backdrop" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1052;">
+                            <div class="modal-content" style="background:white;padding:20px;border-radius:8px;text-align:center;z-index:1055;">
                                 <p style="color:red;font-weight:bold;">Error! Please login to start game.</p>
-                                <button onclick="window.location.href='/ng/m/independent_login'" style="background:#007bff;color:white;padding:10px;margin:5px;">Login</button>
-                                <button onclick="window.location.href='/ng/m/'" style="background:#6c757d;color:white;padding:10px;margin:5px;">Exit</button>
+                                <button onclick="window.location.href='/ng/m/independent_login'" style="background:#007bff;color:white;padding:10px;margin:5px;border-radius:4px;border:none;">Login</button>
+                                <button onclick="window.location.href='/ng/m/'" style="background:#6c757d;color:white;padding:10px;margin:5px;border-radius:4px;border:none;">Exit</button>
                             </div>
                         </div>`;
                     document.body.appendChild(modal);
                 }
+
+                const observer = new MutationObserver(() => {
+                    applyThemeStyle();
+                    document.querySelectorAll('.modal-backdrop').forEach((b, i) => b.style.zIndex = (1052 + (i*10)).toString());
+                    document.querySelectorAll('.modal-content').forEach((c, i) => c.style.zIndex = (1055 + (i*10)).toString());
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
 
                 setInterval(() => {
                     if (document.body.innerText.includes('Error! Please login to start game')) triggerLoginModal();
@@ -232,41 +249,14 @@ class TitanStealthClient:
             })();
         """)
 
-    async def handle_region_trap(self):
-        """V5.27.2: State-Machine Fix - Interaction over Removal."""
-        self._log("DEBUG: Resolving Region Trap via State-Machine Transition...")
+    async def wait_for_vue_hydration(self):
+        """V5.29.1: Waits for critical network config response to ensure Vue is ready."""
+        self._log("DEBUG: Waiting for Vue.js Hydration (factsCenter/recommend/configs)...")
         try:
-            ready_state = await self.page.evaluate("document.readyState")
-            if ready_state != "complete":
-                try: await self.page.wait_for_function("document.readyState === 'complete'", timeout=5000)
-                except: pass
-
-            # Preference: Clicking Nigeria to trigger hydration
-            nigeria_btn = self.page.locator('div.m-list-item[data-op="region_country-item"]').filter(has_text="Nigeria").first
-            try:
-                await nigeria_btn.wait_for(state="visible", timeout=3000)
-                await nigeria_btn.click(force=True)
-                self._log("DEBUG: Selected Nigeria via native click.")
-                await asyncio.sleep(5) # Hydration Sync delay
-                await self.page.wait_for_load_state("networkidle")
-            except:
-                # Fallback to close button if list item not found
-                close_btn = self.page.locator('i.m-icon-close[data-op="region-close"]')
-                if await close_btn.is_visible():
-                    await close_btn.click()
-                    self._log("DEBUG: Closed region modal via native click.")
-                    await asyncio.sleep(2)
-        except Exception as e:
-            self._log(f"DEBUG: Region trap handling skipped/failed: {e}")
-
-    async def human_jitter(self):
-        """V5.27.5: Human Jitter loop to trigger Vue.js hydration."""
-        self._log("DEBUG: Executing Human Jitter...")
-        try:
-            for _ in range(3):
-                await self.page.mouse.move(random.randint(0, 300), random.randint(0, 300))
-                await asyncio.sleep(random.uniform(0.5, 1.5))
-        except: pass
+            await self.page.wait_for_response(lambda r: "factsCenter/recommend/configs" in r.url, timeout=15000)
+            self._log("DEBUG: Vue.js Hydration Complete.")
+        except:
+            self._log("WARNING: Vue.js Hydration timeout. Proceeding with caution.")
 
     async def hide_init_loader(self):
         """V5.21.1: Standard Transition - Hide initial loader when ready."""
@@ -278,91 +268,39 @@ class TitanStealthClient:
             self._log("DEBUG: App Init Loader hidden.")
         except: pass
 
-    async def api_login_fallback(self) -> bool:
-        target = self.discovered_login_url or self.api_login_url
-        self._log(f"DEBUG: Executing Self-Healing API Fallback -> {target}")
-        try:
-            payload = {"mobile": self.phone, "password": self.password, "remember": True}
-            response = await self.context.request.post(target, data=payload, headers={"Referer": self.login_url})
-            if response.status == 200:
-                self._log("DEBUG: API Login Successful. Golden Ticket Secured.")
-                state = await self.context.storage_state()
-                self.save_storage_state(state)
-                return True
-            else:
-                self._log(f"DEBUG: API Fallback failed (Status: {response.status}).")
-                return False
-        except Exception as e:
-            self._log(f"DEBUG: API Fallback crash: {e}")
-            return False
-
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Project Titan-Stealth (HEURISTIC INTERCEPTOR)...")
+        self._log("DEBUG: Starting Project Titan-Stealth Login (FIREBASE WAP PROTOCOL)...")
         await self.setup_db()
+
+        # 1. Attempt API Login first to bypass UI hurdles
+        login_token = await self._api_login_wap()
+
+        if login_token:
+            # Construct Storage State with token
+            state = {
+                "cookies": [{"name": "loginToken", "value": login_token, "domain": ".football.com", "path": "/"}],
+                "origins": [{
+                    "origin": "https://www.football.com",
+                    "localStorage": [{"name": "patron:id:accesstoken", "value": login_token}]
+                }]
+            }
+            await self.setup(storage_state=state)
+            self.save_storage_state(state)
+            return True
+
+        # 2. Fallback to existing persistent state
         state = self.load_storage_state()
         await self.setup(storage_state=state)
 
         try:
             await self.page.goto(self.login_url, wait_until="networkidle")
-
-            # Step 1: Handle Region Trap (State-Machine Sync)
-            await self.handle_region_trap()
-
-            # Step 2: Check Login Status
             if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
-                self._log("DEBUG: Session valid via existing state.")
+                self._log("DEBUG: Session restored from MongoDB.")
                 return True
 
-            self._log("DEBUG: Session invalid. Attempting UI interaction with Jitter...")
-            await self.human_jitter()
-
-            phone_sel = "input[type='tel']"
-            try:
-                await self.page.wait_for_selector(phone_sel, state="visible", timeout=7000)
-            except:
-                self._log("DEBUG: Inputs hidden. Forcing hydration via scroll...")
-                await self.page.mouse.wheel(0, 500)
-                await asyncio.sleep(2)
-                try:
-                    await self.page.wait_for_selector(phone_sel, state="visible", timeout=5000)
-                except:
-                    # Tab Switch Fallback
-                    self._log("DEBUG: Attempting Tab Switch fallback...")
-                    for tab in [".m-tabs-item", "text='Login'"]:
-                        try:
-                            btn = self.page.locator(tab).first
-                            if await btn.is_visible(): await btn.click(force=True)
-                        except: continue
-
-                    try: await self.page.wait_for_selector(phone_sel, state="visible", timeout=5000)
-                    except:
-                        self._log("WARNING: UI blind. Triggering Self-Healing API Fallback.")
-                        return await self.api_login_fallback()
-
-            # Human Typing
-            await self.page.locator(phone_sel).first.click(force=True)
-            for char in self.phone:
-                await self.page.keyboard.type(char)
-                await asyncio.sleep(random.uniform(0.05, 0.15))
-
-            await self.page.locator("input[type='password']").first.click(force=True)
-            for char in self.password:
-                await self.page.keyboard.type(char)
-                await asyncio.sleep(random.uniform(0.05, 0.15))
-
-            await self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first.click(force=True)
-
-            try:
-                await self.page.wait_for_url("**/me", timeout=10000)
-                self._log("DEBUG: UI Login Verified.")
-                state = await self.context.storage_state()
-                self.save_storage_state(state)
-                return True
-            except: return await self.api_login_fallback()
-
-        except Exception as e:
-            self._log(f"CRITICAL: Interceptor flow failed: {e}")
-            return await self.api_login_fallback()
+            self._log("CRITICAL: WAP API and Persistent state both failed.")
+            return False
+        except: return False
 
     async def capture_failure(self, name: str):
         try:

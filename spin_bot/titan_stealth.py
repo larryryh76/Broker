@@ -3,7 +3,7 @@ import asyncio
 import json
 import time
 import random
-import requests
+import socketio
 from playwright.async_api import async_playwright, Page, BrowserContext, Request, Response
 try:
     from playwright_stealth import stealth_async as stealth
@@ -19,12 +19,10 @@ class TitanStealthClient:
     def __init__(self):
         self.login_url = "https://www.football.com/ng/m/independent_login"
         self.manual_login_url = "https://www.football.com/ng/m/login"
-        self.api_login_url = "https://www.football.com/api/ng/users/login"
-        self.firebase_url = "https://firebaseinstallations.googleapis.com/v1/projects/footballdotcom-78535/installations"
+        self.websocket_url = "wss://alive-ng.football.com/socket.io/?EIO=3&transport=websocket"
         self.mongodb_uri = os.getenv("MONGODB_URI")
         self.phone = os.getenv("FOOTBALL_NG_LOGIN")
         self.password = os.getenv("FOOTBALL_NG_PASS")
-        self.firebase_api_key = os.getenv("FIREBASE_API_KEY", "AIzaSyAs-J2n8Y9Y5Y5Y5Y5Y5Y5Y5Y5Y5Y5Y5Y")
         self.db_client = None
         self.db = None
         self.collection = None
@@ -33,9 +31,7 @@ class TitanStealthClient:
         self.context = None
         self.page = None
         self.execution_log = []
-        self.firebase_token = None
-        self.fid = None
-        self.refresh_token = None
+        self.sio = None
 
     def _log(self, message: str):
         print(message)
@@ -55,7 +51,7 @@ class TitanStealthClient:
             self._log(f"ERROR: MongoDB setup failed: {e}")
 
     def load_storage_state(self) -> Optional[Dict[str, Any]]:
-        """V5.31.1: Local Storage State Recovery."""
+        """V4.4: Restore Session State (Cookies + Origins)."""
         path = "artifacts/storage_state.json"
         if os.path.exists(path):
             try:
@@ -74,128 +70,37 @@ class TitanStealthClient:
             except: pass
         return None
 
-    def load_firebase_identity(self) -> Optional[Dict[str, Any]]:
-        if self.collection is None: return None
+    async def _init_websocket(self) -> bool:
+        """V4.4 ALIVE-NG: Initiate Socket.io Handshake."""
+        self._log("DEBUG: Initiating ALIVE-NG Socket.io Handshake...")
         try:
-            doc = self.collection.find_one({"id": "firebase_identity"})
-            if doc is not None:
-                self._log("DEBUG: Loaded Firebase identity from MongoDB.")
-                return doc
-        except: pass
-        return None
+            self.sio = socketio.AsyncClient(logger=True, engineio_logger=True)
 
-    def save_firebase_identity(self, fid: str, refresh_token: str):
-        if self.collection is None: return
-        try:
-            self.collection.update_one(
-                {"id": "firebase_identity"},
-                {"$set": {"fid": fid, "refresh_token": refresh_token, "updated_at": time.time()}},
-                upsert=True
-            )
-            self._log("DEBUG: Saved Firebase identity to MongoDB.")
-        except: pass
+            @self.sio.event
+            async def connect():
+                self._log("DEBUG: ALIVE-NG WebSocket Connected.")
 
-    async def _get_firebase_token(self) -> bool:
-        """V5.32.1: Header Sync Restoration (Origin/Referer fix)."""
-        self._log("DEBUG: Executing Firebase Handshake (Header Sync)...")
+            @self.sio.event
+            async def disconnect():
+                self._log("DEBUG: ALIVE-NG WebSocket Disconnected.")
 
-        identity = self.load_firebase_identity()
-        if identity and identity.get("refresh_token"):
-            self.fid = identity["fid"]
-            self.refresh_token = identity["refresh_token"]
-            self._log("DEBUG: Reusing persistent Firebase Identity.")
-
-        try:
-            # V5.32.1: Added Origin and Referer to solve 400 error
+            # EIO=3 WebSocket-first handshake with realistic headers
             headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": self.firebase_api_key,
-                "x-firebase-client": "firebase-js/9.1.0",
+                "User-Agent": "Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
                 "Origin": "https://www.football.com",
                 "Referer": "https://www.football.com/"
             }
-            payload = {
-                "appId": "1:753470331102:web:ae7465077d2fa908d70a4f",
-                "authVersion": "FIS_v2",
-                "sdkVersion": "w:10.13.0"
-            }
 
-            standalone_pw = None
-            if not self.playwright:
-                standalone_pw = await async_playwright().start()
-                pw_obj = standalone_pw
-            else:
-                pw_obj = self.playwright
-
-            try:
-                request_context = await pw_obj.request.new_context()
-                res = await request_context.post(self.firebase_url, data=payload, headers=headers)
-
-                if res.status in [200, 201]:
-                    data = await res.json()
-                    self.fid = data.get("fid")
-                    self.firebase_token = data.get("authToken", {}).get("token")
-                    self.refresh_token = data.get("refreshToken")
-
-                    if self.fid and self.refresh_token:
-                        self.save_firebase_identity(self.fid, self.refresh_token)
-
-                    self._log(f"DEBUG: Firebase Handshake Success.")
-                    return True
-                else:
-                    self._log(f"DEBUG: Firebase Registration failed (Status: {res.status}).")
-                    return False
-            finally:
-                if standalone_pw:
-                    await standalone_pw.stop()
+            await self.sio.connect(
+                self.websocket_url,
+                transports=['websocket'],
+                headers=headers,
+                socketio_path='socket.io'
+            )
+            return True
         except Exception as e:
-            self._log(f"ERROR: Firebase Handshake crash: {e}")
+            self._log(f"WARNING: ALIVE-NG WebSocket failed (Expected in CI/WAF): {e}")
             return False
-
-    async def _api_login_wap(self) -> Optional[str]:
-        if not self.firebase_token:
-            if not await self._get_firebase_token(): return None
-
-        self._log("DEBUG: Performing Direct WAP API Login...")
-        try:
-            headers = {
-                "x-platform": "WAP",
-                "x-app-id": "1:753470331102:web:ae7465077d2fa908d70a4f",
-                "Authorization": f"Bearer {self.firebase_token}",
-                "Content-Type": "application/json",
-                "Referer": "https://www.football.com/ng/m/independent_login"
-            }
-            payload = {
-                "phone": self.phone,
-                "password": self.password,
-                "countryCode": "Nigeria",
-                "fid": self.fid
-            }
-
-            standalone_pw = None
-            if not self.playwright:
-                standalone_pw = await async_playwright().start()
-                pw_obj = standalone_pw
-            else:
-                pw_obj = self.playwright
-
-            try:
-                request_context = await pw_obj.request.new_context()
-                res = await request_context.post(self.api_login_url, data=payload, headers=headers)
-
-                if res.status == 200:
-                    data = await res.json()
-                    token = data.get("data", {}).get("loginToken")
-                    if token:
-                        self._log("DEBUG: WAP API Login Success.")
-                        return token
-                self._log(f"DEBUG: WAP API Login failed (Status: {res.status}).")
-            finally:
-                if standalone_pw:
-                    await standalone_pw.stop()
-        except Exception as e:
-            self._log(f"ERROR: WAP API Login failed: {e}")
-        return None
 
     async def setup_browser(self, storage_state: Optional[Dict[str, Any]] = None):
         if not self.playwright:
@@ -367,10 +272,10 @@ class TitanStealthClient:
             await self.page.wait_for_selector(phone_sel, state="visible", timeout=20000)
 
             await self.page.locator(phone_sel).first.click(force=True)
-            await self.page.keyboard.type(self.phone, delay=150)
+            await self.keyboard_type_manual(self.phone)
 
             await self.page.locator("input[type='password']").first.click(force=True)
-            await self.page.keyboard.type(self.password, delay=150)
+            await self.keyboard_type_manual(self.password)
 
             await self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first.click(force=True)
 
@@ -387,6 +292,11 @@ class TitanStealthClient:
             self._log(f"ERROR: Manual UI fallback failed: {e}")
             return False
 
+    async def keyboard_type_manual(self, text: str):
+        for char in text:
+            await self.page.keyboard.type(char, delay=random.randint(50, 150))
+            await asyncio.sleep(random.uniform(0.01, 0.05))
+
     def save_storage_state(self, state: Dict[str, Any]):
         if self.collection is None: return
         try:
@@ -402,38 +312,24 @@ class TitanStealthClient:
         except: pass
 
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Titan-Stealth (DIRECT ROUTE & HEADER SYNC)...")
+        self._log("DEBUG: Starting Titan-Stealth (V4.4 ALIVE-NG)...")
         await self.setup_db()
 
-        # Step 1: Direct API Login (WAP)
-        login_token = await self._api_login_wap()
+        # Step 1: Warm up ALIVE-NG WebSocket
+        await self._init_websocket()
 
-        if login_token:
-            state = {
-                "cookies": [
-                    {"name": "loginToken", "value": login_token, "domain": ".football.com", "path": "/"},
-                    {"name": "region", "value": "NG", "domain": ".football.com", "path": "/"}
-                ],
-                "origins": [{
-                    "origin": "https://www.football.com",
-                    "localStorage": [{"name": "patron:id:accesstoken", "value": login_token}]
-                }]
-            }
-            await self.setup_browser(storage_state=state)
-            self.save_storage_state(state)
-            return True
-
-        # Fallback to persistent state
+        # Step 2: Load Persistent Session
         state = self.load_storage_state()
         await self.setup_browser(storage_state=state)
 
         try:
+            # Check if session is already valid
             await self.page.goto(self.login_url, wait_until="networkidle")
             if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
                 self._log("DEBUG: Session valid via persistence.")
                 return True
 
-            # Step 2: Manual UI Fallback (Direct Route Correction)
+            # Step 3: Manual UI Fallback
             return await self.manual_ui_login_fallback()
         except: return False
 
@@ -446,6 +342,7 @@ class TitanStealthClient:
         except: pass
 
     async def close(self):
+        if self.sio and self.sio.connected: await self.sio.disconnect()
         if self.context: await self.context.close()
         if self.browser: await self.browser.close()
         if self.playwright: await self.playwright.stop()

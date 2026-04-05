@@ -16,15 +16,18 @@ class OmniMachineV31Refined:
         self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
 
         # 2. Reconstruct System State
-        self.session_state = self.memory.load_session() or {
-            "bankroll": 1000.0,
-            "mode": "TUITION",
-            "peak_equity": 1000.0,
-            "vault_locked": False,
-            "history": [],
-            "tuition_history": [],
-            "tuition_spins": 0
-        }
+        session = self.memory.load_session()
+        if not session or session.get("bankroll", 0) <= 0:
+            session = {
+                "bankroll": 300.0,
+                "mode": "TUITION",
+                "peak_equity": 300.0,
+                "vault_locked": False,
+                "history": [],
+                "tuition_history": [],
+                "tuition_spins": 0
+            }
+        self.session_state = session
 
         # 3. Model Weight Loading
         weights = self.memory.load_model_weights()
@@ -37,8 +40,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.29.1: OMNI-RECURSIVE TITAN MACHINE (FIREBASE WAP PROTOCOL)."""
-        print(f"--- OMNI MACHINE CYCLE V5.29.1 (FIREBASE WAP) ---")
+        """V4.4: OMNI-RECURSIVE TITAN MACHINE (ALIVE-NG WS PROTOCOL)."""
+        print(f"--- OMNI MACHINE CYCLE V4.4 (ALIVE-NG WS) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()
@@ -46,8 +49,8 @@ class OmniMachineV31Refined:
         scraped = []
 
         try:
-            # 2. TITAN AUTH (FIREBASE BYPASS)
-            print("DEBUG: Executing Firebase WAP Auth Sequence...")
+            # 2. TITAN AUTH (V4.4 ALIVE-NG)
+            print("DEBUG: Executing ALIVE-NG WebSocket Auth Sequence...")
             if not os.getenv("FOOTBALL_NG_LOGIN") or not os.getenv("FOOTBALL_NG_PASS"):
                 print("CRITICAL: Missing GitHub Secrets.")
                 sys.exit(1)
@@ -58,9 +61,9 @@ class OmniMachineV31Refined:
                 print("CRITICAL: Titan Auth failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry & Hydration
-            print("DEBUG: Entering and Verifying Betting Environment...")
-            target_url = "https://www.football.com/ng/games/spin-da-bottle"
+            # 3. Betting Environment Entry (Direct Deep Link)
+            print("DEBUG: Entering Betting Environment (Direct Deep Link)...")
+            target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
             await client.page.goto(target_url, wait_until="networkidle")
 
             # V5.21.1 Standard Transition

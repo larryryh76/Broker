@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any, List
 class TitanStealthClient:
     def __init__(self):
         self.login_url = "https://www.football.com/ng/m/independent_login"
+        self.manual_login_url = "https://www.football.com/ng/m/login"
         self.api_login_url = "https://www.football.com/api/ng/users/login"
         self.firebase_url = "https://firebaseinstallations.googleapis.com/v1/projects/footballdotcom-78535/installations"
         self.mongodb_uri = os.getenv("MONGODB_URI")
@@ -95,8 +96,8 @@ class TitanStealthClient:
         except: pass
 
     async def _get_firebase_token(self) -> bool:
-        """V5.31.1: Public Web Handshake Restoration."""
-        self._log("DEBUG: Executing Public Firebase Handshake...")
+        """V5.32.1: Header Sync Restoration (Origin/Referer fix)."""
+        self._log("DEBUG: Executing Firebase Handshake (Header Sync)...")
 
         identity = self.load_firebase_identity()
         if identity and identity.get("refresh_token"):
@@ -105,12 +106,14 @@ class TitanStealthClient:
             self._log("DEBUG: Reusing persistent Firebase Identity.")
 
         try:
+            # V5.32.1: Added Origin and Referer to solve 400 error
             headers = {
                 "Content-Type": "application/json",
                 "x-goog-api-key": self.firebase_api_key,
-                "x-firebase-client": "firebase-js/9.1.0"
+                "x-firebase-client": "firebase-js/9.1.0",
+                "Origin": "https://www.football.com",
+                "Referer": "https://www.football.com/"
             }
-            # V5.31.1: Exact Handshake Body with SDK Version
             payload = {
                 "appId": "1:753470331102:web:ae7465077d2fa908d70a4f",
                 "authVersion": "FIS_v2",
@@ -213,11 +216,25 @@ class TitanStealthClient:
             ignore_https_errors=True
         )
 
+        # V5.32.1: Pre-emptive cookie injection to solve "UI Blind" and location popup
         await self.context.add_cookies([{
             "name": "region", "value": "NG", "domain": ".football.com", "path": "/"
         }])
 
         self.page = await self.context.new_page()
+
+        # V5.21 Asset Resilience: Preconnect/DNS-Prefetch
+        await self.page.add_init_script("""
+            (function() {
+                const head = document.head || document.getElementsByTagName('head')[0];
+                const domains = ['https://www.football.com', 'https://s.football.com/games/'];
+                domains.forEach(url => {
+                    const pc = document.createElement('link'); pc.rel = 'preconnect'; pc.href = url; head.appendChild(pc);
+                    const dp = document.createElement('link'); dp.rel = 'dns-prefetch'; dp.href = url; head.appendChild(dp);
+                });
+            })();
+        """)
+
         await self._apply_ui_sensitivity()
 
         if stealth:
@@ -230,15 +247,95 @@ class TitanStealthClient:
         self._log("DEBUG: Injecting V5.21 UI Sensitivity Suite...")
         await self.page.add_init_script("""
             (function() {
+                // 1. Asset Retry Hook
+                window.assetRetries = window.assetRetries || {};
+                const originalCreateElement = document.createElement;
+                document.createElement = function(tagName) {
+                    const element = originalCreateElement.call(document, tagName);
+                    if (tagName === 'script' || tagName === 'link') {
+                        element.onerror = function() {
+                            const src = element.src || element.href;
+                            if (!src) return;
+                            window.assetRetries[src] = (window.assetRetries[src] || 0) + 1;
+                            if (window.assetRetries[src] <= 2) {
+                                console.log(`Retrying asset: ${src} (Attempt ${window.assetRetries[src]})`);
+                                const newEl = document.createElement(tagName);
+                                if (tagName === 'script') newEl.src = src; else newEl.href = src;
+                                document.head.appendChild(newEl);
+                            } else {
+                                console.error(`Fatal Error: Asset load failed after 2 retries: ${src}`);
+                                showFatalError(`Failed to load critical asset: ${src}`);
+                            }
+                        };
+                    }
+                    return element;
+                };
+
+                function showFatalError(msg) {
+                    const err = document.createElement('div');
+                    err.style = "position:fixed;top:0;left:0;width:100%;background:red;color:white;z-index:9999;padding:10px;text-align:center";
+                    err.innerText = "Fatal Error: " + msg;
+                    document.body.appendChild(err);
+                }
+
+                // 2. Global Modal & Auth Listener
+                const originalFetch = window.fetch;
+                window.fetch = async (...args) => {
+                    const response = await originalFetch(...args);
+                    if (response.status === 401) {
+                        triggerLoginModal();
+                    }
+                    return response;
+                };
+
+                function triggerLoginModal() {
+                    if (document.getElementById('omni-auth-modal')) return;
+                    const modal = document.createElement('div');
+                    modal.id = 'omni-auth-modal';
+                    modal.innerHTML = `
+                        <div class="modal-backdrop" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1052;"></div>
+                        <div class="modal-content" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:20px;z-index:1055;border-radius:8px;text-align:center;width:80%;">
+                            <h3>Error! Please login to start game.</h3>
+                            <button id="auth-primary" style="background:#007bff;color:white;padding:10px 20px;border:none;border-radius:4px;margin:5px;">Login</button>
+                            <button id="auth-secondary" style="background:#6c757d;color:white;padding:10px 20px;border:none;border-radius:4px;margin:5px;">Exit</button>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    document.getElementById('auth-primary').onclick = () => window.location.href = '/ng/m/login';
+                    document.getElementById('auth-secondary').onclick = () => {
+                        modal.remove();
+                        window.history.back() || (window.location.href = '/ng/m/home');
+                    };
+                }
+
+                // 3. Theme & Z-Index Management
+                let modalStack = 0;
                 const observer = new MutationObserver(() => {
                     const theme = document.documentElement.getAttribute('data-theme') || 'light';
                     const brand = window.BRAND_NAME || 'football';
                     const loader = document.querySelector('.app-init-loader-wrap');
+                    const spinner = document.querySelector('.spinner-icon'); // Hypothetical selector
+
                     if (loader) {
-                        loader.style.backgroundColor = (theme === 'light') ? '#f4f4f4' : ((brand === 'Encore') ? '#100e26' : '#000000');
+                        if (theme === 'light') {
+                            loader.style.backgroundColor = '#f4f4f4';
+                            if (spinner) spinner.style.backgroundColor = '#e0e1e2';
+                        } else {
+                            loader.style.backgroundColor = (brand === 'Encore') ? '#100e26' : '#000000';
+                        }
                     }
-                    document.querySelectorAll('.modal-backdrop').forEach((b, i) => b.style.zIndex = (1052 + (i*10)).toString());
-                    document.querySelectorAll('.modal-content').forEach((c, i) => c.style.zIndex = (1055 + (i*10)).toString());
+
+                    const backdrops = document.querySelectorAll('.modal-backdrop:not([data-managed])');
+                    backdrops.forEach(b => {
+                        b.style.zIndex = (1052 + (modalStack * 10)).toString();
+                        b.setAttribute('data-managed', 'true');
+                    });
+                    const contents = document.querySelectorAll('.modal-content:not([data-managed])');
+                    contents.forEach(c => {
+                        c.style.zIndex = (1055 + (modalStack * 10)).toString();
+                        c.setAttribute('data-managed', 'true');
+                        modalStack++;
+                    });
                 });
                 observer.observe(document.body, { childList: true, subtree: true });
             })();
@@ -258,14 +355,16 @@ class TitanStealthClient:
         except: pass
 
     async def manual_ui_login_fallback(self) -> bool:
-        """V5.31.1: Human-style UI login fallback."""
-        self._log("DEBUG: Starting Manual UI Login Fallback (Human Jitter)...")
+        """V5.32.1: Human-style UI login fallback (Direct Route Fix)."""
+        self._log("DEBUG: Starting Manual UI Login Fallback (Direct Route Fix)...")
         try:
-            await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
+            # V5.32.1: Navigate directly to /login subpath
+            await self.page.goto(self.manual_login_url, wait_until="networkidle")
 
             # Use raw input targeting with human-like typing
             phone_sel = "input[type='tel']"
-            await self.page.wait_for_selector(phone_sel, state="visible", timeout=10000)
+            # V5.32.1: Increased timeout to 20000ms for heavy Vue hydration
+            await self.page.wait_for_selector(phone_sel, state="visible", timeout=20000)
 
             await self.page.locator(phone_sel).first.click(force=True)
             await self.page.keyboard.type(self.phone, delay=150)
@@ -303,7 +402,7 @@ class TitanStealthClient:
         except: pass
 
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Titan-Stealth (PUBLIC HANDSHAKE PROTOCOL)...")
+        self._log("DEBUG: Starting Titan-Stealth (DIRECT ROUTE & HEADER SYNC)...")
         await self.setup_db()
 
         # Step 1: Direct API Login (WAP)
@@ -334,7 +433,7 @@ class TitanStealthClient:
                 self._log("DEBUG: Session valid via persistence.")
                 return True
 
-            # Step 2: Manual UI Fallback if everything else fails
+            # Step 2: Manual UI Fallback (Direct Route Correction)
             return await self.manual_ui_login_fallback()
         except: return False
 

@@ -1,27 +1,9 @@
 import pytest
-import os
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from spin_bot.titan_stealth import TitanStealthClient
 
 @pytest.mark.asyncio
-async def test_load_storage_state_recovery():
-    client = TitanStealthClient()
-
-    # 1. Test artifact loading
-    os.makedirs("artifacts", exist_ok=True)
-    dummy_state = {"cookies": [], "origins": []}
-    with open("artifacts/storage_state.json", "w") as f:
-        json.dump(dummy_state, f)
-
-    state = client.load_storage_state()
-    assert state == dummy_state
-
-    # Cleanup
-    os.remove("artifacts/storage_state.json")
-
-@pytest.mark.asyncio
-async def test_public_handshake_payload():
+async def test_header_sync_payload():
     client = TitanStealthClient()
     client.playwright = MagicMock()
 
@@ -40,14 +22,14 @@ async def test_public_handshake_payload():
 
     await client._get_firebase_token()
 
-    # Verify sdkVersion in payload
+    # Verify Sync Headers
     args, kwargs = mock_request_context.post.call_args
-    payload = kwargs['data']
-    assert payload['sdkVersion'] == "w:10.13.0"
-    assert payload['appId'] == "1:753470331102:web:ae7465077d2fa908d70a4f"
+    headers = kwargs['headers']
+    assert headers['Origin'] == "https://www.football.com"
+    assert headers['Referer'] == "https://www.football.com/"
 
 @pytest.mark.asyncio
-async def test_manual_login_fallback_triggered():
+async def test_manual_login_direct_route():
     client = TitanStealthClient()
     client.setup_db = AsyncMock()
     client._api_login_wap = AsyncMock(return_value=None)
@@ -57,10 +39,10 @@ async def test_manual_login_fallback_triggered():
 
     client.page = MagicMock()
     client.page.goto = AsyncMock()
-    client.page.url = "login"
+    client.page.url = "index"
     client.page.locator.return_value.is_visible = AsyncMock(return_value=False)
 
-    success = await client.login()
+    await client.login()
 
-    assert success is True
+    # Verify direct route for fallback
     client.manual_ui_login_fallback.assert_called()

@@ -3,7 +3,6 @@ import asyncio
 import json
 import time
 import random
-import requests
 from playwright.async_api import async_playwright, Page, BrowserContext, Request, Response
 try:
     from playwright_stealth import stealth_async as stealth
@@ -34,6 +33,7 @@ class TitanStealthClient:
         self.execution_log = []
         self.firebase_token = None
         self.fid = None
+        self.refresh_token = None
 
     def _log(self, message: str):
         print(message)
@@ -52,50 +52,77 @@ class TitanStealthClient:
         except Exception as e:
             self._log(f"ERROR: MongoDB setup failed: {e}")
 
-    def load_storage_state(self) -> Optional[Dict[str, Any]]:
+    def load_firebase_identity(self) -> Optional[Dict[str, Any]]:
         if self.collection is None: return None
         try:
-            doc = self.collection.find_one({"id": "titan_stealth_session"})
-            if doc is not None and "storage_state" in doc:
-                self._log("DEBUG: Loaded storage_state from MongoDB.")
-                return doc["storage_state"]
-        except Exception as e:
-            self._log(f"DEBUG: Failed to load storage_state: {e}")
+            doc = self.collection.find_one({"id": "firebase_identity"})
+            if doc is not None:
+                self._log("DEBUG: Loaded Firebase identity from MongoDB.")
+                return doc
+        except: pass
         return None
 
-    def save_storage_state(self, state: Dict[str, Any]):
+    def save_firebase_identity(self, fid: str, refresh_token: str):
         if self.collection is None: return
         try:
             self.collection.update_one(
-                {"id": "titan_stealth_session"},
-                {"$set": {"storage_state": state, "updated_at": time.time()}},
+                {"id": "firebase_identity"},
+                {"$set": {"fid": fid, "refresh_token": refresh_token, "updated_at": time.time()}},
                 upsert=True
             )
-            self._log("DEBUG: Saved storage_state to MongoDB.")
-        except Exception as e:
-            self._log(f"ERROR: Failed to save storage_state: {e}")
+            self._log("DEBUG: Saved Firebase identity to MongoDB.")
+        except: pass
 
     async def _get_firebase_token(self) -> bool:
-        """V5.29.1: Registers Firebase installation for project 'footballdotcom-78535'."""
-        self._log("DEBUG: Executing Firebase Handshake...")
+        """V5.30.1: Restored Firebase Handshake with Identity Persistence."""
+        self._log("DEBUG: Executing Firebase Handshake Restoration...")
+
+        identity = self.load_firebase_identity()
+        if identity and identity.get("refresh_token"):
+            self.fid = identity["fid"]
+            self.refresh_token = identity["refresh_token"]
+            self._log("DEBUG: Reusing persistent Firebase Identity.")
+
         try:
             headers = {
                 "Content-Type": "application/json",
-                "x-goog-api-key": self.firebase_api_key
+                "x-goog-api-key": self.firebase_api_key,
+                "x-firebase-client": "firebase-js/9.1.0"
             }
-            payload = {"appId": "1:753470331102:web:ae7465077d2fa908d70a4f", "authVersion": "FIS_v2"}
+            payload = {
+                "appId": "1:753470331102:web:ae7465077d2fa908d70a4f",
+                "authVersion": "FIS_v2"
+            }
 
-            # Using requests for simple handshake
-            res = requests.post(self.firebase_url, json=payload, headers=headers, timeout=10)
-            if res.status_code in [200, 201]:
-                data = res.json()
-                self.fid = data.get("fid")
-                self.firebase_token = data.get("authToken", {}).get("token")
-                self._log(f"DEBUG: Firebase Handshake Success.")
-                return True
+            # Use standalone start for playwright object if not initialized
+            standalone_pw = None
+            if not self.playwright:
+                standalone_pw = await async_playwright().start()
+                pw_obj = standalone_pw
             else:
-                self._log(f"DEBUG: Firebase Registration failed (Status: {res.status_code})")
-                return False
+                pw_obj = self.playwright
+
+            try:
+                request_context = await pw_obj.request.new_context()
+                res = await request_context.post(self.firebase_url, data=payload, headers=headers)
+
+                if res.status in [200, 201]:
+                    data = await res.json()
+                    self.fid = data.get("fid")
+                    self.firebase_token = data.get("authToken", {}).get("token")
+                    self.refresh_token = data.get("refreshToken")
+
+                    if self.fid and self.refresh_token:
+                        self.save_firebase_identity(self.fid, self.refresh_token)
+
+                    self._log(f"DEBUG: Firebase Handshake Success. FID Secure.")
+                    return True
+                else:
+                    self._log(f"DEBUG: Firebase Registration failed (Status: {res.status}).")
+                    return False
+            finally:
+                if standalone_pw:
+                    await standalone_pw.stop()
         except Exception as e:
             self._log(f"ERROR: Firebase Handshake crash: {e}")
             return False
@@ -120,22 +147,41 @@ class TitanStealthClient:
                 "countryCode": "Nigeria",
                 "fid": self.fid
             }
-            res = requests.post(self.api_login_url, json=payload, headers=headers, timeout=10)
-            if res.status_code == 200:
-                token = res.json().get("data", {}).get("loginToken")
-                self._log("DEBUG: WAP API Login Success.")
-                return token
+
+            standalone_pw = None
+            if not self.playwright:
+                standalone_pw = await async_playwright().start()
+                pw_obj = standalone_pw
+            else:
+                pw_obj = self.playwright
+
+            try:
+                request_context = await pw_obj.request.new_context()
+                res = await request_context.post(self.api_login_url, data=payload, headers=headers)
+
+                if res.status == 200:
+                    data = await res.json()
+                    token = data.get("data", {}).get("loginToken")
+                    if token:
+                        self._log("DEBUG: WAP API Login Success.")
+                        return token
+                self._log(f"DEBUG: WAP API Login failed (Status: {res.status}).")
+            finally:
+                if standalone_pw:
+                    await standalone_pw.stop()
         except Exception as e:
             self._log(f"ERROR: WAP API Login failed: {e}")
         return None
 
-    async def setup(self, storage_state: Optional[Dict[str, Any]] = None):
-        self.playwright = await async_playwright().start()
+    async def setup_browser(self, storage_state: Optional[Dict[str, Any]] = None):
+        if not self.playwright:
+            self.playwright = await async_playwright().start()
+
         self.browser = await self.playwright.chromium.launch(headless=True)
 
         self.context = await self.browser.new_context(
             user_agent="Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
-            viewport={'width': 360, 'height': 800},
+            viewport={'width': 390, 'height': 844},
             is_mobile=True,
             has_touch=True,
             locale="en-NG",
@@ -146,14 +192,12 @@ class TitanStealthClient:
             ignore_https_errors=True
         )
 
-        # Inject region and potentially auth token manually into cookies/localStorage
+        # Pre-emptive region cookie to prevent Location modal
         await self.context.add_cookies([{
-            "name": "region", "value": "NG", "domain": "www.football.com", "path": "/", "expires": time.time() + 31536000
+            "name": "region", "value": "NG", "domain": ".football.com", "path": "/"
         }])
 
         self.page = await self.context.new_page()
-
-        # V5.21 UI Sensitivity logic
         await self._apply_ui_sensitivity()
 
         if stealth:
@@ -163,10 +207,10 @@ class TitanStealthClient:
         self.page.set_default_timeout(15000)
 
     async def _apply_ui_sensitivity(self):
-        self._log("DEBUG: Applying V5.21 UI Sensitivity Suite...")
+        self._log("DEBUG: Injecting V5.21 UI Sensitivity Suite...")
         await self.page.add_init_script("""
             (function() {
-                // 1. Asset Resilience (Preconnect & DNS-Prefetch)
+                // 1. Asset Resilience
                 const domains = ['https://www.football.com', 'https://s.football.com/games/'];
                 domains.forEach(d => {
                     ['preconnect', 'dns-prefetch'].forEach(rel => {
@@ -188,10 +232,9 @@ class TitanStealthClient:
                             newTarget.setAttribute('data-retry', retryCount + 1);
                             document.head.appendChild(newTarget);
                         } else {
-                            // Fatal Error UI
                             const banner = document.createElement('div');
                             banner.style = "position:fixed;top:0;left:0;width:100%;background:red;color:white;z-index:10000;text-align:center;padding:10px;";
-                            banner.innerText = "Fatal Error: Critical UI assets failed to load.";
+                            banner.innerText = "Fatal Error: Critical assets failed to load.";
                             document.body.appendChild(banner);
                         }
                     }
@@ -213,7 +256,7 @@ class TitanStealthClient:
                     }
                 }
 
-                // 4. Modal Stacking & Auth Listener
+                // 4. Global Auth Listener
                 const originalFetch = window.fetch;
                 window.fetch = async (...args) => {
                     const res = await originalFetch(...args);
@@ -250,55 +293,49 @@ class TitanStealthClient:
         """)
 
     async def wait_for_vue_hydration(self):
-        """V5.29.1: Waits for critical network config response to ensure Vue is ready."""
-        self._log("DEBUG: Waiting for Vue.js Hydration (factsCenter/recommend/configs)...")
+        self._log("DEBUG: Waiting for Vue.js Hydration (factsCenter/configs)...")
         try:
             await self.page.wait_for_response(lambda r: "factsCenter/recommend/configs" in r.url, timeout=15000)
             self._log("DEBUG: Vue.js Hydration Complete.")
         except:
-            self._log("WARNING: Vue.js Hydration timeout. Proceeding with caution.")
+            self._log("WARNING: Vue.js Hydration timeout.")
 
     async def hide_init_loader(self):
-        """V5.21.1: Standard Transition - Hide initial loader when ready."""
         try:
-            await self.page.evaluate("""() => {
-                const loader = document.querySelector('.app-init-loader-wrap');
-                if (loader) loader.style.display = 'none';
-            }""")
-            self._log("DEBUG: App Init Loader hidden.")
+            await self.page.evaluate("document.querySelector('.app-init-loader-wrap').style.display = 'none'")
         except: pass
 
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Project Titan-Stealth Login (FIREBASE WAP PROTOCOL)...")
+        self._log("DEBUG: Starting Titan-Stealth (FIREBASE HANDSHAKE RESTORATION)...")
         await self.setup_db()
 
-        # 1. Attempt API Login first to bypass UI hurdles
+        # Step 1: Direct API Login (WAP)
         login_token = await self._api_login_wap()
 
         if login_token:
-            # Construct Storage State with token
             state = {
-                "cookies": [{"name": "loginToken", "value": login_token, "domain": ".football.com", "path": "/"}],
+                "cookies": [
+                    {"name": "loginToken", "value": login_token, "domain": ".football.com", "path": "/"},
+                    {"name": "region", "value": "NG", "domain": ".football.com", "path": "/"}
+                ],
                 "origins": [{
                     "origin": "https://www.football.com",
                     "localStorage": [{"name": "patron:id:accesstoken", "value": login_token}]
                 }]
             }
-            await self.setup(storage_state=state)
+            await self.setup_browser(storage_state=state)
             self.save_storage_state(state)
             return True
 
-        # 2. Fallback to existing persistent state
+        # Fallback to persistent state
         state = self.load_storage_state()
-        await self.setup(storage_state=state)
+        await self.setup_browser(storage_state=state)
 
         try:
             await self.page.goto(self.login_url, wait_until="networkidle")
             if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
-                self._log("DEBUG: Session restored from MongoDB.")
+                self._log("DEBUG: Session valid via persistence.")
                 return True
-
-            self._log("CRITICAL: WAP API and Persistent state both failed.")
             return False
         except: return False
 

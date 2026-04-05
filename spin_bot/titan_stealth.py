@@ -19,7 +19,7 @@ class TitanStealthClient:
     def __init__(self):
         self.login_url = "https://www.football.com/ng/m/independent_login"
         self.manual_login_url = "https://www.football.com/ng/m/login"
-        self.websocket_url = "wss://alive-ng.football.com/socket.io/?EIO=3&transport=websocket"
+        self.websocket_url = "https://alive-ng.football.com"
         self.mongodb_uri = os.getenv("MONGODB_URI")
         self.phone = os.getenv("FOOTBALL_NG_LOGIN")
         self.password = os.getenv("FOOTBALL_NG_PASS")
@@ -71,10 +71,10 @@ class TitanStealthClient:
         return None
 
     async def _init_websocket(self) -> bool:
-        """V4.4 ALIVE-NG: Initiate Socket.io Handshake."""
+        """V4.4 ALIVE-NG: Initiate Socket.io Handshake (EIO=3 Compatibility)."""
         self._log("DEBUG: Initiating ALIVE-NG Socket.io Handshake...")
         try:
-            self.sio = socketio.AsyncClient(logger=True, engineio_logger=True)
+            self.sio = socketio.AsyncClient()
 
             @self.sio.event
             async def connect():
@@ -84,22 +84,22 @@ class TitanStealthClient:
             async def disconnect():
                 self._log("DEBUG: ALIVE-NG WebSocket Disconnected.")
 
-            # EIO=3 WebSocket-first handshake with realistic headers
             headers = {
                 "User-Agent": "Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
                 "Origin": "https://www.football.com",
                 "Referer": "https://www.football.com/"
             }
 
+            # EIO=3 uses 'polling' then 'websocket' usually, but instructions say transport=websocket
             await self.sio.connect(
                 self.websocket_url,
-                transports=['websocket'],
+                transports=['polling', 'websocket'],
                 headers=headers,
                 socketio_path='socket.io'
             )
             return True
         except Exception as e:
-            self._log(f"WARNING: ALIVE-NG WebSocket failed (Expected in CI/WAF): {e}")
+            self._log(f"WARNING: ALIVE-NG WebSocket failed (EIO=3 Fallback): {e}")
             return False
 
     async def setup_browser(self, storage_state: Optional[Dict[str, Any]] = None):

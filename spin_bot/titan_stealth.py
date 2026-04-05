@@ -3,6 +3,7 @@ import asyncio
 import json
 import time
 import random
+import requests
 from playwright.async_api import async_playwright, Page, BrowserContext, Request, Response
 try:
     from playwright_stealth import stealth_async as stealth
@@ -52,6 +53,26 @@ class TitanStealthClient:
         except Exception as e:
             self._log(f"ERROR: MongoDB setup failed: {e}")
 
+    def load_storage_state(self) -> Optional[Dict[str, Any]]:
+        """V5.31.1: Local Storage State Recovery."""
+        path = "artifacts/storage_state.json"
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    state = json.load(f)
+                self._log("DEBUG: Loaded storage_state from artifacts.")
+                return state
+            except: pass
+
+        if self.collection is not None:
+            try:
+                doc = self.collection.find_one({"id": "titan_stealth_session"})
+                if doc and "storage_state" in doc:
+                    self._log("DEBUG: Loaded storage_state from MongoDB.")
+                    return doc["storage_state"]
+            except: pass
+        return None
+
     def load_firebase_identity(self) -> Optional[Dict[str, Any]]:
         if self.collection is None: return None
         try:
@@ -74,8 +95,8 @@ class TitanStealthClient:
         except: pass
 
     async def _get_firebase_token(self) -> bool:
-        """V5.30.1: Restored Firebase Handshake with Identity Persistence."""
-        self._log("DEBUG: Executing Firebase Handshake Restoration...")
+        """V5.31.1: Public Web Handshake Restoration."""
+        self._log("DEBUG: Executing Public Firebase Handshake...")
 
         identity = self.load_firebase_identity()
         if identity and identity.get("refresh_token"):
@@ -89,12 +110,13 @@ class TitanStealthClient:
                 "x-goog-api-key": self.firebase_api_key,
                 "x-firebase-client": "firebase-js/9.1.0"
             }
+            # V5.31.1: Exact Handshake Body with SDK Version
             payload = {
                 "appId": "1:753470331102:web:ae7465077d2fa908d70a4f",
-                "authVersion": "FIS_v2"
+                "authVersion": "FIS_v2",
+                "sdkVersion": "w:10.13.0"
             }
 
-            # Use standalone start for playwright object if not initialized
             standalone_pw = None
             if not self.playwright:
                 standalone_pw = await async_playwright().start()
@@ -115,7 +137,7 @@ class TitanStealthClient:
                     if self.fid and self.refresh_token:
                         self.save_firebase_identity(self.fid, self.refresh_token)
 
-                    self._log(f"DEBUG: Firebase Handshake Success. FID Secure.")
+                    self._log(f"DEBUG: Firebase Handshake Success.")
                     return True
                 else:
                     self._log(f"DEBUG: Firebase Registration failed (Status: {res.status}).")
@@ -128,7 +150,6 @@ class TitanStealthClient:
             return False
 
     async def _api_login_wap(self) -> Optional[str]:
-        """V5.29.1: Direct API Login using Firebase-authenticated WAP protocol."""
         if not self.firebase_token:
             if not await self._get_firebase_token(): return None
 
@@ -192,7 +213,6 @@ class TitanStealthClient:
             ignore_https_errors=True
         )
 
-        # Pre-emptive region cookie to prevent Location modal
         await self.context.add_cookies([{
             "name": "region", "value": "NG", "domain": ".football.com", "path": "/"
         }])
@@ -210,85 +230,17 @@ class TitanStealthClient:
         self._log("DEBUG: Injecting V5.21 UI Sensitivity Suite...")
         await self.page.add_init_script("""
             (function() {
-                // 1. Asset Resilience
-                const domains = ['https://www.football.com', 'https://s.football.com/games/'];
-                domains.forEach(d => {
-                    ['preconnect', 'dns-prefetch'].forEach(rel => {
-                        const link = document.createElement('link');
-                        link.rel = rel; link.href = d;
-                        document.head.appendChild(link);
-                    });
-                });
-
-                // 2. Asset Retry Hook
-                window.addEventListener('error', function(e) {
-                    const target = e.target;
-                    if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
-                        const retryCount = parseInt(target.getAttribute('data-retry') || '0');
-                        if (retryCount < 2) {
-                            const newTarget = document.createElement(target.tagName);
-                            if (target.tagName === 'SCRIPT') { newTarget.src = target.src; newTarget.async = true; }
-                            else { newTarget.rel = 'stylesheet'; newTarget.href = target.href; }
-                            newTarget.setAttribute('data-retry', retryCount + 1);
-                            document.head.appendChild(newTarget);
-                        } else {
-                            const banner = document.createElement('div');
-                            banner.style = "position:fixed;top:0;left:0;width:100%;background:red;color:white;z-index:10000;text-align:center;padding:10px;";
-                            banner.innerText = "Fatal Error: Critical assets failed to load.";
-                            document.body.appendChild(banner);
-                        }
-                    }
-                }, true);
-
-                // 3. Theme & Loader Styling
-                function applyThemeStyle() {
+                const observer = new MutationObserver(() => {
                     const theme = document.documentElement.getAttribute('data-theme') || 'light';
                     const brand = window.BRAND_NAME || 'football';
                     const loader = document.querySelector('.app-init-loader-wrap');
                     if (loader) {
-                        if (theme === 'light') {
-                            loader.style.backgroundColor = '#f4f4f4';
-                            const spinner = loader.querySelector('.spinner-icon');
-                            if (spinner) spinner.style.backgroundColor = '#e0e1e2';
-                        } else {
-                            loader.style.backgroundColor = (brand === 'Encore') ? '#100e26' : '#000000';
-                        }
+                        loader.style.backgroundColor = (theme === 'light') ? '#f4f4f4' : ((brand === 'Encore') ? '#100e26' : '#000000');
                     }
-                }
-
-                // 4. Global Auth Listener
-                const originalFetch = window.fetch;
-                window.fetch = async (...args) => {
-                    const res = await originalFetch(...args);
-                    if (res.status === 401) triggerLoginModal();
-                    return res;
-                };
-
-                function triggerLoginModal() {
-                    if (document.getElementById('omni-login-modal')) return;
-                    const modal = document.createElement('div');
-                    modal.id = 'omni-login-modal';
-                    modal.innerHTML = `
-                        <div class="modal-backdrop" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1052;">
-                            <div class="modal-content" style="background:white;padding:20px;border-radius:8px;text-align:center;z-index:1055;">
-                                <p style="color:red;font-weight:bold;">Error! Please login to start game.</p>
-                                <button onclick="window.location.href='/ng/m/independent_login'" style="background:#007bff;color:white;padding:10px;margin:5px;border-radius:4px;border:none;">Login</button>
-                                <button onclick="window.location.href='/ng/m/'" style="background:#6c757d;color:white;padding:10px;margin:5px;border-radius:4px;border:none;">Exit</button>
-                            </div>
-                        </div>`;
-                    document.body.appendChild(modal);
-                }
-
-                const observer = new MutationObserver(() => {
-                    applyThemeStyle();
                     document.querySelectorAll('.modal-backdrop').forEach((b, i) => b.style.zIndex = (1052 + (i*10)).toString());
                     document.querySelectorAll('.modal-content').forEach((c, i) => c.style.zIndex = (1055 + (i*10)).toString());
                 });
                 observer.observe(document.body, { childList: true, subtree: true });
-
-                setInterval(() => {
-                    if (document.body.innerText.includes('Error! Please login to start game')) triggerLoginModal();
-                }, 2000);
             })();
         """)
 
@@ -305,8 +257,53 @@ class TitanStealthClient:
             await self.page.evaluate("document.querySelector('.app-init-loader-wrap').style.display = 'none'")
         except: pass
 
+    async def manual_ui_login_fallback(self) -> bool:
+        """V5.31.1: Human-style UI login fallback."""
+        self._log("DEBUG: Starting Manual UI Login Fallback (Human Jitter)...")
+        try:
+            await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
+
+            # Use raw input targeting with human-like typing
+            phone_sel = "input[type='tel']"
+            await self.page.wait_for_selector(phone_sel, state="visible", timeout=10000)
+
+            await self.page.locator(phone_sel).first.click(force=True)
+            await self.page.keyboard.type(self.phone, delay=150)
+
+            await self.page.locator("input[type='password']").first.click(force=True)
+            await self.page.keyboard.type(self.password, delay=150)
+
+            await self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first.click(force=True)
+
+            try:
+                await self.page.wait_for_url("**/me", timeout=15000)
+                self._log("DEBUG: Manual UI Login Success.")
+                state = await self.context.storage_state()
+                self.save_storage_state(state)
+                return True
+            except:
+                await self.capture_failure("manual_login_fail")
+                return False
+        except Exception as e:
+            self._log(f"ERROR: Manual UI fallback failed: {e}")
+            return False
+
+    def save_storage_state(self, state: Dict[str, Any]):
+        if self.collection is None: return
+        try:
+            self.collection.update_one(
+                {"id": "titan_stealth_session"},
+                {"$set": {"storage_state": state, "updated_at": time.time()}},
+                upsert=True
+            )
+            os.makedirs("artifacts", exist_ok=True)
+            with open("artifacts/storage_state.json", "w") as f:
+                json.dump(state, f)
+            self._log("DEBUG: Saved storage_state to MongoDB and artifacts.")
+        except: pass
+
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Titan-Stealth (FIREBASE HANDSHAKE RESTORATION)...")
+        self._log("DEBUG: Starting Titan-Stealth (PUBLIC HANDSHAKE PROTOCOL)...")
         await self.setup_db()
 
         # Step 1: Direct API Login (WAP)
@@ -336,7 +333,9 @@ class TitanStealthClient:
             if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
                 self._log("DEBUG: Session valid via persistence.")
                 return True
-            return False
+
+            # Step 2: Manual UI Fallback if everything else fails
+            return await self.manual_ui_login_fallback()
         except: return False
 
     async def capture_failure(self, name: str):

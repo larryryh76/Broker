@@ -227,6 +227,35 @@ class TitanStealthClient:
         except:
             self._log("WARNING: Vue.js Hydration timeout.")
 
+    async def _handle_overlays(self):
+        """V5.18: Splash & Overlay Handling Logic."""
+        self._log("DEBUG: Checking for Regional Splash & Overlays...")
+        try:
+            # Detect Nigeria in Regional Splash
+            nigeria_btn = self.page.locator("div.m-list-item[data-op='region_country-item']:has-text('Nigeria')")
+            if await nigeria_btn.is_visible():
+                self._log("DEBUG: Regional Splash detected. Selecting Nigeria...")
+                await nigeria_btn.click(force=True)
+                await asyncio.sleep(2)
+
+            # Close Blocking Modals/Ads
+            close_btn = self.page.locator(".m-icon-close, .close-btn, .modal-close").first
+            if await close_btn.is_visible():
+                self._log("DEBUG: Closing ad overlay...")
+                await close_btn.click(force=True)
+                await asyncio.sleep(1)
+        except: pass
+
+    async def navigation_guardian(self, max_attempts: int = 3):
+        """V5.15 Guardian: Prevent /livescore redirect loops."""
+        for i in range(max_attempts):
+            if "/livescore" in self.page.url:
+                self._log(f"WARNING: Livescore redirect detected (Attempt {i+1}). Re-navigating to Game...")
+                await asyncio.sleep(2)
+                await self.page.goto(self.game_url, wait_until="networkidle")
+            else:
+                break
+
     async def hide_init_loader(self):
         try:
             await self.page.evaluate("document.querySelector('.app-init-loader-wrap').style.display = 'none'")
@@ -302,7 +331,8 @@ class TitanStealthClient:
         except: pass
 
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Titan-Stealth (V4.1 MODAL PROTOCOL)...")
+        """V5.15 Golden Path: Combine Immortal Session with Front-Door Navigation."""
+        self._log("DEBUG: Starting Titan-Stealth (GOLDEN PATH)...")
         await self.setup_db()
 
         # Step 1: Load Persistent Session
@@ -310,14 +340,25 @@ class TitanStealthClient:
         await self.setup_browser(storage_state=state)
 
         try:
-            # Check persistence
+            # Step 2: Front-Door Navigation (Stabilize Homepage)
             await self.page.goto(self.home_url, wait_until="networkidle")
+            await self._handle_overlays()
+
+            # Check if session is valid (Login button missing)
             if not await self.page.locator("text=/^(Log In|Login)$/i").first.is_visible():
                 self._log("DEBUG: Session valid via persistence.")
+                # Save fresh state immediately
+                fresh_state = await self.context.storage_state()
+                self.save_storage_state(fresh_state)
                 return True
 
-            # Step 2: V4.1 Modal Trigger System
-            return await self.modal_auth_system_v41()
+            # Step 3: V4.1 Modal Trigger Fallback
+            success = await self.modal_auth_system_v41()
+            if success:
+                # Refresh persistence on manual success
+                fresh_state = await self.context.storage_state()
+                self.save_storage_state(fresh_state)
+            return success
         except: return False
 
     async def capture_failure(self, name: str):

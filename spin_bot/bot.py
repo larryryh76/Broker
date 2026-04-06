@@ -61,26 +61,27 @@ class OmniMachineV31Refined:
                 print("CRITICAL: Titan Auth failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry (Direct Deep Link - Verified Slug)
+            # 3. Betting Environment Entry (V5.30 Hard-Anchor)
             print("DEBUG: Entering Betting Environment (Forcing Direct Game URL)...")
             # V4.1 Routing Fix: Force navigation to the verified mobile game URL
             target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
-            await client.page.goto(target_url, wait_until="networkidle")
-
-            # V5.15 Navigation Guardian
-            await client.navigation_guardian()
+            await client.hard_anchor_navigation(target_url)
 
             # V5.21.1 Standard Transition
             await client.hide_init_loader()
 
-            # V5.29.1 Sync with Vue.js Hydration
-            await client.wait_for_vue_hydration()
-
-            # Iframe Sync
+            # V5.30 Cleanup and Iframe Sync
+            await client.clear_blocking_modals()
             game_frame = client.page.frame_locator("iframe[src*='sportygames']")
             ui_indicator = game_frame.locator("canvas, .history, .results, .history-list, .bet-panel").first
-            await ui_indicator.wait_for(state="visible", timeout=45000)
-            print("DEBUG: Betting Environment fully hydrated.")
+
+            try:
+                await ui_indicator.wait_for(state="visible", timeout=60000)
+                print("DEBUG: Betting Environment fully hydrated.")
+            except:
+                self._log("DEBUG: Iframe timeout. Final UI cleanup attempt...")
+                await client.clear_blocking_modals()
+                await ui_indicator.wait_for(state="visible", timeout=15000)
 
             # V5.15: Immortalize session upon successful entry
             storage = await client.context.storage_state()

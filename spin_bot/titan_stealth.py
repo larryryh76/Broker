@@ -71,7 +71,7 @@ class TitanStealthClient:
         return None
 
     async def _init_websocket(self) -> bool:
-        """V4.4 ALIVE-NG: Initiate Socket.io Handshake (EIO=3 Compatibility)."""
+        """V4.4 ALIVE-NG: Initiate and immediately release Socket.io Handshake."""
         self._log("DEBUG: Initiating ALIVE-NG Socket.io Handshake...")
         try:
             self.sio = socketio.AsyncClient()
@@ -80,26 +80,27 @@ class TitanStealthClient:
             async def connect():
                 self._log("DEBUG: ALIVE-NG WebSocket Connected.")
 
-            @self.sio.event
-            async def disconnect():
-                self._log("DEBUG: ALIVE-NG WebSocket Disconnected.")
-
+            # Handshake with realistic headers
             headers = {
                 "User-Agent": "Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
                 "Origin": "https://www.football.com",
                 "Referer": "https://www.football.com/"
             }
 
-            # EIO=3 uses 'polling' then 'websocket' usually, but instructions say transport=websocket
-            await self.sio.connect(
-                self.websocket_url,
-                transports=['polling', 'websocket'],
-                headers=headers,
-                socketio_path='socket.io'
-            )
-            return True
+            try:
+                await self.sio.connect(
+                    self.websocket_url,
+                    transports=['polling', 'websocket'],
+                    headers=headers,
+                    socketio_path='socket.io'
+                )
+                self._log("DEBUG: Handshake successful, releasing connection.")
+                return True
+            finally:
+                if self.sio.connected:
+                    await self.sio.disconnect()
         except Exception as e:
-            self._log(f"WARNING: ALIVE-NG WebSocket failed (EIO=3 Fallback): {e}")
+            self._log(f"WARNING: ALIVE-NG WebSocket failed: {e}")
             return False
 
     async def setup_browser(self, storage_state: Optional[Dict[str, Any]] = None):
@@ -107,6 +108,12 @@ class TitanStealthClient:
             self.playwright = await async_playwright().start()
 
         self.browser = await self.playwright.chromium.launch(headless=True)
+
+        # V4.4: Inject x-platform WAP headers to mirror mobile app traffic
+        extra_headers = {
+            "x-platform": "WAP",
+            "x-app-id": "1:753470331102:web:ae7465077d2fa908d70a4f"
+        }
 
         self.context = await self.browser.new_context(
             user_agent="Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
@@ -118,7 +125,8 @@ class TitanStealthClient:
             geolocation={"latitude": 6.5244, "longitude": 3.3792},
             permissions=["geolocation"],
             storage_state=storage_state,
-            ignore_https_errors=True
+            ignore_https_errors=True,
+            extra_http_headers=extra_headers
         )
 
         # V5.32.1: Pre-emptive cookie injection to solve "UI Blind" and location popup
@@ -263,8 +271,9 @@ class TitanStealthClient:
         """V5.32.1: Human-style UI login fallback (Direct Route Fix)."""
         self._log("DEBUG: Starting Manual UI Login Fallback (Direct Route Fix)...")
         try:
-            # V5.32.1: Navigate directly to /login subpath
-            await self.page.goto(self.manual_login_url, wait_until="networkidle")
+            # V5.32.1: Navigate directly to /login subpath and wait for idle
+            await self.page.goto(self.manual_login_url)
+            await self.page.wait_for_load_state("networkidle")
 
             # Use raw input targeting with human-like typing
             phone_sel = "input[type='tel']"

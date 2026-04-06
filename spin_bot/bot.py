@@ -40,8 +40,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V4.4: OMNI-RECURSIVE TITAN MACHINE (ALIVE-NG WS PROTOCOL)."""
-        print(f"--- OMNI MACHINE CYCLE V4.4 (ALIVE-NG WS) ---")
+        """V4.1: OMNI-RECURSIVE TITAN MACHINE (MODAL PROTOCOL)."""
+        print(f"--- OMNI MACHINE CYCLE V4.1 (MODAL AUTH) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()
@@ -49,8 +49,8 @@ class OmniMachineV31Refined:
         scraped = []
 
         try:
-            # 2. TITAN AUTH (V4.4 ALIVE-NG)
-            print("DEBUG: Executing ALIVE-NG WebSocket Auth Sequence...")
+            # 2. TITAN AUTH (V4.1 MODAL)
+            print("DEBUG: Executing V4.1 Modal-Auth Sequence...")
             if not os.getenv("FOOTBALL_NG_LOGIN") or not os.getenv("FOOTBALL_NG_PASS"):
                 print("CRITICAL: Missing GitHub Secrets.")
                 sys.exit(1)

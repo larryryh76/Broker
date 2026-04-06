@@ -3,7 +3,6 @@ import asyncio
 import json
 import time
 import random
-import socketio
 from playwright.async_api import async_playwright, Page, BrowserContext, Request, Response
 try:
     from playwright_stealth import stealth_async as stealth
@@ -17,9 +16,8 @@ from typing import Optional, Dict, Any, List
 
 class TitanStealthClient:
     def __init__(self):
-        self.login_url = "https://www.football.com/ng/m/independent_login"
-        self.manual_login_url = "https://www.football.com/ng/m/login"
-        self.websocket_url = "https://alive-ng.football.com"
+        self.home_url = "https://www.football.com/ng/m/"
+        self.game_url = "https://www.football.com/ng/m/games/spin-da-bottle"
         self.mongodb_uri = os.getenv("MONGODB_URI")
         self.phone = os.getenv("FOOTBALL_NG_LOGIN")
         self.password = os.getenv("FOOTBALL_NG_PASS")
@@ -31,7 +29,6 @@ class TitanStealthClient:
         self.context = None
         self.page = None
         self.execution_log = []
-        self.sio = None
 
     def _log(self, message: str):
         print(message)
@@ -51,7 +48,7 @@ class TitanStealthClient:
             self._log(f"ERROR: MongoDB setup failed: {e}")
 
     def load_storage_state(self) -> Optional[Dict[str, Any]]:
-        """V4.4: Restore Session State (Cookies + Origins)."""
+        """V4.1: Restore Session State (Cookies + Origins)."""
         path = "artifacts/storage_state.json"
         if os.path.exists(path):
             try:
@@ -70,46 +67,13 @@ class TitanStealthClient:
             except: pass
         return None
 
-    async def _init_websocket(self) -> bool:
-        """V4.4 ALIVE-NG: Initiate and immediately release Socket.io Handshake."""
-        self._log("DEBUG: Initiating ALIVE-NG Socket.io Handshake...")
-        try:
-            self.sio = socketio.AsyncClient()
-
-            @self.sio.event
-            async def connect():
-                self._log("DEBUG: ALIVE-NG WebSocket Connected.")
-
-            # Handshake with realistic headers
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
-                "Origin": "https://www.football.com",
-                "Referer": "https://www.football.com/"
-            }
-
-            try:
-                await self.sio.connect(
-                    self.websocket_url,
-                    transports=['polling', 'websocket'],
-                    headers=headers,
-                    socketio_path='socket.io'
-                )
-                self._log("DEBUG: Handshake successful, releasing connection.")
-                return True
-            finally:
-                if self.sio.connected:
-                    await self.sio.disconnect()
-        except Exception as e:
-            self._log(f"WARNING: ALIVE-NG WebSocket failed: {e}")
-            return False
-
     async def setup_browser(self, storage_state: Optional[Dict[str, Any]] = None):
         if not self.playwright:
             self.playwright = await async_playwright().start()
 
         self.browser = await self.playwright.chromium.launch(headless=True)
 
-        # V4.4: Inject x-platform WAP headers to mirror mobile app traffic
+        # V4.1: Standard mobile platform headers for mobile-app emulation
         extra_headers = {
             "x-platform": "WAP",
             "x-app-id": "1:753470331102:web:ae7465077d2fa908d70a4f"
@@ -129,7 +93,7 @@ class TitanStealthClient:
             extra_http_headers=extra_headers
         )
 
-        # V5.32.1: Pre-emptive cookie injection to solve "UI Blind" and location popup
+        # V5.32.1: Pre-emptive cookie injection to bypass location popup
         await self.context.add_cookies([{
             "name": "region", "value": "NG", "domain": ".football.com", "path": "/"
         }])
@@ -267,38 +231,52 @@ class TitanStealthClient:
             await self.page.evaluate("document.querySelector('.app-init-loader-wrap').style.display = 'none'")
         except: pass
 
-    async def manual_ui_login_fallback(self) -> bool:
-        """V5.32.1: Human-style UI login fallback (Direct Route Fix)."""
-        self._log("DEBUG: Starting Manual UI Login Fallback (Direct Route Fix)...")
+    async def modal_auth_system_v41(self) -> bool:
+        """V4.1: Re-implemented Modal-Auth Trigger System."""
+        self._log("DEBUG: Executing V4.1 Modal-Auth Trigger Sequence...")
         try:
-            # V5.32.1: Navigate directly to /login subpath and wait for idle
-            await self.page.goto(self.manual_login_url)
+            # Step A: Navigate to Home
+            await self.page.goto(self.home_url)
             await self.page.wait_for_load_state("networkidle")
 
-            # Use raw input targeting with human-like typing
-            phone_sel = "input[type='tel']"
-            # V5.32.1: Increased timeout to 20000ms for heavy Vue hydration
-            await self.page.wait_for_selector(phone_sel, state="visible", timeout=20000)
+            # Step B (The Trigger): CLICK Login to make modal appear
+            self._log("DEBUG: Clicking Login trigger...")
+            await self.page.locator("text=/^(Log In|Login)$/i").first.click(force=True)
 
+            # Step C (The Modal): Wait for password selector
+            self._log("DEBUG: Waiting for Login Modal...")
+            password_sel = "input[type='password']"
+            await self.page.wait_for_selector(password_sel, state="visible", timeout=15000)
+
+            # Step D (Human Typing): Fill credentials
+            phone_sel = "input[type='tel'], input[placeholder*='Phone'], input[placeholder*='Email']"
             await self.page.locator(phone_sel).first.click(force=True)
             await self.keyboard_type_manual(self.phone)
 
-            await self.page.locator("input[type='password']").first.click(force=True)
+            await self.page.locator(password_sel).first.click(force=True)
             await self.keyboard_type_manual(self.password)
 
-            await self.page.locator("button.login-btn, button.btn-primary:has-text('Login')").first.click(force=True)
+            # Step E (Submission): Submit Modal
+            submit_btn = "button.login-btn, button[type='submit'], button:has-text('Login')"
+            await self.page.locator(submit_btn).last.click(force=True)
 
-            try:
-                await self.page.wait_for_url("**/me", timeout=15000)
-                self._log("DEBUG: Manual UI Login Success.")
+            # Mandatory Success Check
+            self._log("DEBUG: Verifying login success...")
+            await asyncio.sleep(10)
+
+            if await self.page.locator("text=/^(Log In|Login)$/i").first.is_visible():
+                self._log("CRITICAL: Login text still visible. Modal Auth FAILED.")
+                await self.capture_failure("v41_login_fail")
+                return False
+            else:
+                self._log("DEBUG: LOGIN SUCCESS confirmed via V4.1 Modal Trigger.")
                 state = await self.context.storage_state()
                 self.save_storage_state(state)
                 return True
-            except:
-                await self.capture_failure("manual_login_fail")
-                return False
+
         except Exception as e:
-            self._log(f"ERROR: Manual UI fallback failed: {e}")
+            self._log(f"ERROR: V4.1 Modal Auth crashed: {e}")
+            await self.capture_failure("v41_crash")
             return False
 
     async def keyboard_type_manual(self, text: str):
@@ -321,25 +299,22 @@ class TitanStealthClient:
         except: pass
 
     async def login(self) -> bool:
-        self._log("DEBUG: Starting Titan-Stealth (V4.4 ALIVE-NG)...")
+        self._log("DEBUG: Starting Titan-Stealth (V4.1 MODAL PROTOCOL)...")
         await self.setup_db()
 
-        # Step 1: Warm up ALIVE-NG WebSocket
-        await self._init_websocket()
-
-        # Step 2: Load Persistent Session
+        # Step 1: Load Persistent Session
         state = self.load_storage_state()
         await self.setup_browser(storage_state=state)
 
         try:
-            # Check if session is already valid
-            await self.page.goto(self.login_url, wait_until="networkidle")
-            if "/me" in self.page.url or await self.page.locator(".m-balance").is_visible():
+            # Check persistence
+            await self.page.goto(self.home_url, wait_until="networkidle")
+            if not await self.page.locator("text=/^(Log In|Login)$/i").first.is_visible():
                 self._log("DEBUG: Session valid via persistence.")
                 return True
 
-            # Step 3: Manual UI Fallback
-            return await self.manual_ui_login_fallback()
+            # Step 2: V4.1 Modal Trigger System
+            return await self.modal_auth_system_v41()
         except: return False
 
     async def capture_failure(self, name: str):
@@ -351,7 +326,6 @@ class TitanStealthClient:
         except: pass
 
     async def close(self):
-        if self.sio and self.sio.connected: await self.sio.disconnect()
         if self.context: await self.context.close()
         if self.browser: await self.browser.close()
         if self.playwright: await self.playwright.stop()

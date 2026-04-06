@@ -67,6 +67,9 @@ class OmniMachineV31Refined:
             target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
             await client.page.goto(target_url, wait_until="networkidle")
 
+            # V5.15 Navigation Guardian
+            await client.navigation_guardian()
+
             # V5.21.1 Standard Transition
             await client.hide_init_loader()
 
@@ -79,9 +82,13 @@ class OmniMachineV31Refined:
             await ui_indicator.wait_for(state="visible", timeout=45000)
             print("DEBUG: Betting Environment fully hydrated.")
 
-            # 4. Final Sync and Processing
+            # V5.15: Immortalize session upon successful entry
             storage = await client.context.storage_state()
-            api = OmniAPIClient(session_data={"storage_state": storage})
+            client.save_storage_state(storage)
+
+            # 4. Final Sync and Processing
+            # Extract cookies for API Client compatibility
+            api = OmniAPIClient(session_data={"cookies": storage.get("cookies", [])})
 
             api_history = api.get_spin_history()
             if api_history:

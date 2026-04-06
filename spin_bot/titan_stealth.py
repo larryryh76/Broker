@@ -48,7 +48,7 @@ class TitanStealthClient:
             self._log(f"ERROR: MongoDB setup failed: {e}")
 
     def load_storage_state(self) -> Optional[Dict[str, Any]]:
-        """V4.1: Restore Session State (Cookies + Origins)."""
+        """Immortal Session: Restore Session State from MongoDB."""
         path = "artifacts/storage_state.json"
         if os.path.exists(path):
             try:
@@ -60,10 +60,11 @@ class TitanStealthClient:
 
         if self.collection is not None:
             try:
-                doc = self.collection.find_one({"id": "titan_stealth_session"})
-                if doc and "storage_state" in doc:
-                    self._log("DEBUG: Loaded storage_state from MongoDB.")
-                    return doc["storage_state"]
+                # V4.1 Alignment: Using titan_auth for session immortality
+                doc = self.collection.find_one({"id": "titan_auth"})
+                if doc and "state" in doc:
+                    self._log("DEBUG: Loaded storage_state from MongoDB (titan_auth).")
+                    return doc["state"]
             except: pass
         return None
 
@@ -285,17 +286,19 @@ class TitanStealthClient:
             await asyncio.sleep(random.uniform(0.01, 0.05))
 
     def save_storage_state(self, state: Dict[str, Any]):
+        """Immortal Session: Persist Session State to MongoDB."""
         if self.collection is None: return
         try:
+            # V4.1 Alignment: Upserting current context to titan_auth
             self.collection.update_one(
-                {"id": "titan_stealth_session"},
-                {"$set": {"storage_state": state, "updated_at": time.time()}},
+                {"id": "titan_auth"},
+                {"$set": {"state": state, "updated_at": time.time()}},
                 upsert=True
             )
             os.makedirs("artifacts", exist_ok=True)
             with open("artifacts/storage_state.json", "w") as f:
                 json.dump(state, f)
-            self._log("DEBUG: Saved storage_state to MongoDB and artifacts.")
+            self._log("DEBUG: Saved immortal storage_state to MongoDB (titan_auth).")
         except: pass
 
     async def login(self) -> bool:

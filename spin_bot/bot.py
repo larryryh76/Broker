@@ -61,8 +61,9 @@ class OmniMachineV31Refined:
                 print("CRITICAL: Titan Auth failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry (Direct Deep Link)
-            print("DEBUG: Entering Betting Environment (Direct Deep Link)...")
+            # 3. Betting Environment Entry (Direct Deep Link - Verified Slug)
+            print("DEBUG: Entering Betting Environment (Forcing Direct Game URL)...")
+            # V4.1 Routing Fix: Force navigation to the verified mobile game URL
             target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
             await client.page.goto(target_url, wait_until="networkidle")
 

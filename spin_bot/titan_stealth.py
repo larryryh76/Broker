@@ -272,12 +272,13 @@ class TitanStealthClient:
             # Look for common WAP close buttons or Regional selectors
             overlay = self.page.locator(".m-icon-close, .dialog-close, text='Nigeria', text='Confirm', .sg-confirm-cancel-modal-v2 button").first
 
-            # Very short 3-second timeout. If it's not there, we don't care.
-            if await overlay.is_visible(timeout=3000):
+            # Fixed: locator.is_visible() does not support timeout. Use wait_for or count check.
+            try:
+                await overlay.wait_for(state="visible", timeout=3000)
                 await overlay.click(force=True)
                 self._log("DEBUG: Regional Splash / Overlay safely dismissed.")
                 await asyncio.sleep(1)
-            else:
+            except:
                 self._log("DEBUG: No overlay detected.")
         except Exception as e:
             self._log(f"DEBUG: Overlay check bypassed (none found or unclickable).")

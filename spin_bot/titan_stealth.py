@@ -80,9 +80,11 @@ class TitanStealthClient:
             "x-app-id": "1:753470331102:web:ae7465077d2fa908d70a4f"
         }
 
+        # V5.30: Enhanced iPhone 15 Fingerprint to slip past Google Captcha
         self.context = await self.browser.new_context(
-            user_agent="Mozilla/5.0 (Linux; Android 14; CPH2641) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
             viewport={'width': 390, 'height': 844},
+            device_scale_factor=3,
             is_mobile=True,
             has_touch=True,
             locale="en-NG",
@@ -233,6 +235,16 @@ class TitanStealthClient:
             else:
                 self._log("DEBUG: Navigation anchored successfully.")
                 break
+
+    async def human_jiggle(self):
+        """V5.30: Human behavior simulation - Small scroll."""
+        self._log("DEBUG: Performing human jiggle (scroll down/up)...")
+        try:
+            await self.page.mouse.wheel(0, 200)
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await self.page.mouse.wheel(0, -200)
+            await asyncio.sleep(0.5)
+        except: pass
 
     async def blind_clearance(self):
         """V5.30: Overlay Killer - Force clear ghost layers."""

@@ -61,14 +61,15 @@ class OmniMachineV31Refined:
                 print("CRITICAL: Titan Auth failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry (V5.30 Bypass & Blast)
-            print("DEBUG: Entering Betting Environment (Bypass & Blast)...")
-            # Force search-proxied bypass link for Spin da Bottle
-            target_url = "https://www.google.com/search?q=https://www.football.com/ng/m/games/spin-da-bottle"
+            # 3. Betting Environment Entry (V5.30 Direct Stealth)
+            print("DEBUG: Entering Betting Environment (Direct Navigation)...")
+            # Use direct URL to avoid Google redirect detection
+            target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
             await client.hard_anchor_navigation(target_url)
 
-            # V5.30 Overlay Killer
+            # V5.30 Overlay Killer & Human Jiggle
             await client.blind_clearance()
+            await client.human_jiggle()
 
             # V5.21.1 Standard Transition
             await client.hide_init_loader()
@@ -81,6 +82,12 @@ class OmniMachineV31Refined:
                 await ui_indicator.wait_for(state="visible", timeout=60000)
                 print("DEBUG: Betting Environment fully hydrated.")
             except:
+                # Anti-CAPTCHA Check
+                content = await client.page.content()
+                if "CAPTCHA" in content.upper() or "UNUSUAL TRAFFIC" in content.upper():
+                    print("CRITICAL: CAPTCHA detected. IP Flagged. Aborting for 10 min cooldown.")
+                    sys.exit(0) # Exit cleanly to let runner sleep
+
                 print("DEBUG: Iframe timeout. Final Blind Clearance attempt...")
                 await client.blind_clearance()
                 await ui_indicator.wait_for(state="visible", timeout=15000)

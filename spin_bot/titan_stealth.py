@@ -103,6 +103,9 @@ class TitanStealthClient:
 
         self.page = await self.context.new_page()
 
+        # V5.30: Anti-Detection Injection
+        await self.page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
+
         # V5.21 Asset Resilience: Preconnect/DNS-Prefetch
         await self.page.add_init_script("""
             (function() {
@@ -366,8 +369,8 @@ class TitanStealthClient:
         except: pass
 
     async def login(self) -> bool:
-        """V5.22: Golden Path with WAP Redirect Bypass."""
-        self._log("DEBUG: Starting Titan-Stealth (V5.22 GOLDEN PATH)...")
+        """V5.30 Immortal Repair: Restore Session or fallback to Manual Validated Login."""
+        self._log("DEBUG: Starting Titan-Stealth (IMMORTAL REPAIR)...")
         await self.setup_db()
 
         # Step 1: Load Persistent Session
@@ -375,38 +378,31 @@ class TitanStealthClient:
         await self.setup_browser(storage_state=state)
 
         try:
-            # Step 2: Modal Trap Detection & Front-Door Stabilization
-            self._log("DEBUG: Checking for Modal Trap...")
-            modal = self.page.locator(".modal-content")
+            # Step 2: Session Check & Front-Door Stabilization
+            await self.page.goto(self.home_url, wait_until="networkidle")
 
-            is_trapped = False
-            try:
-                await modal.wait_for(state="visible", timeout=5000)
-                is_trapped = True
-            except: pass
-
-            if is_trapped:
-                self._log("DEBUG: Modal Trap detected. Forcing navigation to clear state...")
-                await self.page.goto(self.home_url, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
-                self._log(f"DEBUG: Settled on WAP URL: {self.page.url}")
-            else:
-                await self.page.goto(self.home_url, wait_until="networkidle")
-                await self._handle_overlays()
+            # Anti-Trap: Clear initial overlays before probing session
+            await self._handle_overlays()
 
             # Check if session is valid (Login button missing)
             login_trigger = self.page.locator("text=/^(Log In|Login)$/i:visible").first
             if not await login_trigger.is_visible():
                 self._log("DEBUG: Session valid via persistence.")
+                # Refresh storage state in DB to keep it 'Immortal'
                 fresh_state = await self.context.storage_state()
                 self.save_storage_state(fresh_state)
                 return True
 
-            # Step 3: V5.22 WAP Overlay Login Fallback
+            # Step 3: Fallback to Manual Validated Login (Immortal Session expired)
+            self._log("WARNING: Persistent session expired. Triggering Manual Re-Validation...")
             success = await self.modal_auth_system_v41()
+
             if success:
+                # Immortalize the fresh session immediately
                 fresh_state = await self.context.storage_state()
                 self.save_storage_state(fresh_state)
+                self._log("DEBUG: Immortal Session REPAIRED and saved to MongoDB.")
+
             return success
         except: return False
 

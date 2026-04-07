@@ -156,7 +156,7 @@ class OmniMachineV31Refined:
                     print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.29.1 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.32 Cycle: {e}")
             await client.capture_failure("cycle_crash")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
@@ -164,7 +164,7 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.29.1 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.32 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []

@@ -266,23 +266,51 @@ class TitanStealthClient:
         except: pass
 
     async def _handle_overlays(self):
-        """V5.18: Splash & Overlay Handling Logic."""
+        """V5.32: Non-blocking Overlay Clearance Protocol."""
         self._log("DEBUG: Checking for Regional Splash & Overlays...")
         try:
-            # Detect Nigeria in Regional Splash
-            nigeria_btn = self.page.locator("div.m-list-item[data-op='region_country-item']:has-text('Nigeria')")
-            if await nigeria_btn.is_visible():
-                self._log("DEBUG: Regional Splash detected. Selecting Nigeria...")
-                await nigeria_btn.click(force=True)
-                await asyncio.sleep(2)
+            # Look for common WAP close buttons or Regional selectors
+            overlay = self.page.locator(".m-icon-close, .dialog-close, text='Nigeria', text='Confirm', .sg-confirm-cancel-modal-v2 button").first
 
-            # Close Blocking Modals/Ads
-            close_btn = self.page.locator(".m-icon-close, .close-btn, .modal-close").first
-            if await close_btn.is_visible():
-                self._log("DEBUG: Closing ad overlay...")
-                await close_btn.click(force=True)
+            # Very short 3-second timeout. If it's not there, we don't care.
+            if await overlay.is_visible(timeout=3000):
+                await overlay.click(force=True)
+                self._log("DEBUG: Regional Splash / Overlay safely dismissed.")
                 await asyncio.sleep(1)
-        except: pass
+            else:
+                self._log("DEBUG: No overlay detected.")
+        except Exception as e:
+            self._log(f"DEBUG: Overlay check bypassed (none found or unclickable).")
+
+    async def verify_auth_and_secure_artifacts(self):
+        """V5.32: Verify session state & rescue artifacts on failure."""
+        self._log("DEBUG: Verifying session state...")
+        try:
+            # Check for elements that PROVE we are logged in (balance, profile, or deposit button)
+            logged_in_indicator = self.page.locator(".icon-profile, .m-balance, text='Deposit', a[href*='/deposit']").first
+
+            # Wait up to 10 seconds for the WAP framework to settle
+            await logged_in_indicator.wait_for(state="visible", timeout=10000)
+            self._log("DEBUG: Titan Auth SUCCESS. Session is fully valid.")
+            return True
+
+        except Exception as e:
+            self._log("CRITICAL: Titan Auth failed. Session invalid, rejected, or layout changed.")
+
+            # 3. MANDATORY ARTIFACT RESCUE
+            import os
+            import sys
+            os.makedirs("artifacts", exist_ok=True)
+
+            self._log("DEBUG: Saving fatal error artifacts before exit...")
+            await self.page.screenshot(path="artifacts/titan_auth_fatal_error.png", full_page=True)
+
+            content = await self.page.content()
+            with open("artifacts/titan_auth_fatal_error.html", "w", encoding="utf-8") as f:
+                f.write(content)
+
+            # Now that artifacts are safe, exit cleanly so GitHub Actions can upload them
+            sys.exit(1)
 
     async def navigation_guardian(self, max_attempts: int = 3):
         """V5.15 Guardian: Prevent /livescore redirect loops."""
@@ -369,8 +397,8 @@ class TitanStealthClient:
         except: pass
 
     async def login(self) -> bool:
-        """V5.30 Immortal Repair: Restore Session or fallback to Manual Validated Login."""
-        self._log("DEBUG: Starting Titan-Stealth (IMMORTAL REPAIR)...")
+        """V5.32 Failsafe Repair: Restore Session or fallback to Manual Validated Login."""
+        self._log("DEBUG: Starting Titan-Stealth (FAILSAFE REPAIR)...")
         await self.setup_db()
 
         # Step 1: Load Persistent Session
@@ -395,15 +423,17 @@ class TitanStealthClient:
 
             # Step 3: Fallback to Manual Validated Login (Immortal Session expired)
             self._log("WARNING: Persistent session expired. Triggering Manual Re-Validation...")
-            success = await self.modal_auth_system_v41()
+            await self.modal_auth_system_v41()
 
-            if success:
+            # V5.32: Final Verification & Artifact Rescue
+            if await self.verify_auth_and_secure_artifacts():
                 # Immortalize the fresh session immediately
                 fresh_state = await self.context.storage_state()
                 self.save_storage_state(fresh_state)
                 self._log("DEBUG: Immortal Session REPAIRED and saved to MongoDB.")
+                return True
 
-            return success
+            return False
         except: return False
 
     async def capture_failure(self, name: str):

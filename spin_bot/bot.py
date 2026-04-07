@@ -40,8 +40,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.31: OMNI-RECURSIVE TITAN MACHINE (IMMORTAL REPAIR)."""
-        print(f"--- OMNI MACHINE CYCLE V5.31 (IMMORTAL REPAIR) ---")
+        """V5.32: OMNI-RECURSIVE TITAN MACHINE (FAILSAFE ARTIFACT)."""
+        print(f"--- OMNI MACHINE CYCLE V5.32 (FAILSAFE ARTIFACT) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()

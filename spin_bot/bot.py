@@ -40,8 +40,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V4.1: OMNI-RECURSIVE TITAN MACHINE (MODAL PROTOCOL)."""
-        print(f"--- OMNI MACHINE CYCLE V4.1 (MODAL AUTH) ---")
+        """V5.30: OMNI-RECURSIVE TITAN MACHINE (BYPASS & BLAST)."""
+        print(f"--- OMNI MACHINE CYCLE V5.30 (BYPASS & BLAST) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()
@@ -49,8 +49,8 @@ class OmniMachineV31Refined:
         scraped = []
 
         try:
-            # 2. TITAN AUTH (V4.1 MODAL)
-            print("DEBUG: Executing V4.1 Modal-Auth Sequence...")
+            # 2. TITAN AUTH (GOLDEN PATH)
+            print("DEBUG: Executing Golden Path Auth Sequence...")
             if not os.getenv("FOOTBALL_NG_LOGIN") or not os.getenv("FOOTBALL_NG_PASS"):
                 print("CRITICAL: Missing GitHub Secrets.")
                 sys.exit(1)
@@ -61,17 +61,19 @@ class OmniMachineV31Refined:
                 print("CRITICAL: Titan Auth failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry (V5.30 Hard-Anchor)
-            print("DEBUG: Entering Betting Environment (Forcing Direct Game URL)...")
-            # V4.1 Routing Fix: Force navigation to the verified mobile game URL
-            target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
+            # 3. Betting Environment Entry (V5.30 Bypass & Blast)
+            print("DEBUG: Entering Betting Environment (Bypass & Blast)...")
+            # Force search-proxied bypass link for Spin da Bottle
+            target_url = "https://www.google.com/search?q=https://www.football.com/ng/m/games/spin-da-bottle"
             await client.hard_anchor_navigation(target_url)
+
+            # V5.30 Overlay Killer
+            await client.blind_clearance()
 
             # V5.21.1 Standard Transition
             await client.hide_init_loader()
 
-            # V5.30 Cleanup and Iframe Sync
-            await client.clear_blocking_modals()
+            # V5.30 Iframe Sync (Direct - No factsCenter wait)
             game_frame = client.page.frame_locator("iframe[src*='sportygames']")
             ui_indicator = game_frame.locator("canvas, .history, .results, .history-list, .bet-panel").first
 
@@ -79,8 +81,8 @@ class OmniMachineV31Refined:
                 await ui_indicator.wait_for(state="visible", timeout=60000)
                 print("DEBUG: Betting Environment fully hydrated.")
             except:
-                self._log("DEBUG: Iframe timeout. Final UI cleanup attempt...")
-                await client.clear_blocking_modals()
+                print("DEBUG: Iframe timeout. Final Blind Clearance attempt...")
+                await client.blind_clearance()
                 await ui_indicator.wait_for(state="visible", timeout=15000)
 
             # V5.15: Immortalize session upon successful entry
@@ -160,7 +162,7 @@ class OmniMachineV31Refined:
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []
         try:
-            loc = frame.locator(".history-item, .result-item, .history_ball")
+            loc = frame.locator(".history-item:visible, .result-item:visible, .history_ball:visible")
             texts = await loc.all_inner_texts()
             for text in texts:
                 t = text.strip().upper()
@@ -172,9 +174,9 @@ class OmniMachineV31Refined:
 
     async def _place_frame_bet(self, frame, direction: str, amount: float) -> bool:
         try:
-            await frame.locator('input[type="number"]').first.fill(str(amount))
+            await frame.locator('input[type="number"]:visible').first.fill(str(amount))
             target = "UP" if direction == "U" else "DOWN"
-            await frame.locator("button", has_text=target).first.click(force=True)
+            await frame.locator(f"button:visible:has-text('{target}')").first.click(force=True)
             return True
         except: return False
 

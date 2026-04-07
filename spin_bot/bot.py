@@ -40,8 +40,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.32: OMNI-RECURSIVE TITAN MACHINE (FAILSAFE ARTIFACT)."""
-        print(f"--- OMNI MACHINE CYCLE V5.32 (FAILSAFE ARTIFACT) ---")
+        """V5.33: OMNI-RECURSIVE TITAN MACHINE (REPAIR & ANCHOR)."""
+        print(f"--- OMNI MACHINE CYCLE V5.33 (REPAIR & ANCHOR) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()
@@ -61,14 +61,14 @@ class OmniMachineV31Refined:
                 print("CRITICAL: Titan Auth failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry (V5.30 Direct Stealth)
+            # 3. Betting Environment Entry (V5.32 Resilient Stealth)
             print("DEBUG: Entering Betting Environment (Direct Navigation)...")
             # Use direct URL to avoid Google redirect detection
             target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
             await client.hard_anchor_navigation(target_url)
 
-            # V5.30 Overlay Killer & Human Jiggle
-            await client.blind_clearance()
+            # V5.32 Overlay Killer & Human Jiggle
+            await client.stabilize_environment()
             await client.human_jiggle()
 
             # V5.21.1 Standard Transition
@@ -88,8 +88,8 @@ class OmniMachineV31Refined:
                     print("CRITICAL: CAPTCHA detected. IP Flagged. Aborting for 10 min cooldown.")
                     sys.exit(0) # Exit cleanly to let runner sleep
 
-                print("DEBUG: Iframe timeout. Final Blind Clearance attempt...")
-                await client.blind_clearance()
+                print("DEBUG: Iframe timeout. Final Stabilize attempt...")
+                await client.stabilize_environment()
                 await ui_indicator.wait_for(state="visible", timeout=15000)
 
             # V5.15: Immortalize session upon successful entry
@@ -156,7 +156,7 @@ class OmniMachineV31Refined:
                     print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.32 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.33 Cycle: {e}")
             await client.capture_failure("cycle_crash")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
@@ -164,7 +164,7 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.32 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.33 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []

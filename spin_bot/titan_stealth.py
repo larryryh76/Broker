@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 import json
 import time
@@ -226,7 +227,6 @@ class TitanStealthClient:
 
     async def hard_anchor_navigation(self, target_url: str, max_attempts: int = 3):
         """V5.30: Bypass & Blast Navigation Lock."""
-        # Use direct search-proxied bypass link if provided in prompt
         for attempt in range(max_attempts):
             self._log(f"DEBUG: Anchoring to Spin da Bottle (Attempt {attempt+1})...")
             await self.page.goto(target_url, wait_until="networkidle")
@@ -239,40 +239,14 @@ class TitanStealthClient:
                 self._log("DEBUG: Navigation anchored successfully.")
                 break
 
-    async def human_jiggle(self):
-        """V5.30: Human behavior simulation - Small scroll."""
-        self._log("DEBUG: Performing human jiggle (scroll down/up)...")
-        try:
-            await self.page.mouse.wheel(0, 200)
-            await asyncio.sleep(random.uniform(0.5, 1.5))
-            await self.page.mouse.wheel(0, -200)
-            await asyncio.sleep(0.5)
-        except: pass
-
-    async def blind_clearance(self):
-        """V5.30: Overlay Killer - Force clear ghost layers."""
-        self._log("DEBUG: Executing Blind Clearance (Overlay Killer)...")
-        selectors = [".m-icon-close", ".close-btn", ".m-modal-close", ".close-icon"]
-        for sel in selectors:
-            try:
-                loc = self.page.locator(f"{sel}:visible")
-                if await loc.count() > 0:
-                    self._log(f"DEBUG: Blasting overlay: {sel}")
-                    await loc.first.click(force=True)
-                    await asyncio.sleep(1)
-            except: pass
-        # Dismiss background focus
-        try: await self.page.mouse.click(0, 0)
-        except: pass
-
-    async def _handle_overlays(self):
-        """V5.32: Non-blocking Overlay Clearance Protocol."""
+    async def stabilize_environment(self):
+        """V5.33: Non-blocking Overlay Clearance Protocol."""
         self._log("DEBUG: Checking for Regional Splash & Overlays...")
         try:
             # Look for common WAP close buttons or Regional selectors
             overlay = self.page.locator(".m-icon-close, .dialog-close, text='Nigeria', text='Confirm', .sg-confirm-cancel-modal-v2 button").first
 
-            # Fixed: locator.is_visible() does not support timeout. Use wait_for or count check.
+            # Use wait_for to handle the timeout gracefully
             try:
                 await overlay.wait_for(state="visible", timeout=3000)
                 await overlay.click(force=True)
@@ -281,26 +255,33 @@ class TitanStealthClient:
             except:
                 self._log("DEBUG: No overlay detected.")
         except Exception as e:
-            self._log(f"DEBUG: Overlay check bypassed (none found or unclickable).")
+            self._log(f"DEBUG: Overlay check bypassed (none found or unclickable). Moving on.")
+
+        # Dismiss background focus
+        try: await self.page.mouse.click(0, 0)
+        except: pass
 
     async def verify_auth_and_secure_artifacts(self):
-        """V5.32: Verify session state & rescue artifacts on failure."""
+        """V5.33: Verify session state & rescue artifacts on failure."""
         self._log("DEBUG: Verifying session state...")
         try:
-            # Check for elements that PROVE we are logged in (balance, profile, or deposit button)
-            logged_in_indicator = self.page.locator(".icon-profile, .m-balance, text='Deposit', a[href*='/deposit']").first
+            # Check for elements that PROVE we are logged in
+            indicators = [".icon-profile", ".m-balance", "text='Deposit'", "a[href*='/deposit']"]
+            logged_in_indicator = self.page.locator(", ".join(indicators)).first
 
             # Wait up to 10 seconds for the WAP framework to settle
             await logged_in_indicator.wait_for(state="visible", timeout=10000)
             self._log("DEBUG: Titan Auth SUCCESS. Session is fully valid.")
+
+            # Save fresh state upon success
+            fresh_state = await self.context.storage_state()
+            self.save_storage_state(fresh_state)
             return True
 
         except Exception as e:
-            self._log("CRITICAL: Titan Auth failed. Session invalid, rejected, or layout changed.")
+            self._log(f"CRITICAL: Titan Auth failed ({e}). Session invalid or rejected.")
 
             # 3. MANDATORY ARTIFACT RESCUE
-            import os
-            import sys
             os.makedirs("artifacts", exist_ok=True)
 
             self._log("DEBUG: Saving fatal error artifacts before exit...")
@@ -313,15 +294,15 @@ class TitanStealthClient:
             # Now that artifacts are safe, exit cleanly so GitHub Actions can upload them
             sys.exit(1)
 
-    async def navigation_guardian(self, max_attempts: int = 3):
-        """V5.15 Guardian: Prevent /livescore redirect loops."""
-        for i in range(max_attempts):
-            if "/livescore" in self.page.url:
-                self._log(f"WARNING: Livescore redirect detected (Attempt {i+1}). Re-navigating to Game...")
-                await asyncio.sleep(2)
-                await self.page.goto(self.game_url, wait_until="networkidle")
-            else:
-                break
+    async def human_jiggle(self):
+        """V5.30: Human behavior simulation - Small scroll."""
+        self._log("DEBUG: Performing human jiggle (scroll down/up)...")
+        try:
+            await self.page.mouse.wheel(0, 200)
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await self.page.mouse.wheel(0, -200)
+            await asyncio.sleep(0.5)
+        except: pass
 
     async def hide_init_loader(self):
         try:
@@ -329,46 +310,70 @@ class TitanStealthClient:
         except: pass
 
     async def modal_auth_system_v41(self) -> bool:
-        """V4.1: Re-implemented Modal-Auth Trigger System."""
-        self._log("DEBUG: Executing V4.1 Modal-Auth Trigger Sequence...")
+        """V5.22: WAP Livescore Redirect Bypass Protocol."""
+        self._log("DEBUG: Executing V5.22 WAP Login Sequence...")
         try:
             # Step A: Navigate to Home
-            await self.page.goto(self.home_url)
-            await self.page.wait_for_load_state("networkidle")
+            # V5.22: Navigate to Nigerian mobile root to minimize cross-region redirects
+            await self.page.goto("https://www.football.com/ng/m/", wait_until="domcontentloaded")
 
-            # Step B (The Trigger): CLICK Login to make modal appear
-            self._log("DEBUG: Clicking Login trigger...")
-            await self.page.locator("text=/^(Log In|Login)$/i:visible").first.click(force=True)
+            # Step B: Wait for forced WAP /livescore redirect to fully settle
+            await asyncio.sleep(3)
+            self._log(f"DEBUG: Settled on WAP URL: {self.page.url}")
 
-            # Step C (The Modal): Wait for password selector
-            self._log("DEBUG: Waiting for Login Modal...")
-            password_sel = "input[type='password']:visible"
-            await self.page.wait_for_selector(password_sel, state="visible", timeout=15000)
+            # Step C: WAP OVERLAY CARPET BOMB - Open the mobile login drawer
+            self._log("DEBUG: Triggering WAP Login overlay...")
+            wap_triggers = [
+                "text='Log In'",
+                "text='Login'",
+                ".m-btn-login",
+                ".icon-profile",
+                "text='Me'",
+                "a[href*='/login']"
+            ]
 
-            # Step D (Human Typing): Fill credentials
-            phone_sel = "input[type='tel']:visible, input[placeholder*='Phone']:visible, input[placeholder*='Email']:visible"
-            await self.page.locator(phone_sel).first.click(force=True)
+            drawer_opened = False
+            for selector in wap_triggers:
+                try:
+                    trigger = self.page.locator(f"{selector}:visible").first
+                    if await trigger.is_visible(timeout=1500):
+                        await trigger.click(force=True)
+                        self._log(f"DEBUG: WAP overlay opened via '{selector}'")
+                        drawer_opened = True
+                        break
+                except: continue
+
+            if not drawer_opened:
+                self._log("WARNING: No WAP login trigger found. Drawer might be open or layout changed.")
+
+            # Step D: Explicit wait for form (visible only after drawer open)
+            self._log("DEBUG: Waiting for the login form to render...")
+            phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
+            phone_input = self.page.locator(phone_sel).first
+            await phone_input.wait_for(state="visible", timeout=15000)
+
+            # Step E: Human-style credential entry
+            self._log("DEBUG: Entering credentials...")
+            await phone_input.click(force=True)
             await self.keyboard_type_manual(self.phone)
 
-            await self.page.locator(password_sel).first.click(force=True)
-            await self.keyboard_type_manual(self.password)
+            password_sel = "input[type='password']:visible"
+            await self.page.locator(password_sel).first.fill(self.password)
 
-            # Step E (Submission): Submit Modal
-            submit_btn = "button.login-btn:visible, button[type='submit']:visible, button:has-text('Login'):visible"
-            await self.page.locator(submit_btn).last.click(force=True)
+            # Step F: Submit via visible button
+            submit_btn = "button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible"
+            await self.page.locator(submit_btn).first.click(force=True)
 
             # Mandatory Success Check
             self._log("DEBUG: Verifying login success...")
             await asyncio.sleep(10)
 
-            if await self.page.locator("text=/^(Log In|Login)$/i").first.is_visible():
+            if await self.page.locator("text=/^(Log In|Login)$/i:visible").first.is_visible():
                 self._log("CRITICAL: Login text still visible. Modal Auth FAILED.")
                 await self.capture_failure("v41_login_fail")
                 return False
             else:
                 self._log("DEBUG: LOGIN SUCCESS confirmed via V4.1 Modal Trigger.")
-                state = await self.context.storage_state()
-                self.save_storage_state(state)
                 return True
 
         except Exception as e:
@@ -398,7 +403,7 @@ class TitanStealthClient:
         except: pass
 
     async def login(self) -> bool:
-        """V5.32 Failsafe Repair: Restore Session or fallback to Manual Validated Login."""
+        """V5.33 Failsafe Repair: Sequential Auth Verification."""
         self._log("DEBUG: Starting Titan-Stealth (FAILSAFE REPAIR)...")
         await self.setup_db()
 
@@ -409,33 +414,31 @@ class TitanStealthClient:
         try:
             # Step 2: Session Check & Front-Door Stabilization
             await self.page.goto(self.home_url, wait_until="networkidle")
+            await self.stabilize_environment()
 
-            # Anti-Trap: Clear initial overlays before probing session
-            await self._handle_overlays()
+            # Check if session is valid (Login button missing or hidden)
+            is_logged_in = False
+            try:
+                login_btn = self.page.locator("text='Login', text='Log In'").first
+                if await login_btn.count() == 0 or not await login_btn.is_visible():
+                    is_logged_in = True
+            except: is_logged_in = True
 
-            # Check if session is valid (Login button missing)
-            login_trigger = self.page.locator("text=/^(Log In|Login)$/i:visible").first
-            if not await login_trigger.is_visible():
+            if is_logged_in:
                 self._log("DEBUG: Session valid via persistence.")
-                # Refresh storage state in DB to keep it 'Immortal'
-                fresh_state = await self.context.storage_state()
-                self.save_storage_state(fresh_state)
-                return True
+                return await self.verify_auth_and_secure_artifacts()
 
             # Step 3: Fallback to Manual Validated Login (Immortal Session expired)
             self._log("WARNING: Persistent session expired. Triggering Manual Re-Validation...")
             await self.modal_auth_system_v41()
 
-            # V5.32: Final Verification & Artifact Rescue
-            if await self.verify_auth_and_secure_artifacts():
-                # Immortalize the fresh session immediately
-                fresh_state = await self.context.storage_state()
-                self.save_storage_state(fresh_state)
-                self._log("DEBUG: Immortal Session REPAIRED and saved to MongoDB.")
-                return True
-
+            # V5.33: Final Verification Gate
+            return await self.verify_auth_and_secure_artifacts()
+        except SystemExit:
+            raise
+        except Exception as e:
+            self._log(f"ERROR: Login cycle crashed: {e}")
             return False
-        except: return False
 
     async def capture_failure(self, name: str):
         try:

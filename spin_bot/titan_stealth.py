@@ -220,31 +220,35 @@ class TitanStealthClient:
         """)
 
     async def hard_anchor_navigation(self, target_url: str, max_attempts: int = 3):
-        """V5.30: Forced Navigation Loop to break /livescore hijacks."""
+        """V5.30: Bypass & Blast Navigation Lock."""
+        # Use direct search-proxied bypass link if provided in prompt
         for attempt in range(max_attempts):
-            self._log(f"DEBUG: Anchoring to {target_url} (Attempt {attempt+1})...")
+            self._log(f"DEBUG: Anchoring to Spin da Bottle (Attempt {attempt+1})...")
             await self.page.goto(target_url, wait_until="networkidle")
-            # Wait for any potential redirect to trigger
+            # V5.30 mechanical wait for Vue router hijacks
             await asyncio.sleep(3)
             if "livescore" in self.page.url:
-                self._log("WARNING: Redirect detected. Forcing return to Game URL...")
+                self._log("WARNING: Redirect Hijack detected! Forcing return to Spin da Bottle...")
                 continue
             else:
                 self._log("DEBUG: Navigation anchored successfully.")
                 break
 
-    async def clear_blocking_modals(self):
-        """V5.30 Cleanup: Detect and click UI-blocking modals."""
-        self._log("DEBUG: Scanning for blocking UI elements...")
-        selectors = [".m-modal-close", ".close-icon", ".m-icon-close", "text='Confirm'", "text='OK'"]
+    async def blind_clearance(self):
+        """V5.30: Overlay Killer - Force clear ghost layers."""
+        self._log("DEBUG: Executing Blind Clearance (Overlay Killer)...")
+        selectors = [".m-icon-close", ".close-btn", ".m-modal-close", ".close-icon"]
         for sel in selectors:
             try:
-                loc = self.page.locator(sel)
-                if await loc.is_visible():
-                    self._log(f"DEBUG: Clearing blocking element: {sel}")
+                loc = self.page.locator(f"{sel}:visible")
+                if await loc.count() > 0:
+                    self._log(f"DEBUG: Blasting overlay: {sel}")
                     await loc.first.click(force=True)
                     await asyncio.sleep(1)
             except: pass
+        # Dismiss background focus
+        try: await self.page.mouse.click(0, 0)
+        except: pass
 
     async def _handle_overlays(self):
         """V5.18: Splash & Overlay Handling Logic."""
@@ -290,15 +294,15 @@ class TitanStealthClient:
 
             # Step B (The Trigger): CLICK Login to make modal appear
             self._log("DEBUG: Clicking Login trigger...")
-            await self.page.locator("text=/^(Log In|Login)$/i").first.click(force=True)
+            await self.page.locator("text=/^(Log In|Login)$/i:visible").first.click(force=True)
 
             # Step C (The Modal): Wait for password selector
             self._log("DEBUG: Waiting for Login Modal...")
-            password_sel = "input[type='password']"
+            password_sel = "input[type='password']:visible"
             await self.page.wait_for_selector(password_sel, state="visible", timeout=15000)
 
             # Step D (Human Typing): Fill credentials
-            phone_sel = "input[type='tel'], input[placeholder*='Phone'], input[placeholder*='Email']"
+            phone_sel = "input[type='tel']:visible, input[placeholder*='Phone']:visible, input[placeholder*='Email']:visible"
             await self.page.locator(phone_sel).first.click(force=True)
             await self.keyboard_type_manual(self.phone)
 
@@ -306,7 +310,7 @@ class TitanStealthClient:
             await self.keyboard_type_manual(self.password)
 
             # Step E (Submission): Submit Modal
-            submit_btn = "button.login-btn, button[type='submit'], button:has-text('Login')"
+            submit_btn = "button.login-btn:visible, button[type='submit']:visible, button:has-text('Login'):visible"
             await self.page.locator(submit_btn).last.click(force=True)
 
             # Mandatory Success Check

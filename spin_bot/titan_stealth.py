@@ -219,13 +219,32 @@ class TitanStealthClient:
             })();
         """)
 
-    async def wait_for_vue_hydration(self):
-        self._log("DEBUG: Waiting for Vue.js Hydration (factsCenter/configs)...")
-        try:
-            await self.page.wait_for_response(lambda r: "factsCenter/recommend/configs" in r.url, timeout=15000)
-            self._log("DEBUG: Vue.js Hydration Complete.")
-        except:
-            self._log("WARNING: Vue.js Hydration timeout.")
+    async def hard_anchor_navigation(self, target_url: str, max_attempts: int = 3):
+        """V5.30: Forced Navigation Loop to break /livescore hijacks."""
+        for attempt in range(max_attempts):
+            self._log(f"DEBUG: Anchoring to {target_url} (Attempt {attempt+1})...")
+            await self.page.goto(target_url, wait_until="networkidle")
+            # Wait for any potential redirect to trigger
+            await asyncio.sleep(3)
+            if "livescore" in self.page.url:
+                self._log("WARNING: Redirect detected. Forcing return to Game URL...")
+                continue
+            else:
+                self._log("DEBUG: Navigation anchored successfully.")
+                break
+
+    async def clear_blocking_modals(self):
+        """V5.30 Cleanup: Detect and click UI-blocking modals."""
+        self._log("DEBUG: Scanning for blocking UI elements...")
+        selectors = [".m-modal-close", ".close-icon", ".m-icon-close", "text='Confirm'", "text='OK'"]
+        for sel in selectors:
+            try:
+                loc = self.page.locator(sel)
+                if await loc.is_visible():
+                    self._log(f"DEBUG: Clearing blocking element: {sel}")
+                    await loc.first.click(force=True)
+                    await asyncio.sleep(1)
+            except: pass
 
     async def _handle_overlays(self):
         """V5.18: Splash & Overlay Handling Logic."""

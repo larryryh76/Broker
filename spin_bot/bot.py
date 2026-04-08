@@ -40,8 +40,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.33: OMNI-RECURSIVE TITAN MACHINE (REPAIR & ANCHOR)."""
-        print(f"--- OMNI MACHINE CYCLE V5.33 (REPAIR & ANCHOR) ---")
+        """V5.34: OMNI-RECURSIVE TITAN MACHINE (FAILSAFE SELECTOR)."""
+        print(f"--- OMNI MACHINE CYCLE V5.34 (FAILSAFE SELECTOR) ---")
 
         # 1. Titan-Stealth Initialization
         client = TitanStealthClient()
@@ -156,7 +156,7 @@ class OmniMachineV31Refined:
                     print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.33 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.34 Cycle: {e}")
             await client.capture_failure("cycle_crash")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
@@ -164,7 +164,7 @@ class OmniMachineV31Refined:
             self.memory.save_model_weights(self.brain.weights)
             await client.close()
             self.memory.close()
-            print(f"--- V5.33 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.34 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []

@@ -194,21 +194,27 @@ class TitanStealthClient:
 
                 // 3. Theme & Z-Index Management
                 let modalStack = 0;
-                const observer = new MutationObserver(() => {
+                const updateTheme = () => {
                     const theme = document.documentElement.getAttribute('data-theme') || 'light';
                     const brand = window.BRAND_NAME || 'football';
-                    const loader = document.querySelector('.app-init-loader-wrap');
-                    const spinner = document.querySelector('.spinner-icon'); // Hypothetical selector
+                    const loaders = document.querySelectorAll('.app-init-loader-wrap');
+                    const spinners = document.querySelectorAll('.spinner-icon');
 
-                    if (loader) {
+                    loaders.forEach(loader => {
                         if (theme === 'light') {
-                            loader.style.backgroundColor = '#f4f4f4';
-                            if (spinner) spinner.style.backgroundColor = '#e0e1e2';
+                            loader.style.setProperty('background-color', '#f4f4f4', 'important');
                         } else {
-                            loader.style.backgroundColor = (brand === 'Encore') ? '#100e26' : '#000000';
+                            loader.style.setProperty('background-color', (brand === 'Encore') ? '#100e26' : '#000000', 'important');
                         }
-                    }
+                    });
 
+                    if (theme === 'light') {
+                        spinners.forEach(s => s.style.setProperty('background-color', '#e0e1e2', 'important'));
+                    }
+                };
+
+                const observer = new MutationObserver(() => {
+                    updateTheme();
                     const backdrops = document.querySelectorAll('.modal-backdrop:not([data-managed])');
                     backdrops.forEach(b => {
                         b.style.zIndex = (1052 + (modalStack * 10)).toString();
@@ -221,7 +227,7 @@ class TitanStealthClient:
                         modalStack++;
                     });
                 });
-                observer.observe(document.body, { childList: true, subtree: true });
+                observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
             })();
         """)
 
@@ -240,11 +246,22 @@ class TitanStealthClient:
                 break
 
     async def stabilize_environment(self):
-        """V5.33: Non-blocking Overlay Clearance Protocol."""
+        """V5.34: Non-blocking Overlay Clearance Protocol."""
         self._log("DEBUG: Checking for Regional Splash & Overlays...")
+
+        # V5.34: Handle initial load screen if present (from artifact)
+        try:
+            loader = self.page.locator(".app-init-loader-wrap:visible, .m-loader:visible").first
+            if await loader.count() > 0:
+                self._log("DEBUG: Initial loader detected. Waiting for hydration...")
+                await loader.wait_for(state="hidden", timeout=15000)
+        except: pass
+
         try:
             # Look for common WAP close buttons or Regional selectors
-            overlay = self.page.locator(".m-icon-close, .dialog-close, text='Nigeria', text='Confirm', .sg-confirm-cancel-modal-v2 button").first
+            # Fixed V5.34: Use :has-text instead of text= to avoid CSS parsing errors in comma lists
+            overlay_selectors = [".m-icon-close:visible", ".dialog-close:visible", ":has-text('Nigeria')", ":has-text('Confirm')", ".sg-confirm-cancel-modal-v2 button:visible"]
+            overlay = self.page.locator(", ".join(overlay_selectors)).first
 
             # Use wait_for to handle the timeout gracefully
             try:
@@ -262,11 +279,12 @@ class TitanStealthClient:
         except: pass
 
     async def verify_auth_and_secure_artifacts(self):
-        """V5.33: Verify session state & rescue artifacts on failure."""
+        """V5.34: Verify session state & rescue artifacts on failure."""
         self._log("DEBUG: Verifying session state...")
         try:
             # Check for elements that PROVE we are logged in
-            indicators = [".icon-profile", ".m-balance", "text='Deposit'", "a[href*='/deposit']"]
+            # Fixed V5.34: Use :has-text instead of text= to avoid CSS parsing errors in comma lists
+            indicators = [".icon-profile:visible", ".m-balance:visible", ":has-text('Deposit')", "a[href*='/deposit']:visible"]
             logged_in_indicator = self.page.locator(", ".join(indicators)).first
 
             # Wait up to 10 seconds for the WAP framework to settle

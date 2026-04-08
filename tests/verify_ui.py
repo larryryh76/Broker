@@ -66,7 +66,7 @@ async def run_verification():
                 const originalFetch = window.fetch;
                 window.fetch = async () => ({ status: 401 });
                 await window.fetch('/test');
-                window.fetch = originalFetch;
+                // Don't restore fetch yet so we can check visibility
             })();
         """)
         await asyncio.sleep(2)

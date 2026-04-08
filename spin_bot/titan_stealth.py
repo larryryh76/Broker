@@ -245,7 +245,7 @@ class TitanStealthClient:
                 self._log("DEBUG: Navigation anchored successfully.")
                 break
 
-    async def stabilize_environment(self):
+    async def stabilize_environment(self, max_attempts: int = 3):
         """V5.34: Non-blocking Overlay Clearance Protocol."""
         self._log("DEBUG: Checking for Regional Splash & Overlays...")
         # V5.34: Initial settlement wait for Vue/Nuxt hydration
@@ -258,7 +258,7 @@ class TitanStealthClient:
                 ".app-loading", "#app-loading", ".loading-container", ".page-loader"
             ]
 
-            for _ in range(3):
+            for _ in range(max_attempts):
                 loader = self.page.locator(", ".join(loader_selectors)).filter(has=self.page.locator(":visible")).first
                 count = await loader.count()
                 if count > 0:
@@ -289,8 +289,9 @@ class TitanStealthClient:
                 try:
                     elements = self.page.locator(selector).filter(has=self.page.locator(":visible"))
                     count = await elements.count()
-                    for i in range(count):
-                        await elements.nth(i).click(force=True)
+                    if count > 0:
+                        # Click only the first one to avoid loops if it doesn't disappear
+                        await elements.first.click(force=True)
                         self._log(f"DEBUG: Dismissed overlay element: {selector}")
                         found_any = True
                 except: continue
@@ -397,10 +398,10 @@ class TitanStealthClient:
 
             # Step C: Trigger Login Modal
             self._log("DEBUG: Triggering Login Modal...")
-            # V4.1 Triggers: Search/Menu or direct Login button
+            # V4.1 Working triggers from logs
             triggers = [
-                ".icon-profile", ".m-btn-login", "button:has-text('Login')", "button:has-text('Log In')",
-                "a:has-text('Me')", ".m-icon-search", "a[href*='/login']", ":has-text('Login')"
+                ".m-icon-search", ".icon-profile", ".m-btn-login", "button:has-text('Login')",
+                "button:has-text('Log In')", "a:has-text('Me')", "a[href*='/login']", ":has-text('Login')"
             ]
 
             drawer_opened = False
@@ -410,7 +411,16 @@ class TitanStealthClient:
                     if await trigger.count() > 0:
                         self._log(f"DEBUG: Login trigger clicked: {selector}")
                         await trigger.click(force=True)
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(3)
+
+                        # If we clicked search, we might need to click "Login" in the drawer
+                        sub_triggers = [":has-text('Login')", ":has-text('Log In')", ".m-btn-login"]
+                        for sub in sub_triggers:
+                            sub_el = self.page.locator(sub).filter(has=self.page.locator(":visible")).first
+                            if await sub_el.count() > 0:
+                                await sub_el.click(force=True)
+                                await asyncio.sleep(2)
+                                break
 
                         # Check if form appeared
                         phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
@@ -424,12 +434,18 @@ class TitanStealthClient:
             if not drawer_opened:
                 self._log("WARNING: Trigger failed. Forcing subpath navigation...")
                 await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
+                await asyncio.sleep(5)
                 await self.stabilize_environment()
 
             # Step D: Wait for Credentials form
             self._log("DEBUG: Waiting for the login form to render...")
             phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
             phone_input = self.page.locator(phone_sel).first
+
+            # If not visible, try one more stabilize
+            if await phone_input.count() == 0:
+                await self.stabilize_environment()
+
             await phone_input.wait_for(state="visible", timeout=15000)
 
             # Step E: Human-style credential entry

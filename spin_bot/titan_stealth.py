@@ -251,12 +251,27 @@ class TitanStealthClient:
 
         # V5.34: Handle initial load screen if present
         try:
-            loader_selectors = [".app-init-loader-wrap", ".m-loader", ".loading-wrap", ".m-loading-mask"]
-            loader = self.page.locator(", ".join(loader_selectors)).filter(has=self.page.locator(":visible")).first
-            if await loader.count() > 0:
-                self._log("DEBUG: Initial loader detected. Waiting for hydration...")
-                await loader.wait_for(state="hidden", timeout=15000)
-        except: pass
+            loader_selectors = [
+                ".app-init-loader-wrap", ".m-loader", ".loading-wrap", ".m-loading-mask",
+                ".app-loading", "#app-loading", ".loading-container", ".page-loader"
+            ]
+
+            for _ in range(3):
+                loader = self.page.locator(", ".join(loader_selectors)).filter(has=self.page.locator(":visible")).first
+                count = await loader.count()
+                if count > 0:
+                    try:
+                        self._log(f"DEBUG: Initial loader detected ({count} elements). Waiting for hydration...")
+                        await loader.wait_for(state="hidden", timeout=7000)
+                        break
+                    except:
+                        self._log("WARNING: Loader timeout. Attempting Force-Removal via JS...")
+                        await self.hide_init_loader()
+                        await asyncio.sleep(1)
+                else:
+                    break
+        except Exception as e:
+            self._log(f"DEBUG: Loader check exception: {e}")
 
         try:
             # Look for common WAP close buttons or Regional selectors
@@ -293,12 +308,19 @@ class TitanStealthClient:
         """V5.34: Verify session state & rescue artifacts on failure."""
         self._log("DEBUG: Verifying session state...")
         try:
+            # V5.34: Stabilize before checking
+            await self.stabilize_environment()
+
             # Check for elements that PROVE we are logged in
-            indicators = [".icon-profile:visible", ".m-balance:visible", ":has-text('Deposit')", "a[href*='/deposit']:visible"]
+            indicators = [
+                ".icon-profile:visible", ".m-balance:visible",
+                ":has-text('Deposit')", "a[href*='/deposit']:visible",
+                ":has-text('Logout')", ":has-text('Log out')", ".m-user-info"
+            ]
             logged_in_indicator = self.page.locator(", ".join(indicators)).first
 
-            # Wait up to 10 seconds for the WAP framework to settle
-            await logged_in_indicator.wait_for(state="visible", timeout=10000)
+            # Wait up to 15 seconds for the WAP framework to settle
+            await logged_in_indicator.wait_for(state="visible", timeout=15000)
             self._log("DEBUG: Titan Auth SUCCESS. Session is fully valid.")
 
             # Save fresh state upon success
@@ -341,10 +363,19 @@ class TitanStealthClient:
         self._log("DEBUG: Force hiding initial loader (Ready state reached).")
         try:
             await self.page.evaluate("""
-                const selectors = ['.app-init-loader-wrap', '.m-loader', '.loading-wrap', '.m-loading-mask'];
+                const selectors = [
+                    '.app-init-loader-wrap', '.m-loader', '.loading-wrap', '.m-loading-mask',
+                    '.app-loading', '#app-loading', '.loading-container', '.page-loader'
+                ];
                 selectors.forEach(sel => {
-                    const el = document.querySelector(sel);
-                    if (el) el.style.display = 'none';
+                    const elements = document.querySelectorAll(sel);
+                    elements.forEach(el => {
+                        el.style.display = 'none';
+                        el.style.opacity = '0';
+                        el.style.visibility = 'hidden';
+                        el.style.pointerEvents = 'none';
+                        el.style.zIndex = '-1';
+                    });
                 });
             """)
         except: pass
@@ -354,33 +385,49 @@ class TitanStealthClient:
         self._log("DEBUG: Executing V5.22 WAP Login Sequence...")
         try:
             # Step A: Navigate to Home
-            await self.page.goto("https://www.football.com/ng/m/", wait_until="domcontentloaded")
+            await self.page.goto("https://www.football.com/ng/m/", wait_until="networkidle")
 
             # Step B: Wait for forced WAP /livescore redirect to fully settle
-            await asyncio.sleep(3)
+            await self.stabilize_environment()
             self._log(f"DEBUG: Settled on WAP URL: {self.page.url}")
 
             # Step C: WAP OVERLAY CARPET BOMB - Open the mobile login drawer
             self._log("DEBUG: Triggering WAP Login overlay...")
+
+            # V5.34: Expanded and prioritized triggers
             wap_triggers = [
-                ":has-text('Log In')",
-                ":has-text('Login')",
+                "button:has-text('Log In')",
+                "button:has-text('Login')",
                 ".m-btn-login",
                 ".icon-profile",
-                ":has-text('Me')",
-                "a[href*='/login']"
+                "a:has-text('Me')",
+                "a[href*='/login']",
+                ":has-text('Log In')",
+                ":has-text('Login')"
             ]
 
             drawer_opened = False
             for selector in wap_triggers:
                 try:
                     trigger = self.page.locator(selector).filter(has=self.page.locator(":visible")).first
-                    if await trigger.is_visible():
+                    if await trigger.count() > 0:
+                        self._log(f"DEBUG: Attempting click on trigger: {selector}")
                         await trigger.click(force=True)
-                        self._log(f"DEBUG: WAP overlay opened via '{selector}'")
-                        drawer_opened = True
-                        break
+                        await asyncio.sleep(2)
+
+                        # Check if form appeared
+                        if await self.page.locator("input[type='tel']:visible").count() > 0:
+                            self._log(f"DEBUG: WAP drawer opened via '{selector}'")
+                            drawer_opened = True
+                            break
                 except: continue
+
+            if not drawer_opened:
+                self._log("WARNING: No WAP login trigger worked. Attempting direct navigation to login...")
+                try:
+                    await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
+                    await self.stabilize_environment()
+                except: pass
 
             if not drawer_opened:
                 self._log("WARNING: No WAP login trigger found. Drawer might be open or layout changed.")

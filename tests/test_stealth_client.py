@@ -5,7 +5,7 @@ from spin_bot.titan_stealth import TitanStealthClient
 @pytest.mark.asyncio
 async def test_client_init():
     client = TitanStealthClient()
-    assert client.home_url == "https://www.football.com/ng/m/"
+    assert client.home_url == "https://www.football.com/ng/m/home"
     assert client.game_url == "https://www.football.com/ng/m/games/spin-da-bottle"
 
 @pytest.mark.asyncio

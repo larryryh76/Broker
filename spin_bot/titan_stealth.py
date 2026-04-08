@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any, List
 
 class TitanStealthClient:
     def __init__(self):
-        self.home_url = "https://www.football.com/ng/m/"
+        self.home_url = "https://www.football.com/ng/m/home"
         self.game_url = "https://www.football.com/ng/m/games/spin-da-bottle"
         self.mongodb_uri = os.getenv("MONGODB_URI")
         self.phone = os.getenv("FOOTBALL_NG_LOGIN")
@@ -98,9 +98,10 @@ class TitanStealthClient:
         )
 
         # V5.32.1: Pre-emptive cookie injection to bypass location popup
-        await self.context.add_cookies([{
-            "name": "region", "value": "NG", "domain": ".football.com", "path": "/"
-        }])
+        await self.context.add_cookies([
+            {"name": "region", "value": "NG", "domain": ".football.com", "path": "/"},
+            {"name": "currency", "value": "NGN", "domain": ".football.com", "path": "/"}
+        ])
 
         self.page = await self.context.new_page()
 
@@ -368,7 +369,8 @@ class TitanStealthClient:
             await self.page.evaluate("""
                 const selectors = [
                     '.app-init-loader-wrap', '.m-loader', '.loading-wrap', '.m-loading-mask',
-                    '.app-loading', '#app-loading', '.loading-container', '.page-loader'
+                    '.app-loading', '#app-loading', '.loading-container', '.page-loader',
+                    '.m-loading', '.loading', '.app-loader-wrap'
                 ];
                 selectors.forEach(sel => {
                     const elements = document.querySelectorAll(sel);
@@ -388,7 +390,7 @@ class TitanStealthClient:
         self._log("DEBUG: Executing V4.1 Modal-Auth Sequence...")
         try:
             # Step A: Navigate to Home
-            target = "https://www.football.com/ng/m/"
+            target = "https://www.football.com/ng/m/home"
             self._log(f"DEBUG: Navigating to {target}...")
             await self.page.goto(target, wait_until="networkidle")
 
@@ -398,7 +400,20 @@ class TitanStealthClient:
 
             # Step C: Trigger Login Modal
             self._log("DEBUG: Triggering Login Modal...")
-            # V4.1 Working triggers from logs
+
+            # V4.1: Try JS trigger first to bypass UI blockage
+            try:
+                await self.page.evaluate("""
+                    const loginBtn = document.querySelector('.m-btn-login') || document.querySelector('.icon-profile');
+                    if (loginBtn) loginBtn.click();
+                    else {
+                        const searchBtn = document.querySelector('.m-icon-search') || document.querySelector('.icon-search');
+                        if (searchBtn) searchBtn.click();
+                    }
+                """)
+                await asyncio.sleep(2)
+            except: pass
+
             triggers = [
                 ".m-icon-search", ".icon-profile", ".m-btn-login", "button:has-text('Login')",
                 "button:has-text('Log In')", "a:has-text('Me')", "a[href*='/login']", ":has-text('Login')"
@@ -413,7 +428,7 @@ class TitanStealthClient:
                         await trigger.click(force=True)
                         await asyncio.sleep(3)
 
-                        # If we clicked search, we might need to click "Login" in the drawer
+                        # Sub-triggers for the drawer
                         sub_triggers = [":has-text('Login')", ":has-text('Log In')", ".m-btn-login"]
                         for sub in sub_triggers:
                             sub_el = self.page.locator(sub).filter(has=self.page.locator(":visible")).first
@@ -422,7 +437,6 @@ class TitanStealthClient:
                                 await asyncio.sleep(2)
                                 break
 
-                        # Check if form appeared
                         phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
                         if await self.page.locator(phone_sel).count() > 0:
                             self._log("DEBUG: Login modal visible.")
@@ -434,7 +448,7 @@ class TitanStealthClient:
             if not drawer_opened:
                 self._log("WARNING: Trigger failed. Forcing subpath navigation...")
                 await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
                 await self.stabilize_environment()
 
             # Step D: Wait for Credentials form

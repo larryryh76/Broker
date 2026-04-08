@@ -248,6 +248,8 @@ class TitanStealthClient:
     async def stabilize_environment(self):
         """V5.34: Non-blocking Overlay Clearance Protocol."""
         self._log("DEBUG: Checking for Regional Splash & Overlays...")
+        # V5.34: Initial settlement wait for Vue/Nuxt hydration
+        await asyncio.sleep(2)
 
         # V5.34: Handle initial load screen if present
         try:
@@ -381,58 +383,50 @@ class TitanStealthClient:
         except: pass
 
     async def modal_auth_system_v41(self) -> bool:
-        """V5.22: WAP Livescore Redirect Bypass Protocol."""
-        self._log("DEBUG: Executing V5.22 WAP Login Sequence...")
+        """V4.1: Known working WAP Auth Sequence."""
+        self._log("DEBUG: Executing V4.1 Modal-Auth Sequence...")
         try:
             # Step A: Navigate to Home
-            await self.page.goto("https://www.football.com/ng/m/", wait_until="networkidle")
+            target = "https://www.football.com/ng/m/"
+            self._log(f"DEBUG: Navigating to {target}...")
+            await self.page.goto(target, wait_until="networkidle")
 
             # Step B: Wait for forced WAP /livescore redirect to fully settle
             await self.stabilize_environment()
-            self._log(f"DEBUG: Settled on WAP URL: {self.page.url}")
+            self._log(f"DEBUG: Settled on URL: {self.page.url}")
 
-            # Step C: WAP OVERLAY CARPET BOMB - Open the mobile login drawer
-            self._log("DEBUG: Triggering WAP Login overlay...")
-
-            # V5.34: Expanded and prioritized triggers
-            wap_triggers = [
-                "button:has-text('Log In')",
-                "button:has-text('Login')",
-                ".m-btn-login",
-                ".icon-profile",
-                "a:has-text('Me')",
-                "a[href*='/login']",
-                ":has-text('Log In')",
-                ":has-text('Login')"
+            # Step C: Trigger Login Modal
+            self._log("DEBUG: Triggering Login Modal...")
+            # V4.1 Triggers: Search/Menu or direct Login button
+            triggers = [
+                ".icon-profile", ".m-btn-login", "button:has-text('Login')", "button:has-text('Log In')",
+                "a:has-text('Me')", ".m-icon-search", "a[href*='/login']", ":has-text('Login')"
             ]
 
             drawer_opened = False
-            for selector in wap_triggers:
+            for selector in triggers:
                 try:
                     trigger = self.page.locator(selector).filter(has=self.page.locator(":visible")).first
                     if await trigger.count() > 0:
-                        self._log(f"DEBUG: Attempting click on trigger: {selector}")
+                        self._log(f"DEBUG: Login trigger clicked: {selector}")
                         await trigger.click(force=True)
                         await asyncio.sleep(2)
 
                         # Check if form appeared
-                        if await self.page.locator("input[type='tel']:visible").count() > 0:
-                            self._log(f"DEBUG: WAP drawer opened via '{selector}'")
+                        phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
+                        if await self.page.locator(phone_sel).count() > 0:
+                            self._log("DEBUG: Login modal visible.")
                             drawer_opened = True
                             break
                 except: continue
 
+            # Fallback: Force navigation if triggers fail
             if not drawer_opened:
-                self._log("WARNING: No WAP login trigger worked. Attempting direct navigation to login...")
-                try:
-                    await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
-                    await self.stabilize_environment()
-                except: pass
+                self._log("WARNING: Trigger failed. Forcing subpath navigation...")
+                await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
+                await self.stabilize_environment()
 
-            if not drawer_opened:
-                self._log("WARNING: No WAP login trigger found. Drawer might be open or layout changed.")
-
-            # Step D: Explicit wait for form (visible only after drawer open)
+            # Step D: Wait for Credentials form
             self._log("DEBUG: Waiting for the login form to render...")
             phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
             phone_input = self.page.locator(phone_sel).first
@@ -447,19 +441,25 @@ class TitanStealthClient:
             await self.page.locator(password_sel).first.fill(self.password)
 
             # Step F: Submit via visible button
+            self._log("DEBUG: Submit clicked.")
             submit_btn = "button.btn-primary:visible, button[type='submit']:visible, .m-login-btn:visible"
             await self.page.locator(submit_btn).first.click(force=True)
 
             # Mandatory Success Check
-            self._log("DEBUG: Verifying login success...")
+            self._log("DEBUG: Waiting for authentication verification (5-10s)...")
             await asyncio.sleep(10)
 
             if await self.page.locator(":has-text('Login'), :has-text('Log In')").filter(has=self.page.locator(":visible")).first.is_visible():
+                # Final check for positive indicators
+                indicators = [".icon-profile:visible", ".m-balance:visible", ":has-text('Deposit')"]
+                if await self.page.locator(", ".join(indicators)).first.count() > 0:
+                    self._log("DEBUG: LOGIN SUCCESS confirmed.")
+                    return True
                 self._log("CRITICAL: Login text still visible. Modal Auth FAILED.")
                 await self.capture_failure("v41_login_fail")
                 return False
             else:
-                self._log("DEBUG: LOGIN SUCCESS confirmed via V4.1 Modal Trigger.")
+                self._log("DEBUG: LOGIN SUCCESS confirmed.")
                 return True
 
         except Exception as e:

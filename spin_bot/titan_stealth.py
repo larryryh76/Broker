@@ -249,9 +249,10 @@ class TitanStealthClient:
         """V5.34: Non-blocking Overlay Clearance Protocol."""
         self._log("DEBUG: Checking for Regional Splash & Overlays...")
 
-        # V5.34: Handle initial load screen if present (from artifact)
+        # V5.34: Handle initial load screen if present
         try:
-            loader = self.page.locator(".app-init-loader-wrap:visible, .m-loader:visible").first
+            loader_selectors = [".app-init-loader-wrap", ".m-loader", ".loading-wrap", ".m-loading-mask"]
+            loader = self.page.locator(", ".join(loader_selectors)).filter(has=self.page.locator(":visible")).first
             if await loader.count() > 0:
                 self._log("DEBUG: Initial loader detected. Waiting for hydration...")
                 await loader.wait_for(state="hidden", timeout=15000)
@@ -259,31 +260,40 @@ class TitanStealthClient:
 
         try:
             # Look for common WAP close buttons or Regional selectors
-            # Fixed V5.34: Use :has-text instead of text= to avoid CSS parsing errors in comma lists
-            overlay_selectors = [".m-icon-close:visible", ".dialog-close:visible", ":has-text('Nigeria')", ":has-text('Confirm')", ".sg-confirm-cancel-modal-v2 button:visible"]
-            overlay = self.page.locator(", ".join(overlay_selectors)).first
+            overlay_selectors = [
+                ".m-icon-close", ".dialog-close", ".m-modal-close", ".close-icon", ".close-btn",
+                ":has-text('Nigeria')", ":has-text('Confirm')", ":has-text('OK')",
+                ".sg-confirm-cancel-modal-v2 button"
+            ]
 
-            # Use wait_for to handle the timeout gracefully
-            try:
-                await overlay.wait_for(state="visible", timeout=3000)
-                await overlay.click(force=True)
-                self._log("DEBUG: Regional Splash / Overlay safely dismissed.")
+            # Iterate and click all visible overlays
+            found_any = False
+            for selector in overlay_selectors:
+                try:
+                    elements = self.page.locator(selector).filter(has=self.page.locator(":visible"))
+                    count = await elements.count()
+                    for i in range(count):
+                        await elements.nth(i).click(force=True)
+                        self._log(f"DEBUG: Dismissed overlay element: {selector}")
+                        found_any = True
+                except: continue
+
+            if not found_any:
+                self._log("DEBUG: No common overlays detected.")
+            else:
                 await asyncio.sleep(1)
-            except:
-                self._log("DEBUG: No overlay detected.")
         except Exception as e:
-            self._log(f"DEBUG: Overlay check bypassed (none found or unclickable). Moving on.")
+            self._log(f"DEBUG: Overlay check bypassed: {e}")
 
         # Dismiss background focus
         try: await self.page.mouse.click(0, 0)
         except: pass
 
-    async def verify_auth_and_secure_artifacts(self):
+    async def verify_auth_and_secure_artifacts(self, fatal: bool = True):
         """V5.34: Verify session state & rescue artifacts on failure."""
         self._log("DEBUG: Verifying session state...")
         try:
             # Check for elements that PROVE we are logged in
-            # Fixed V5.34: Use :has-text instead of text= to avoid CSS parsing errors in comma lists
             indicators = [".icon-profile:visible", ".m-balance:visible", ":has-text('Deposit')", "a[href*='/deposit']:visible"]
             logged_in_indicator = self.page.locator(", ".join(indicators)).first
 
@@ -297,6 +307,10 @@ class TitanStealthClient:
             return True
 
         except Exception as e:
+            if not fatal:
+                self._log(f"WARNING: Session verification failed: {e}. Fallback possible.")
+                return False
+
             self._log(f"CRITICAL: Titan Auth failed ({e}). Session invalid or rejected.")
 
             # 3. MANDATORY ARTIFACT RESCUE
@@ -323,8 +337,16 @@ class TitanStealthClient:
         except: pass
 
     async def hide_init_loader(self):
+        """V5.21: Immediately hide the loader when state is 'Ready'."""
+        self._log("DEBUG: Force hiding initial loader (Ready state reached).")
         try:
-            await self.page.evaluate("document.querySelector('.app-init-loader-wrap').style.display = 'none'")
+            await self.page.evaluate("""
+                const selectors = ['.app-init-loader-wrap', '.m-loader', '.loading-wrap', '.m-loading-mask'];
+                selectors.forEach(sel => {
+                    const el = document.querySelector(sel);
+                    if (el) el.style.display = 'none';
+                });
+            """)
         except: pass
 
     async def modal_auth_system_v41(self) -> bool:
@@ -332,7 +354,6 @@ class TitanStealthClient:
         self._log("DEBUG: Executing V5.22 WAP Login Sequence...")
         try:
             # Step A: Navigate to Home
-            # V5.22: Navigate to Nigerian mobile root to minimize cross-region redirects
             await self.page.goto("https://www.football.com/ng/m/", wait_until="domcontentloaded")
 
             # Step B: Wait for forced WAP /livescore redirect to fully settle
@@ -342,19 +363,19 @@ class TitanStealthClient:
             # Step C: WAP OVERLAY CARPET BOMB - Open the mobile login drawer
             self._log("DEBUG: Triggering WAP Login overlay...")
             wap_triggers = [
-                "text='Log In'",
-                "text='Login'",
+                ":has-text('Log In')",
+                ":has-text('Login')",
                 ".m-btn-login",
                 ".icon-profile",
-                "text='Me'",
+                ":has-text('Me')",
                 "a[href*='/login']"
             ]
 
             drawer_opened = False
             for selector in wap_triggers:
                 try:
-                    trigger = self.page.locator(f"{selector}:visible").first
-                    if await trigger.is_visible(timeout=1500):
+                    trigger = self.page.locator(selector).filter(has=self.page.locator(":visible")).first
+                    if await trigger.is_visible():
                         await trigger.click(force=True)
                         self._log(f"DEBUG: WAP overlay opened via '{selector}'")
                         drawer_opened = True
@@ -386,7 +407,7 @@ class TitanStealthClient:
             self._log("DEBUG: Verifying login success...")
             await asyncio.sleep(10)
 
-            if await self.page.locator("text=/^(Log In|Login)$/i:visible").first.is_visible():
+            if await self.page.locator(":has-text('Login'), :has-text('Log In')").filter(has=self.page.locator(":visible")).first.is_visible():
                 self._log("CRITICAL: Login text still visible. Modal Auth FAILED.")
                 await self.capture_failure("v41_login_fail")
                 return False
@@ -434,17 +455,33 @@ class TitanStealthClient:
             await self.page.goto(self.home_url, wait_until="networkidle")
             await self.stabilize_environment()
 
-            # Check if session is valid (Login button missing or hidden)
+            # Check if session is valid
+            # If we see Logout or Profile or Deposit, we are logged in.
+            # If we see Login/Log In, we are NOT logged in.
             is_logged_in = False
             try:
-                login_btn = self.page.locator("text='Login', text='Log In'").first
-                if await login_btn.count() == 0 or not await login_btn.is_visible():
-                    is_logged_in = True
-            except: is_logged_in = True
+                login_indicators = [":has-text('Login')", ":has-text('Log In')"]
+                login_btn = self.page.locator(", ".join(login_indicators)).filter(has=self.page.locator(":visible")).first
+
+                # Wait briefly to see if login button appears
+                if await login_btn.count() > 0 and await login_btn.is_visible():
+                    self._log("DEBUG: Login button detected. Not logged in.")
+                    is_logged_in = False
+                else:
+                    # Check for positive indicators
+                    indicators = [".icon-profile:visible", ".m-balance:visible", ":has-text('Deposit')"]
+                    pos_indicator = self.page.locator(", ".join(indicators)).first
+                    if await pos_indicator.count() > 0:
+                        is_logged_in = True
+                        self._log("DEBUG: Positive auth indicators found.")
+            except: pass
 
             if is_logged_in:
                 self._log("DEBUG: Session valid via persistence.")
-                return await self.verify_auth_and_secure_artifacts()
+                # Pass fatal=False to allow fallback if verification fails
+                if await self.verify_auth_and_secure_artifacts(fatal=False):
+                    return True
+                self._log("DEBUG: Persistence verification failed. Proceeding to manual fallback.")
 
             # Step 3: Fallback to Manual Validated Login (Immortal Session expired)
             self._log("WARNING: Persistent session expired. Triggering Manual Re-Validation...")

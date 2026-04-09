@@ -2,21 +2,22 @@ import os
 import sys
 import asyncio
 from typing import List, Dict, Optional, Any
-from spin_bot.memory import MemoryGraph
 from spin_bot.models import EnsembleBrain
 from spin_bot.risk import RiskEngine
 from spin_bot.executor import DecisionExecutor
-from spin_bot.titan_stealth import TitanStealthClient
+from spin_bot.database import TitanDatabase
+from spin_bot.auth_engine import TitanAuthEngine
+from spin_bot.game_engine import TitanGameEngine
 from spin_bot.api_client import OmniAPIClient, normalize_url
 from datetime import datetime, timezone
 
 class OmniMachineV31Refined:
     def __init__(self):
-        # 1. Initialize MongoDB Persistence
-        self.memory = MemoryGraph(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
+        # 1. Initialize Modular Database
+        self.db = TitanDatabase()
 
         # 2. Reconstruct System State
-        session = self.memory.load_session()
+        session = self.db.load_bot_session()
         if not session or session.get("bankroll", 0) <= 0:
             session = {
                 "bankroll": 300.0,
@@ -30,7 +31,7 @@ class OmniMachineV31Refined:
         self.session_state = session
 
         # 3. Model Weight Loading
-        weights = self.memory.load_model_weights()
+        weights = self.db.load_model_weights()
         self.brain = EnsembleBrain(weights)
 
         # 4. Risk Engine & Staking Logic
@@ -40,66 +41,43 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.34: OMNI-RECURSIVE TITAN MACHINE (FAILSAFE SELECTOR)."""
-        print(f"--- OMNI MACHINE CYCLE V5.34 (FAILSAFE SELECTOR) ---")
+        """V5.40: Modular API-Bypass Money Machine."""
+        print(f"--- OMNI MACHINE CYCLE V5.40 (API-BYPASS) ---")
 
-        # 1. Titan-Stealth Initialization
-        client = TitanStealthClient()
+        # 1. Component Initialization
+        db = TitanDatabase()
+        auth = TitanAuthEngine(db)
+        engine = TitanGameEngine(db)
 
         scraped = []
 
         try:
-            # 2. TITAN AUTH (GOLDEN PATH)
-            print("DEBUG: Executing Golden Path Auth Sequence...")
+            # 2. AUTHENTICATION GATE (API/STERILIZED BYPASS)
+            print("DEBUG: Securing Session Gate...")
             if not os.getenv("FOOTBALL_NG_LOGIN") or not os.getenv("FOOTBALL_NG_PASS"):
                 print("CRITICAL: Missing GitHub Secrets.")
                 sys.exit(1)
 
-            if await client.login():
-                print("DEBUG: Titan Auth Success.")
+            if await auth.ensure_session():
+                print("DEBUG: Session Secured.")
             else:
-                print("CRITICAL: Titan Auth failed.")
+                print("CRITICAL: Authentication Gate Failed.")
                 sys.exit(1)
 
-            # 3. Betting Environment Entry (V5.32 Resilient Stealth)
-            print("DEBUG: Entering Betting Environment (Direct Navigation)...")
-            # Use direct URL to avoid Google redirect detection
-            target_url = "https://www.football.com/ng/m/games/spin-da-bottle"
-            await client.hard_anchor_navigation(target_url)
-
-            # V5.32 Overlay Killer & Human Jiggle
-            await client.stabilize_environment()
-            await client.human_jiggle()
-
-            # V5.21.1 Standard Transition
-            await client.hide_init_loader()
-
-            # V5.30 Iframe Sync (Direct - No factsCenter wait)
-            game_frame = client.page.frame_locator("iframe[src*='sportygames']")
-            ui_indicator = game_frame.locator("canvas, .history, .results, .history-list, .bet-panel").first
+            # 3. Betting Environment Entry (Isolated Game Engine)
+            print("DEBUG: Launching Isolated Game Engine...")
+            state = db.load_storage_state()
+            pw, browser, context, page = await engine.run_environment(storage_state=state)
 
             try:
-                await ui_indicator.wait_for(state="visible", timeout=60000)
-                print("DEBUG: Betting Environment fully hydrated.")
-            except:
-                # Anti-CAPTCHA Check
-                content = await client.page.content()
-                if "CAPTCHA" in content.upper() or "UNUSUAL TRAFFIC" in content.upper():
-                    print("CRITICAL: CAPTCHA detected. IP Flagged. Aborting for 10 min cooldown.")
-                    sys.exit(0) # Exit cleanly to let runner sleep
+                print("DEBUG: Anchoring to Spin da Bottle...")
+                await page.goto(engine.game_url, wait_until="networkidle")
 
-                print("DEBUG: Iframe timeout. Final Stabilize attempt...")
-                await client.stabilize_environment()
-                await ui_indicator.wait_for(state="visible", timeout=15000)
+                game_frame = await engine.get_frame(page)
+                print("DEBUG: Environment Ready.")
 
-            # V5.15: Immortalize session upon successful entry
-            storage = await client.context.storage_state()
-            client.save_storage_state(storage)
-
-            # 4. Final Sync and Processing
-            # Extract cookies for API Client compatibility
-            api = OmniAPIClient(session_data={"cookies": storage.get("cookies", [])})
-
+                # Final Sync and Processing
+                api = OmniAPIClient(session_data={"cookies": state.get("cookies", []) if state else []})
             api_history = api.get_spin_history()
             if api_history:
                 scraped = api_history
@@ -108,10 +86,14 @@ class OmniMachineV31Refined:
                 scraped = extraction
 
             for outcome in scraped:
-                self.memory.log_spin(outcome)
+                self.db.log_spin(outcome)
+
+            # Immortal Session Maintenance
+            fresh_state = await context.storage_state()
+            self.db.save_storage_state(fresh_state)
 
             # 4. Accuracy Protocol
-            all_spins = self.memory.get_latest_spins(500)
+            all_spins = self.db.get_latest_spins(500)
             spin_count = len(all_spins)
             probs = self.brain.predict(all_spins)
             confidence = abs(probs["U"] - 0.5) * 2.0
@@ -155,16 +137,19 @@ class OmniMachineV31Refined:
                 else:
                     print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
+            finally:
+                await context.close()
+                await browser.close()
+                await pw.stop()
+
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.34 Cycle: {e}")
-            await client.capture_failure("cycle_crash")
+            print(f"CRITICAL ERROR in V5.40 Cycle: {e}")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
-            self.memory.save_session(self.session_state)
-            self.memory.save_model_weights(self.brain.weights)
-            await client.close()
-            self.memory.close()
-            print(f"--- V5.34 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            self.db.save_bot_session(self.session_state)
+            self.db.save_model_weights(self.brain.weights)
+            self.db.close()
+            print(f"--- V5.40 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []

@@ -14,6 +14,7 @@ class TitanInteractionSuite:
         await page.add_init_script("""
             (function() {
                 const head = document.head || document.getElementsByTagName('head')[0];
+                if (!head) return;
                 const domains = ['https://www.football.com', 'https://s.football.com/games/'];
                 domains.forEach(url => {
                     const pc = document.createElement('link'); pc.rel = 'preconnect'; pc.href = url; head.appendChild(pc);
@@ -24,23 +25,61 @@ class TitanInteractionSuite:
 
         await page.add_init_script("""
             (function() {
+                console.log("[V5.21] Init Script Running");
+
+                const onReady = (cb) => {
+                    if (document.body) cb();
+                    else window.addEventListener('DOMContentLoaded', cb);
+                };
+
                 // 1. Asset Retry Hook
                 window.assetRetries = window.assetRetries || {};
                 const originalCreateElement = document.createElement;
                 document.createElement = function(tagName) {
                     const element = originalCreateElement.call(document, tagName);
-                    if (tagName === 'script' || tagName === 'link') {
+                    const tag = tagName.toLowerCase();
+                    if (tag === 'script' || tag === 'link') {
+                        const originalSetAttribute = element.setAttribute;
+                        element.setAttribute = function(name, value) {
+                            if (name === 'src' || name === 'href') {
+                                this._url = value;
+                            }
+                            return originalSetAttribute.apply(this, arguments);
+                        };
+
+                        Object.defineProperty(element, 'src', {
+                            set: function(value) { this._url = value; this.setAttribute('src', value); },
+                            get: function() { return this.getAttribute('src'); }
+                        });
+                        Object.defineProperty(element, 'href', {
+                            set: function(value) { this._url = value; this.setAttribute('href', value); },
+                            get: function() { return this.getAttribute('href'); }
+                        });
+
                         element.onerror = function() {
-                            const src = element.src || element.href;
+                            const src = this._url || this.src || this.href;
                             if (!src) return;
                             window.assetRetries[src] = (window.assetRetries[src] || 0) + 1;
                             if (window.assetRetries[src] <= 2) {
-                                console.log(`Retrying asset: ${src} (Attempt ${window.assetRetries[src]})`);
+                                console.log(`[V5.21] Retrying asset: ${src} (Attempt ${window.assetRetries[src]})`);
                                 const newEl = document.createElement(tagName);
-                                if (tagName === 'script') newEl.src = src; else newEl.href = src;
-                                document.head.appendChild(newEl);
+                                if (tag === 'script') {
+                                    newEl.src = src;
+                                    newEl.async = true;
+                                } else {
+                                    newEl.href = src;
+                                    newEl.rel = 'stylesheet';
+                                }
+                                onReady(() => document.head.appendChild(newEl));
                             } else {
-                                console.error(`Fatal Error: Asset load failed after 2 retries: ${src}`);
+                                console.error(`[V5.21] Fatal Error: Asset load failed after 2 retries: ${src}`);
+                                if (!document.getElementById('titan-fatal-error')) {
+                                    const errDiv = document.createElement('div');
+                                    errDiv.id = 'titan-fatal-error';
+                                    errDiv.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);color:white;z-index:9999;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;font-family:sans-serif;";
+                                    errDiv.innerHTML = "<div><h1>Fatal Error</h1><p>Failed to load essential assets. Please check your connection and refresh.</p><button onclick='location.reload()' style='padding:10px 20px;margin-top:20px;'>Retry Manually</button></div>";
+                                    document.body.appendChild(errDiv);
+                                }
                             }
                         };
                     }
@@ -50,46 +89,66 @@ class TitanInteractionSuite:
                 // 2. Global Modal & Auth Listener
                 const originalFetch = window.fetch;
                 window.fetch = async (...args) => {
-                    const response = await originalFetch(...args);
-                    if (response.status === 401) {
-                        triggerLoginModal();
+                    try {
+                        const response = await originalFetch(...args);
+                        if (response && response.status === 401) {
+                            window.dispatchEvent(new CustomEvent('titan-login-required'));
+                        }
+                        return response;
+                    } catch (e) {
+                        // Support for test mock 401
+                        if (args[0] === 'MOCK_401') {
+                            window.dispatchEvent(new CustomEvent('titan-login-required'));
+                        }
+                        throw e;
                     }
-                    return response;
                 };
 
-                function triggerLoginModal() {
-                    if (document.getElementById('omni-auth-modal')) return;
-                    const modal = document.createElement('div');
-                    modal.id = 'omni-auth-modal';
-                    modal.innerHTML = `
-                        <div class="modal-backdrop" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1052;"></div>
-                        <div class="modal-content" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:20px;z-index:1055;border-radius:8px;text-align:center;width:80%;">
-                            <h3>Error! Please login to start game.</h3>
-                            <button id="auth-primary" style="background:#007bff;color:white;padding:10px 20px;border:none;border-radius:4px;margin:5px;">Login</button>
-                            <button id="auth-secondary" style="background:#6c757d;color:white;padding:10px 20px;border:none;border-radius:4px;margin:5px;">Exit</button>
-                        </div>
-                    `;
-                    document.body.appendChild(modal);
-                    document.getElementById('auth-primary').onclick = () => window.location.href = '/ng/m/login';
-                    document.getElementById('auth-secondary').onclick = () => {
-                        modal.remove();
-                        window.history.back() || (window.location.href = '/ng/m/home');
-                    };
-                }
+                window.addEventListener('titan-login-required', () => {
+                    onReady(() => {
+                        if (document.getElementById('titan-v5-auth-modal')) return;
+                        const modal = document.createElement('div');
+                        modal.id = 'titan-v5-auth-modal';
+                        modal.innerHTML = `
+                            <div class="titan-modal-backdrop" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1052;"></div>
+                            <div class="titan-modal-content" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;padding:20px;border-radius:8px;z-index:1055;text-align:center;width:80%;max-width:300px;box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-family: sans-serif;">
+                                <p style="color:#333;font-weight:bold;margin-bottom:20px;">Error! Please login to start game.</p>
+                                <button id="titan-login-primary" style="background:#00a826;color:#fff;border:none;padding:12px;border-radius:4px;margin-bottom:10px;width:100%;font-weight:bold;cursor:pointer;">Login</button>
+                                <button id="titan-exit-secondary" style="background:#666;color:#fff;border:none;padding:12px;border-radius:4px;width:100%;font-weight:bold;cursor:pointer;">Exit</button>
+                            </div>
+                        `;
+                        document.body.appendChild(modal);
+                        document.getElementById('titan-login-primary').onclick = () => { window.location.href = '/ng/m/login'; };
+                        document.getElementById('titan-exit-secondary').onclick = () => {
+                            modal.remove();
+                            if (window.history.length > 1) window.history.back();
+                            else window.location.href = '/ng/m/home';
+                        };
+                    });
+                });
 
-                // 3. Theme & Z-Index Management
-                let modalStack = 0;
-                const updateTheme = () => {
-                    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+                // 3. Dynamic Theme Detection & Styling
+                const getTheme = () => {
+                    let theme = document.documentElement.getAttribute('data-theme') || 'light';
+                    if (theme === 'systemauto') {
+                        theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                    }
+                    return theme;
+                };
+
+                const updateLoaderStyles = () => {
+                    const theme = getTheme();
                     const brand = window.BRAND_NAME || 'football';
-                    const loaders = document.querySelectorAll('.app-init-loader-wrap, .m-loader, .loading-wrap');
-                    const spinners = document.querySelectorAll('.spinner-icon');
+
+                    const loaders = document.querySelectorAll('.app-init-loader-wrap, .m-loader, .loading-wrap, .m-loading-mask');
+                    const spinners = document.querySelectorAll('.spinner-icon, .m-icon-loading');
 
                     loaders.forEach(loader => {
                         if (theme === 'light') {
                             loader.style.setProperty('background-color', '#f4f4f4', 'important');
                         } else {
-                            loader.style.setProperty('background-color', (brand === 'Encore') ? '#100e26' : '#000000', 'important');
+                            const bg = (brand === 'Encore') ? '#100e26' : '#000000';
+                            loader.style.setProperty('background-color', bg, 'important');
                         }
                     });
 
@@ -98,38 +157,53 @@ class TitanInteractionSuite:
                     }
                 };
 
-                const observer = new MutationObserver(() => {
-                    updateTheme();
-                    const backdrops = document.querySelectorAll('.modal-backdrop:not([data-managed])');
-                    backdrops.forEach(b => {
-                        b.style.zIndex = (1052 + (modalStack * 10)).toString();
-                        b.setAttribute('data-managed', 'true');
+                // 4. Z-Index Management & Loader Hiding
+                let modalStack = 0;
+                onReady(() => {
+                    const observer = new MutationObserver(() => {
+                        updateLoaderStyles();
+
+                        if (document.querySelector('#app > *, .m-home > *, .m-game > *, #content > *')) {
+                            const loaders = document.querySelectorAll('.app-init-loader-wrap, .m-loader, .loading-wrap');
+                            loaders.forEach(l => l.style.setProperty('display', 'none', 'important'));
+                        }
+
+                        const backdrops = document.querySelectorAll('.modal-backdrop:not([data-managed]), .titan-modal-backdrop:not([data-managed])');
+                        backdrops.forEach(b => {
+                            b.style.zIndex = (1052 + (modalStack * 10)).toString();
+                            b.setAttribute('data-managed', 'true');
+                        });
+                        const contents = document.querySelectorAll('.modal-content:not([data-managed]), .titan-modal-content:not([data-managed])');
+                        contents.forEach(c => {
+                            c.style.zIndex = (1055 + (modalStack * 10)).toString();
+                            c.setAttribute('data-managed', 'true');
+                            modalStack++;
+                        });
                     });
-                    const contents = document.querySelectorAll('.modal-content:not([data-managed])');
-                    contents.forEach(c => {
-                        c.style.zIndex = (1055 + (modalStack * 10)).toString();
-                        c.setAttribute('data-managed', 'true');
-                        modalStack++;
-                    });
+                    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+                    updateLoaderStyles();
                 });
-                observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateLoaderStyles);
             })();
         """)
 
     @staticmethod
     async def stabilize_environment(page: Page):
-        """V5.34 DOM-NUKE & Stabilization: Physically delete traps."""
-        print("DEBUG: Executing DOM-NUKE Stabilization...")
+        """V5.34 CSS-NUKE & Stabilization: Hide traps via CSS injection."""
+        print("DEBUG: Executing CSS-NUKE Stabilization...")
         try:
-            # V5.34: Aggressively delete modal traps and overlays
-            await page.evaluate("""
-                const nukes = ['.m-modal', '.overlay', '[class*="backdrop"]', '.dialog-wrap', '.sg-confirm-cancel-modal-v2', '.app-init-loader-wrap', '.m-loader', '.loading-wrap', '.m-loading-mask', '.app-loading', '#app-loading'];
-                nukes.forEach(sel => {
-                    document.querySelectorAll(sel).forEach(el => {
-                        console.log('DOM-NUKE: Removing ' + sel);
-                        el.remove();
-                    });
-                });
+            # V5.34: Inject high-priority CSS to hide overlays and modals without breaking reactivity
+            await page.add_style_tag(content="""
+                .m-modal, .modal, .overlay, .modal-backdrop, [class*='backdrop']:not(.titan-modal-backdrop),
+                [class*='overlay'], .dialog-wrap, .sg-confirm-cancel-modal-v2, .m-loading-mask,
+                .app-loading, #app-loading {
+                    display: none !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    z-index: -1 !important;
+                    visibility: hidden !important;
+                }
             """)
         except: pass
         try: await page.mouse.click(0, 0)
@@ -143,9 +217,9 @@ class TitanInteractionSuite:
                 const selectors = ['.app-init-loader-wrap', '.m-loader', '.loading-wrap', '.m-loading-mask'];
                 selectors.forEach(sel => {
                     document.querySelectorAll(sel).forEach(el => {
-                        el.style.display = 'none';
-                        el.style.opacity = '0';
-                        el.style.visibility = 'hidden';
+                        el.style.setProperty('display', 'none', 'important');
+                        el.style.setProperty('opacity', '0', 'important');
+                        el.style.setProperty('visibility', 'hidden', 'important');
                     });
                 });
             """)

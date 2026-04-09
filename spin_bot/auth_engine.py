@@ -2,6 +2,7 @@ import os
 import asyncio
 import json
 import time
+import random
 from playwright.async_api import async_playwright, BrowserContext
 from spin_bot.database import TitanDatabase
 from spin_bot.interaction import TitanInteractionSuite
@@ -14,9 +15,8 @@ class TitanAuthEngine:
         self.password = os.getenv("FOOTBALL_NG_PASS")
 
     async def ensure_session(self) -> bool:
-        """Master Gate: Probes Game Page for Auth state, repairs if needed."""
+        """Master Gate: Probes Session state, repairs via CSS-Sterilized UI if needed."""
         state = self.db.load_storage_state()
-        game_url = "https://www.football.com/ng/m/games/spin-da-bottle"
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -29,35 +29,25 @@ class TitanAuthEngine:
             page = await context.new_page()
             await page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
 
-            # Step 1: Probe Game Page Directly (Bypass Homepage Redirects)
+            # Step 1: Fast Probe (Mobile Home)
             try:
-                print(f"DEBUG: Probing Game Page Auth state -> {game_url}")
-                await page.goto(game_url, wait_until="networkidle", timeout=30000)
+                print("DEBUG: Probing session validity...")
+                await page.goto("https://www.football.com/ng/m/home", wait_until="domcontentloaded", timeout=15000)
                 await TitanInteractionSuite.stabilize_environment(page)
 
                 # Check for positive indicators
                 indicators = [".icon-profile", ".m-balance", ":has-text('Deposit')", ":has-text('Logout')"]
                 for ind in indicators:
                     if await page.locator(ind).count() > 0:
-                        print("DEBUG: Immortal Session is valid on Game Page.")
+                        print("DEBUG: Immortal Session still valid.")
                         await browser.close()
                         return True
-            except Exception as e:
-                print(f"WARNING: Probe failed: {e}")
+            except: pass
 
-            print("WARNING: Session invalid. Engaging API-Level Bypass...")
+            print("WARNING: Session invalid. Engaging CSS-Sterilized UI Re-Auth...")
 
-            # Step 2: Attempt API-Level Authentication
-            success = await self._api_login(context)
-            if success:
-                state = await context.storage_state()
-                self.db.save_storage_state(state)
-                await browser.close()
-                return True
-
-            # Step 3: Fallback to Sterilized UI Login on Game Page
-            print("DEBUG: API Bypass failed. Engaging Sterilized Game-Page Login...")
-            success = await self._sterilized_game_login(page)
+            # Step 2: Dedicated CSS-Sterilized UI Login
+            success = await self._sterilized_ui_login(page)
             if success:
                 state = await context.storage_state()
                 self.db.save_storage_state(state)
@@ -67,67 +57,63 @@ class TitanAuthEngine:
             await browser.close()
             return False
 
-    async def _api_login(self, context: BrowserContext) -> bool:
-        """PHASE 2: API-Level Authentication Bypass."""
-        print("DEBUG: Executing API POST Login...")
-        try:
-            payload = {"username": self.phone, "password": self.password, "platform": "WAP"}
-            headers = {"Content-Type": "application/json", "Origin": "https://www.football.com"}
+    async def _sterilized_ui_login(self, page) -> bool:
+        """PHASE 3: Sterilized UI Login (CSS-Nuke + Dedicated Path)."""
+        login_url = "https://www.football.com/ng/m/login"
 
-            response = await context.request.post(
-                "https://www.football.com/api/ng/auth/login",
-                data=payload, headers=headers, timeout=15000
-            )
-
-            if response.status == 200:
-                print("DEBUG: API Login SUCCESS.")
-                return True
-            else:
-                print(f"DEBUG: API Login rejected ({response.status}).")
-        except Exception as e:
-            print(f"ERROR: API Auth failed: {e}")
-        return False
-
-    async def _sterilized_game_login(self, page) -> bool:
-        """PHASE 3: Sterilized UI Login (DOM-NUKE + Omni-Trigger)."""
-        game_url = "https://www.football.com/ng/m/games/spin-da-bottle"
-
-        # 1. Block Vue traps
-        await page.route("**/*.{png,jpg,jpeg,svg,gif,webp}", lambda r: r.abort())
-        await page.route("**/*modal*.js", lambda r: r.abort())
-        await page.route("**/*popup*.js", lambda r: r.abort())
+        # 1. Block HEAVY Assets but LET SCRIPTS RUN (for Vue hydration)
+        await page.route("**/*.{png,jpg,jpeg,svg,gif,webp,woff,woff2}", lambda r: r.abort())
 
         try:
-            print(f"DEBUG: Navigating to Sterilized Game Route -> {game_url}")
-            await page.goto(game_url, wait_until="networkidle")
+            print(f"DEBUG: Navigating to Standalone Login -> {login_url}")
+            await page.goto(login_url, wait_until="networkidle")
+
+            # 2. CSS-NUKE: Hide overlays without breaking reactivity
             await TitanInteractionSuite.stabilize_environment(page)
 
-            # 2. Omni-Trigger on Game Page
-            omni_sel = "button:has-text('Login'), a:has-text('Login'), .header-login, .m-btn-login, .icon-profile"
-            trigger = page.locator(omni_sel).filter(has=page.locator(":visible")).first
+            # 3. Dedicated Input Interaction
+            phone_sel = "input[type='tel']:visible, input[name='phone']:visible, input[placeholder*='Mobile']:visible, .m-input-phone input"
+            phone_input = page.locator(phone_sel).first
+            await phone_input.wait_for(state="visible", timeout=20000)
 
-            if await trigger.count() > 0:
-                print("DEBUG: Game-Page Login Trigger found. Clicking...")
-                await trigger.click(force=True)
-                await asyncio.sleep(2) # Wait for Vue animation
+            print("DEBUG: Filling Credentials...")
+            # Human-like delay
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await phone_input.click()
+            await phone_input.fill("") # Clear just in case
+            await phone_input.type(self.phone, delay=random.uniform(50, 150))
 
-                phone_input = page.locator("input[type='tel'], input[placeholder*='Mobile']").first
-                await phone_input.wait_for(state="visible", timeout=10000)
-                await phone_input.fill(self.phone)
+            pass_input = page.locator("input[type='password']:visible, .m-input-password input").first
+            await pass_input.click()
+            await pass_input.type(self.password, delay=random.uniform(50, 150))
 
-                pass_input = page.locator("input[type='password']").first
-                await pass_input.fill(self.password)
+            submit_sel = "button:has-text('Login'), button:has-text('Log In'), .m-login-btn, button[type='submit']"
+            submit_btn = page.locator(submit_sel).filter(visible=True).first
 
-                print("DEBUG: Submitting Sterilized Login...")
-                await pass_input.press("Enter")
-                await asyncio.sleep(8)
-
-                content = await page.content()
-                if any(x in content.lower() for x in ["logout", "deposit", "account"]):
-                    print("DEBUG: Sterilized Game Login SUCCESS.")
-                    return True
+            if await submit_btn.count() > 0:
+                print("DEBUG: Submitting Form via Button...")
+                await submit_btn.click(force=True)
             else:
-                print("CRITICAL: No Login trigger found on sterilized Game Page.")
+                print("DEBUG: Submit button not found, pressing Enter...")
+                await pass_input.press("Enter")
+
+            # Wait for navigation or specific success indicator
+            try:
+                await page.wait_for_selector(".icon-profile, .m-balance, :has-text('Logout')", timeout=15000)
+                print("DEBUG: Post-Login Success Indicator Found.")
+            except:
+                print("DEBUG: No immediate success indicator, waiting for settle...")
+                await asyncio.sleep(10)
+
+            # Verify success via state change
+            content = await page.content()
+            if any(x in content.lower() for x in ["logout", "deposit", "account", "balance", "profile"]):
+                print("DEBUG: CSS-Sterilized Login SUCCESS.")
+                return True
+            else:
+                os.makedirs("artifacts", exist_ok=True)
+                await page.screenshot(path="artifacts/sterilized_auth_fail.png")
+                print("CRITICAL: CSS-Sterilized Login FAILED.")
         except Exception as e:
             print(f"ERROR: Sterilized Game login crashed: {e}")
         return False

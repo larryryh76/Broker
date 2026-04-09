@@ -78,64 +78,64 @@ class OmniMachineV31Refined:
 
                 # Final Sync and Processing
                 api = OmniAPIClient(session_data={"cookies": state.get("cookies", []) if state else []})
-            api_history = api.get_spin_history()
-            if api_history:
-                scraped = api_history
-            else:
-                extraction = await self._capture_history_ui(game_frame)
-                scraped = extraction
-
-            for outcome in scraped:
-                self.db.log_spin(outcome)
-
-            # Immortal Session Maintenance
-            fresh_state = await context.storage_state()
-            self.db.save_storage_state(fresh_state)
-
-            # 4. Accuracy Protocol
-            all_spins = self.db.get_latest_spins(500)
-            spin_count = len(all_spins)
-            probs = self.brain.predict(all_spins)
-            confidence = abs(probs["U"] - 0.5) * 2.0
-
-            if spin_count < 200:
-                self.session_state["mode"] = "TUITION"
-                print(f"98% PROTOCOL: TUITION active. ({spin_count}/200 spins)")
-            else:
-                # V5.17 Markov Confidence Escalation check
-                from spin_bot.models import MarkovModel
-                mm = MarkovModel(all_spins).predict()
-                mm_conf = max(mm.values())
-
-                if mm_conf >= 0.60:
-                    self.session_state["mode"] = "SNIPER"
-                    print(f"98% PROTOCOL: SNIPER Active. (N={spin_count}, Conf: {mm_conf:.2f})")
+                api_history = api.get_spin_history()
+                if api_history:
+                    scraped = api_history
                 else:
+                    extraction = await self._capture_history_ui(game_frame)
+                    scraped = extraction
+
+                for outcome in scraped:
+                    self.db.log_spin(outcome)
+
+                # Immortal Session Maintenance
+                fresh_state = await context.storage_state()
+                self.db.save_storage_state(fresh_state)
+
+                # 4. Accuracy Protocol
+                all_spins = self.db.get_latest_spins(500)
+                spin_count = len(all_spins)
+                probs = self.brain.predict(all_spins)
+                confidence = abs(probs["U"] - 0.5) * 2.0
+
+                if spin_count < 200:
                     self.session_state["mode"] = "TUITION"
-                    print(f"98% PROTOCOL: TUITION (LEARNING) active due to low confidence ({mm_conf:.2f}).")
-
-            # 5. EXECUTION
-            if self.session_state["mode"] == "SNIPER":
-                decision = self.executor.decide(all_spins)
-                if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.7:
-                    print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']}")
-
-                    bet_success = await self._place_frame_bet(game_frame, decision["direction"], decision["amount"])
-
-                    if bet_success:
-                        await asyncio.sleep(15)
-                        outcomes = api.get_spin_history()
-                        if outcomes:
-                            actual = outcomes[-1]
-                            win = (actual == decision["direction"])
-                            if actual == "M": win = False
-                            print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
-                            self.brain.update_weights(all_spins, actual)
-                            payout = decision["amount"] * 1.95 if win else 0
-                            self.risk.bankroll += (payout - decision["amount"])
-                            self.risk.update_result(win)
+                    print(f"98% PROTOCOL: TUITION active. ({spin_count}/200 spins)")
                 else:
-                    print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
+                    # V5.17 Markov Confidence Escalation check
+                    from spin_bot.models import MarkovModel
+                    mm = MarkovModel(all_spins).predict()
+                    mm_conf = max(mm.values())
+
+                    if mm_conf >= 0.60:
+                        self.session_state["mode"] = "SNIPER"
+                        print(f"98% PROTOCOL: SNIPER Active. (N={spin_count}, Conf: {mm_conf:.2f})")
+                    else:
+                        self.session_state["mode"] = "TUITION"
+                        print(f"98% PROTOCOL: TUITION (LEARNING) active due to low confidence ({mm_conf:.2f}).")
+
+                # 5. EXECUTION
+                if self.session_state["mode"] == "SNIPER":
+                    decision = self.executor.decide(all_spins)
+                    if decision["action"] == "BET" and decision["ev"] > 0.05 and confidence > 0.7:
+                        print(f"ELITE BET: ₦{decision['amount']} on {decision['direction']}")
+
+                        bet_success = await self._place_frame_bet(game_frame, decision["direction"], decision["amount"])
+
+                        if bet_success:
+                            await asyncio.sleep(15)
+                            outcomes = api.get_spin_history()
+                            if outcomes:
+                                actual = outcomes[-1]
+                                win = (actual == decision["direction"])
+                                if actual == "M": win = False
+                                print(f"RESULT: {'WIN' if win else 'LOSS'} (Outcome: {actual})")
+                                self.brain.update_weights(all_spins, actual)
+                                payout = decision["amount"] * 1.95 if win else 0
+                                self.risk.bankroll += (payout - decision["amount"])
+                                self.risk.update_result(win)
+                    else:
+                        print(f"SKIP: No 98% edge. [EV: {decision.get('ev', 0):.2f} | Conf: {confidence:.2f}]")
 
             finally:
                 await context.close()

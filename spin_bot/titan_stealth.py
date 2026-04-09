@@ -247,12 +247,25 @@ class TitanStealthClient:
                 break
 
     async def stabilize_environment(self, max_attempts: int = 3):
-        """V5.34: Non-blocking Overlay Clearance Protocol."""
+        """V5.34: Non-blocking Overlay Clearance Protocol (DOM-NUKE)."""
         self._log("DEBUG: Checking for Regional Splash & Overlays...")
         # V5.34: Initial settlement wait for Vue/Nuxt hydration
         await asyncio.sleep(2)
 
-        # V5.34: Handle initial load screen if present
+        # 1. DOM-NUKE: Physically remove blocking elements via JS
+        try:
+            await self.page.evaluate("""
+                const selectors = ['.m-modal', '.overlay', '[class*="backdrop"]', '.dialog-wrap', '.sg-confirm-cancel-modal-v2'];
+                selectors.forEach(sel => {
+                    document.querySelectorAll(sel).forEach(el => {
+                        console.log('Nuking element: ' + sel);
+                        el.remove();
+                    });
+                });
+            """)
+        except: pass
+
+        # 2. Handle initial load screen if present
         try:
             loader_selectors = [
                 ".app-init-loader-wrap", ".m-loader", ".loading-wrap", ".m-loading-mask",
@@ -386,54 +399,42 @@ class TitanStealthClient:
         except: pass
 
     async def modal_auth_system_v41(self) -> bool:
-        """V4.1: Omni-Trigger Login Protocol."""
-        self._log("DEBUG: Executing V4.1 Modal-Auth Sequence (Omni-Trigger)...")
+        """V4.1: Game-Route Bypass Protocol."""
+        self._log("DEBUG: Executing V4.1 Modal-Auth (Game-Route Bypass)...")
         try:
-            # Step A: Navigate to Home
-            target = "https://www.football.com/ng/m/home"
-            self._log(f"DEBUG: Navigating to {target}...")
+            # Step A: Navigate DIRECTLY to the game (Bypass /livescore router)
+            target = "https://www.football.com/ng/m/games/spin-da-bottle"
+            self._log(f"DEBUG: Navigating directly to {target}...")
             await self.page.goto(target, wait_until="networkidle")
 
-            # Step B: Wait for forced WAP /livescore redirect to fully settle
+            # Step B: Settlement & DOM-NUKE
             await self.stabilize_environment()
             self._log(f"DEBUG: Settled on URL: {self.page.url}")
 
-            # Step C: Omni-Trigger Login Modal
-            self._log("DEBUG: Triggering Login Modal (Omni-Trigger)...")
+            # Step C: Game-Page Omni-Trigger
+            self._log("DEBUG: Triggering Login from Game Page...")
 
-            # V4.1 Omni-Selector
-            omni_sel = "button:has-text('Login'), a:has-text('Login'), div:has-text('Log In'), .login-btn, .m-login, .header-login, .m-btn-login, .icon-profile, .m-icon-search, .icon-search"
+            # V4.1 Omni-Selector (Prioritized for Game Page Header)
+            omni_sel = "button:has-text('Login'), a:has-text('Login'), .header-login, .m-btn-login, .icon-profile"
             login_trigger = self.page.locator(omni_sel).filter(has=self.page.locator(":visible")).first
 
             drawer_opened = False
             if await login_trigger.count() > 0:
-                self._log(f"DEBUG: Omni-Trigger found. Clicking...")
+                self._log(f"DEBUG: Game-Page Trigger found. Clicking...")
                 await login_trigger.click(force=True)
-                # CRITICAL: Wait 2 seconds for Vue.js modal/drawer animation
+                # CRITICAL: Wait 2 seconds for Vue.js modal animation
                 await asyncio.sleep(2)
 
-                # Check for sub-triggers in drawer if form not visible
+                # Verify if form is visible
                 phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
-                if await self.page.locator(phone_sel).count() == 0:
-                    sub_selectors = ["text='Login'", "text='Log In'", ".m-btn-login", "a[href*='/login']"]
-                    for sub in sub_selectors:
-                        try:
-                            btn = self.page.locator(sub).filter(has=self.page.locator(":visible")).first
-                            if await btn.count() > 0:
-                                await btn.click(force=True)
-                                await asyncio.sleep(2)
-                                break
-                        except: continue
-
                 if await self.page.locator(phone_sel).count() > 0:
                     self._log("DEBUG: Login modal visible.")
                     drawer_opened = True
 
-            # Fallback: Absolute Login Path Override
+            # Fallback: Tiered Absolute Path Override
             if not drawer_opened:
-                self._log("WARNING: Omni-Trigger failed. Forcing Absolute Login Path Override...")
-                # Try multiple variations of the login subpath
-                login_paths = ["https://www.football.com/ng/login", "https://www.football.com/ng/m/login"]
+                self._log("WARNING: Game-Page Trigger failed. Forcing Absolute Login paths...")
+                login_paths = ["https://www.football.com/ng/m/login", "https://www.football.com/ng/login"]
                 for path in login_paths:
                     try:
                         await self.page.goto(path, wait_until="networkidle")
@@ -445,8 +446,8 @@ class TitanStealthClient:
                     except: continue
 
             if not drawer_opened:
-                 self._log("DEBUG: Still trapped. Attempting JS Location Override...")
-                 await self.page.evaluate("window.location.href = '/ng/login'")
+                 self._log("DEBUG: Redirection loop detected. Breaking via JS Override...")
+                 await self.page.evaluate("window.location.href = '/ng/m/login'")
                  await asyncio.sleep(3)
                  await self.stabilize_environment()
 

@@ -39,25 +39,8 @@ class TitanInteractionSuite:
                     const element = originalCreateElement.call(document, tagName);
                     const tag = tagName.toLowerCase();
                     if (tag === 'script' || tag === 'link') {
-                        const originalSetAttribute = element.setAttribute;
-                        element.setAttribute = function(name, value) {
-                            if (name === 'src' || name === 'href') {
-                                this._url = value;
-                            }
-                            return originalSetAttribute.apply(this, arguments);
-                        };
-
-                        Object.defineProperty(element, 'src', {
-                            set: function(value) { this._url = value; this.setAttribute('src', value); },
-                            get: function() { return this.getAttribute('src'); }
-                        });
-                        Object.defineProperty(element, 'href', {
-                            set: function(value) { this._url = value; this.setAttribute('href', value); },
-                            get: function() { return this.getAttribute('href'); }
-                        });
-
                         element.onerror = function() {
-                            const src = this._url || this.src || this.href;
+                            const src = element.src || element.href;
                             if (!src) return;
                             window.assetRetries[src] = (window.assetRetries[src] || 0) + 1;
                             if (window.assetRetries[src] <= 2) {

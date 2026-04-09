@@ -85,8 +85,10 @@ class OmniMachineV31Refined:
                     extraction = await self._capture_history_ui(game_frame)
                     scraped = extraction
 
-                for outcome in scraped:
-                    self.db.log_spin(outcome)
+                # V5.41: Pass context to log_spin to enable deduplication hashing
+                for i, outcome in enumerate(scraped):
+                    context = scraped[:i]
+                    self.db.log_spin(outcome, history_context=context)
 
                 # Immortal Session Maintenance
                 fresh_state = await context.storage_state()

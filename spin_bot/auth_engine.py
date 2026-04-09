@@ -3,7 +3,7 @@ import asyncio
 import json
 import time
 import random
-from playwright.async_api import async_playwright, BrowserContext, Page
+from playwright.async_api import async_playwright, BrowserContext, Page, Route
 from spin_bot.database import TitanDatabase
 from spin_bot.interaction import TitanInteractionSuite
 from typing import Optional, Dict, Any
@@ -15,7 +15,7 @@ class TitanAuthEngine:
         self.password = os.getenv("FOOTBALL_NG_PASS")
 
     async def ensure_session(self) -> bool:
-        """Master Gate: Probes Session state, repairs via Judo UI strategy if needed."""
+        """Master Gate: Probes Session state, repairs via Police Blockade strategy if needed."""
         state = self.db.load_storage_state()
 
         async with async_playwright() as p:
@@ -52,10 +52,10 @@ class TitanAuthEngine:
                         return True
             except: pass
 
-            print("WARNING: Session invalid. Engaging Judo UI Re-Auth...")
+            print("WARNING: Session invalid. Engaging Police Blockade Re-Auth...")
 
-            # Step 2: Judo UI Login Sequence
-            success = await self._judo_ui_login(page, context)
+            # Step 2: Police Blockade UI Login Sequence
+            success = await self._blockade_ui_login(page, context)
             if success:
                 state = await context.storage_state()
                 self.db.save_storage_state(state)
@@ -65,74 +65,83 @@ class TitanAuthEngine:
             await browser.close()
             return False
 
-    async def _judo_ui_login(self, page: Page, context: BrowserContext) -> bool:
-        """PHASE 3: THE JUDO LOGIN SEQUENCE (Router-Aware + Universal Trigger)."""
+    async def _blockade_ui_login(self, page: Page, context: BrowserContext) -> bool:
+        """PHASE 3: THE POLICE BLOCKADE (Route Lockdown + JS Injection)."""
         try:
-            # 1. Navigate to base URL and let Vue router settle
-            print("DEBUG: Navigating to base mobile URL...")
-            await page.goto("https://www.football.com/ng/m/", wait_until="domcontentloaded")
-            await asyncio.sleep(4) # Let the redirect to /livescore or /home finish
-            print(f"DEBUG: Router settled on URL -> {page.url}")
+            # 1. Block the redirect trap (livescore redirect)
+            async def intercept_route(route: Route):
+                if "livescore" in route.request.url:
+                    print(f"DEBUG: Blocked malicious redirect to: {route.request.url}")
+                    await route.abort()
+                else:
+                    await route.continue_()
 
-            # 2. CSS-Nuke to disable blocking overlays invisibly
+            await page.route("**/*", intercept_route)
+
+            # 2. Force-load the login page
+            print("DEBUG: Force-loading Login Page...")
+            try:
+                await page.goto("https://www.football.com/ng/m/login", wait_until="commit", timeout=30000)
+            except Exception as e:
+                print(f"DEBUG: Navigation interrupted or slow ({e}), proceeding to injection...")
+
+            # 3. CSS-Nuke to clear the path
             await page.add_style_tag(content="""
                 .m-modal, .modal, .overlay, .modal-backdrop, [class*='backdrop'] {
                     display: none !important; pointer-events: none !important; z-index: -1 !important;
                 }
             """)
 
-            # 3. Universal Trigger: Find the Profile Icon or Login Button
-            print("DEBUG: Executing Universal Login Trigger...")
-            login_trigger = page.locator(".icon-profile:visible, .m-icon-profile:visible, button:has-text('Log In'):visible, button:has-text('Login'):visible, .header-login:visible").first
+            # 4. The "Last Resort" JavaScript Login
+            print("DEBUG: Executing JS-Injected Login...")
+            await page.evaluate(f"""
+                (creds) => {{
+                    const phoneInput = document.querySelector("input[type='tel'], input[name='phone'], .m-input-phone input");
+                    const passInput = document.querySelector("input[type='password'], .m-input-password input");
 
-            if await login_trigger.is_visible():
-                print("DEBUG: Clicking Login Trigger...")
-                await login_trigger.click(force=True)
-                await asyncio.sleep(2) # Wait for login modal animation
-            else:
-                print("WARNING: Universal trigger not found. Forcing JS modal trigger...")
-                # Fallback: Many Vue apps expose the login path via JS router
-                await page.evaluate("window.location.href = '/ng/m/login'")
-                await asyncio.sleep(4)
-                await page.wait_for_load_state("networkidle")
+                    if (phoneInput && passInput) {{
+                        phoneInput.value = creds.phone;
+                        phoneInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        phoneInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
 
-            # 4. Fill Credentials dynamically
-            print("DEBUG: Filling login credentials...")
-            phone_input = page.locator("input[type='tel']:visible, input[name='phone']:visible, .m-input-phone input:visible").first
-            await phone_input.wait_for(state="visible", timeout=15000)
+                        passInput.value = creds.pass;
+                        passInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        passInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
 
-            # Human-like typing
-            await phone_input.click()
-            await phone_input.fill("")
-            await phone_input.type(self.phone, delay=random.uniform(50, 150))
+                        setTimeout(() => {{
+                            const submitBtn = document.querySelector("button[type='submit'], .m-login-btn, button:has-text('Login'), button:has-text('Log In')");
+                            if (submitBtn) submitBtn.click();
+                            else {{
+                                // Fallback: press Enter on password field
+                                const event = new KeyboardEvent('keydown', {{
+                                    key: 'Enter', code: 'Enter', which: 13, keyCode: 13, bubbles: true
+                                }});
+                                passInput.dispatchEvent(event);
+                            }}
+                        }}, 1000);
+                    }}
+                }}
+            """, {"phone": self.phone, "pass": self.password})
 
-            pass_input = page.locator("input[type='password']:visible, .m-input-password input:visible").first
-            await pass_input.click()
-            await pass_input.type(self.password, delay=random.uniform(50, 150))
+            # 5. Wait for Authentication Confirmation (Cookies or Indicators)
+            print("DEBUG: Waiting for auth settle...")
+            await asyncio.sleep(10)
 
-            # 5. Submit and Wait
-            print("DEBUG: Submitting Login...")
-            submit_btn = page.locator("button:has-text('Log In'):visible, button:has-text('Login'):visible, .m-login-btn:visible, button[type='submit']:visible").last
-            await submit_btn.click(force=True)
+            final_cookies = await context.cookies()
+            auth_cookie_names = ["token", "sid", "auth", "session", "user_id"]
+            has_auth_cookie = any(c['name'].lower() in auth_cookie_names for c in final_cookies)
 
-            # Wait for server authentication response and navigation
-            try:
-                await page.wait_for_selector(".icon-profile, .m-balance, :has-text('Logout')", timeout=15000)
-                print("DEBUG: Post-Login Success Indicator Found.")
-            except:
-                print("DEBUG: No immediate success indicator, waiting for settle...")
-                await asyncio.sleep(10)
-
-            # 6. Verify success via state change
             content = await page.content()
-            if any(x in content.lower() for x in ["logout", "deposit", "account", "balance", "profile"]):
-                print("DEBUG: Judo Login SUCCESS.")
+            has_indicator = any(x in content.lower() for x in ["logout", "deposit", "account", "balance", "profile"])
+
+            if has_auth_cookie or has_indicator:
+                print(f"SUCCESS: Immortal Session captured. (Cookie: {has_auth_cookie}, Indicator: {has_indicator})")
                 return True
             else:
                 os.makedirs("artifacts", exist_ok=True)
-                await page.screenshot(path="artifacts/judo_auth_fail.png")
-                print("CRITICAL: Judo Login FAILED.")
+                await page.screenshot(path="artifacts/blockade_auth_fail.png")
+                print("CRITICAL: Police Blockade Login FAILED.")
 
         except Exception as e:
-            print(f"ERROR: Judo Login crashed: {e}")
+            print(f"ERROR: Police Blockade Login crashed: {e}")
         return False

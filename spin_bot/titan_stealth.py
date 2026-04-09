@@ -386,8 +386,8 @@ class TitanStealthClient:
         except: pass
 
     async def modal_auth_system_v41(self) -> bool:
-        """V4.1: Known working WAP Auth Sequence."""
-        self._log("DEBUG: Executing V4.1 Modal-Auth Sequence...")
+        """V4.1: Omni-Trigger Login Protocol."""
+        self._log("DEBUG: Executing V4.1 Modal-Auth Sequence (Omni-Trigger)...")
         try:
             # Step A: Navigate to Home
             target = "https://www.football.com/ng/m/home"
@@ -398,79 +398,57 @@ class TitanStealthClient:
             await self.stabilize_environment()
             self._log(f"DEBUG: Settled on URL: {self.page.url}")
 
-            # Step C: Trigger Login Modal
-            self._log("DEBUG: Triggering Login Modal...")
+            # Step C: Omni-Trigger Login Modal
+            self._log("DEBUG: Triggering Login Modal (Omni-Trigger)...")
 
-            # V4.1: Specialized JS Trigger for Livescore View
-            await self.page.evaluate("""
-                (function() {
-                    const search = document.querySelector('.m-icon-search') || document.querySelector('.icon-search');
-                    if (search) search.click();
-
-                    const profile = document.querySelector('.icon-profile') || document.querySelector('.m-btn-login');
-                    if (profile) profile.click();
-                })();
-            """)
-            await asyncio.sleep(2)
-
-            # Targeted triggers based on V4.1 logs
-            triggers = [
-                ".m-icon-search", ".icon-profile", ".m-btn-login",
-                "text='Login'", "text='Log In'", "a:has-text('Me')",
-                "a[href*='/login']", ".icon-user", ".icon-account"
-            ]
+            # V4.1 Omni-Selector
+            omni_sel = "button:has-text('Login'), a:has-text('Login'), div:has-text('Log In'), .login-btn, .m-login, .header-login, .m-btn-login, .icon-profile, .m-icon-search, .icon-search"
+            login_trigger = self.page.locator(omni_sel).filter(has=self.page.locator(":visible")).first
 
             drawer_opened = False
-            for selector in triggers:
-                try:
-                    # Use a more flexible locator for text
-                    if "text=" in selector:
-                        trigger = self.page.get_by_text(selector.replace("text=", "").strip("'"), exact=False).first
-                    else:
-                        trigger = self.page.locator(selector).first
+            if await login_trigger.count() > 0:
+                self._log(f"DEBUG: Omni-Trigger found. Clicking...")
+                await login_trigger.click(force=True)
+                # CRITICAL: Wait 2 seconds for Vue.js modal/drawer animation
+                await asyncio.sleep(2)
 
-                    if await trigger.count() > 0 and await trigger.is_visible():
-                        self._log(f"DEBUG: Attempting click on trigger: {selector}")
-                        await trigger.click(force=True)
-                        await asyncio.sleep(3)
+                # Check for sub-triggers in drawer if form not visible
+                phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
+                if await self.page.locator(phone_sel).count() == 0:
+                    sub_selectors = ["text='Login'", "text='Log In'", ".m-btn-login", "a[href*='/login']"]
+                    for sub in sub_selectors:
+                        try:
+                            btn = self.page.locator(sub).filter(has=self.page.locator(":visible")).first
+                            if await btn.count() > 0:
+                                await btn.click(force=True)
+                                await asyncio.sleep(2)
+                                break
+                        except: continue
 
-                        # Look for Login/Log In in the newly opened drawer/modal
-                        sub_selectors = [
-                            "text='Login'", "text='Log In'", ".m-btn-login",
-                            "a[href*='/login']", "button:has-text('Login')"
-                        ]
-                        for sub in sub_selectors:
-                            try:
-                                if "text=" in sub:
-                                    btn = self.page.get_by_text(sub.replace("text=", "").strip("'"), exact=False).filter(has=self.page.locator(":visible")).first
-                                else:
-                                    btn = self.page.locator(sub).filter(has=self.page.locator(":visible")).first
+                if await self.page.locator(phone_sel).count() > 0:
+                    self._log("DEBUG: Login modal visible.")
+                    drawer_opened = True
 
-                                if await btn.count() > 0:
-                                    self._log(f"DEBUG: Clicking sub-trigger: {sub}")
-                                    await btn.click(force=True)
-                                    await asyncio.sleep(2)
-                                    break
-                            except: continue
-
-                        # Verify if form is visible
-                        phone_sel = "input[type='tel']:visible, input[placeholder*='Mobile']:visible, input[name='phone']:visible"
-                        if await self.page.locator(phone_sel).count() > 0:
-                            self._log("DEBUG: Login modal visible.")
+            # Fallback: Absolute Login Path Override
+            if not drawer_opened:
+                self._log("WARNING: Omni-Trigger failed. Forcing Absolute Login Path Override...")
+                # Try multiple variations of the login subpath
+                login_paths = ["https://www.football.com/ng/login", "https://www.football.com/ng/m/login"]
+                for path in login_paths:
+                    try:
+                        await self.page.goto(path, wait_until="networkidle")
+                        await asyncio.sleep(2)
+                        await self.stabilize_environment()
+                        if await self.page.locator("input[type='tel']:visible").count() > 0:
                             drawer_opened = True
                             break
-                except: continue
+                    except: continue
 
-            # Fallback: Absolute Login Navigation with Redirection Break
             if not drawer_opened:
-                self._log("WARNING: Trigger failed. Forcing Absolute Login Path...")
-                await self.page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
-                await asyncio.sleep(3)
-                if "livescore" in self.page.url:
-                    self._log("DEBUG: Still trapped in Livescore. Attempting JS Injection for Login Form...")
-                    await self.page.evaluate("window.location.href = '/ng/m/login'")
-                    await asyncio.sleep(3)
-                await self.stabilize_environment()
+                 self._log("DEBUG: Still trapped. Attempting JS Location Override...")
+                 await self.page.evaluate("window.location.href = '/ng/login'")
+                 await asyncio.sleep(3)
+                 await self.stabilize_environment()
 
             # Step D: Wait for Credentials form
             self._log("DEBUG: Waiting for the login form to render...")

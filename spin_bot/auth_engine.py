@@ -91,6 +91,10 @@ class TitanAuthEngine:
             print("DEBUG: Force-loading Login Page...")
             try:
                 await page.goto("https://www.football.com/ng/m/login", wait_until="commit", timeout=30000)
+                # Wait for Vue hydration
+                print("DEBUG: Waiting for Vue hydration...")
+                await page.wait_for_load_state("networkidle", timeout=15000)
+                await asyncio.sleep(3)
             except Exception as e:
                 print(f"DEBUG: Navigation interrupted or slow ({e}), proceeding to injection...")
 
@@ -101,8 +105,8 @@ class TitanAuthEngine:
                 }
             """)
 
-            # 4. Nuclear JS-Injected Login (Deep Injection)
-            print("DEBUG: Executing Nuclear Deep-Injected Login...")
+            # 4. Nuclear JS-Injected Login (Deep Injection V2)
+            print("DEBUG: Executing Nuclear Deep-Injected Login (V2)...")
             await page.evaluate(f"""
                 async (creds) => {{
                     const findAndFill = (selector, val) => {{
@@ -111,25 +115,40 @@ class TitanAuthEngine:
                             el.value = val;
                             el.dispatchEvent(new Event('input', {{ bubbles: true }}));
                             el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            return true;
                         }}
+                        return false;
                     }};
 
+                    // Fill Phone & Password
                     findAndFill("input[type='tel'], input[name='phone'], .m-input-phone input", creds.phone);
-                    await new Promise(r => setTimeout(r, 500));
+                    await new Promise(r => setTimeout(r, 600));
                     findAndFill("input[type='password'], .m-input-password input", creds.pass);
 
                     await new Promise(r => setTimeout(r, 1000));
-                    const loginBtn = document.querySelector("button[type='submit'], .m-login-btn, button:has-text('Login'), button:has-text('Log In'), .btn-primary");
+
+                    // Find Login Button by scanning all buttons for text match (Pure CSS + Loop)
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const loginBtn = buttons.find(b =>
+                        b.innerText.includes('Login') ||
+                        b.innerText.includes('Log In') ||
+                        b.classList.contains('m-btn-login') ||
+                        b.classList.contains('btn-primary') ||
+                        b.type === 'submit'
+                    );
+
                     if (loginBtn) {{
+                        console.log("DEBUG: Login button located, clicking...");
                         loginBtn.click();
                     }} else {{
-                         // Fallback: Dispatch Enter on password field
-                         const passInput = document.querySelector("input[type='password'], .m-input-password input");
-                         if (passInput) {{
-                             passInput.dispatchEvent(new KeyboardEvent('keydown', {{
+                        console.error("DEBUG: Could not find login button via JS");
+                        // Fallback: Dispatch Enter on password field
+                        const passInput = document.querySelector("input[type='password'], .m-input-password input");
+                        if (passInput) {{
+                            passInput.dispatchEvent(new KeyboardEvent('keydown', {{
                                 key: 'Enter', code: 'Enter', which: 13, keyCode: 13, bubbles: true
-                             }}));
-                         }}
+                            }}));
+                        }}
                     }}
                 }}
             """, {"phone": self.phone, "pass": self.password})
@@ -151,8 +170,16 @@ class TitanAuthEngine:
             else:
                 os.makedirs("artifacts", exist_ok=True)
                 await page.screenshot(path="artifacts/ghost_auth_fail.png")
-                print("CRITICAL: Ghost Protocol Login FAILED.")
+                with open("artifacts/ghost_auth_fail.html", "w") as f:
+                    f.write(content)
+                print("CRITICAL: Ghost Protocol Login FAILED. Artifacts saved.")
 
         except Exception as e:
             print(f"ERROR: Ghost Protocol Login crashed: {e}")
+            try:
+                os.makedirs("artifacts", exist_ok=True)
+                await page.screenshot(path="artifacts/ghost_auth_crash.png")
+                with open("artifacts/ghost_auth_crash.html", "w") as f:
+                    f.write(await page.content())
+            except: pass
         return False

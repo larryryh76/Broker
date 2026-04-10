@@ -127,16 +127,18 @@ class TitanInteractionSuite:
                     const spinners = document.querySelectorAll('.spinner-icon, .m-icon-loading');
 
                     loaders.forEach(loader => {
-                        if (theme === 'light') {
-                            loader.style.setProperty('background-color', '#f4f4f4', 'important');
-                        } else {
-                            const bg = (brand === 'Encore') ? '#100e26' : '#000000';
-                            loader.style.setProperty('background-color', bg, 'important');
+                        const targetColor = theme === 'light' ? '#f4f4f4' : ((brand === 'Encore') ? '#100e26' : '#000000');
+                        if (loader.style.getPropertyValue('background-color') !== targetColor) {
+                             loader.style.setProperty('background-color', targetColor, 'important');
                         }
                     });
 
                     if (theme === 'light') {
-                        spinners.forEach(s => s.style.setProperty('background-color', '#e0e1e2', 'important'));
+                        spinners.forEach(s => {
+                            if (s.style.getPropertyValue('background-color') !== '#e0e1e2') {
+                                s.style.setProperty('background-color', '#e0e1e2', 'important');
+                            }
+                        });
                     }
                 };
 
@@ -148,7 +150,11 @@ class TitanInteractionSuite:
 
                         if (document.querySelector('#app > *, .m-home > *, .m-game > *, #content > *')) {
                             const loaders = document.querySelectorAll('.app-init-loader-wrap, .m-loader, .loading-wrap');
-                            loaders.forEach(l => l.style.setProperty('display', 'none', 'important'));
+                            loaders.forEach(l => {
+                                if (l.style.getPropertyValue('display') !== 'none') {
+                                    l.style.setProperty('display', 'none', 'important');
+                                }
+                            });
                         }
 
                         const backdrops = document.querySelectorAll('.modal-backdrop:not([data-managed]), .titan-modal-backdrop:not([data-managed])');

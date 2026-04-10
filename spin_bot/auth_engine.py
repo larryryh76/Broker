@@ -15,13 +15,13 @@ class TitanAuthEngine:
         self.password = os.getenv("FOOTBALL_NG_PASS")
 
     async def ensure_session(self) -> bool:
-        """Master Gate: Probes Session state, repairs via Police Blockade strategy if needed."""
+        """Master Gate: Probes Session state, repairs via Ghost Protocol if needed."""
         state = self.db.load_storage_state()
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
 
-            # PHASE 1: MAXIMUM STEALTH CONTEXT
+            # PHASE 1: MAXIMUM STEALTH CONTEXT (Ghost Protocol)
             context = await browser.new_context(
                 storage_state=state,
                 user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
@@ -29,13 +29,22 @@ class TitanAuthEngine:
                 device_scale_factor=3,
                 is_mobile=True,
                 has_touch=True,
+                locale="en-GB",
+                timezone_id="Africa/Lagos",
+                permissions=["geolocation"],
+                color_scheme="dark",
                 ignore_https_errors=True,
                 extra_http_headers={"x-platform": "WAP"}
             )
 
-            # PHASE 2: ANTI-WEBDRIVER INJECTION
+            # PHASE 2: DEEP STEALTH HARDWARE SPOOFING
             page = await context.new_page()
-            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+                Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+                Object.defineProperty(navigator, 'platform', {get: () => 'iPhone'});
+            """)
 
             # Step 1: Fast Probe (Mobile Home)
             try:
@@ -52,10 +61,10 @@ class TitanAuthEngine:
                         return True
             except: pass
 
-            print("WARNING: Session invalid. Engaging Police Blockade Re-Auth...")
+            print("WARNING: Session invalid. Engaging Ghost Protocol Re-Auth...")
 
-            # Step 2: Police Blockade UI Login Sequence
-            success = await self._blockade_ui_login(page, context)
+            # Step 2: Ghost Protocol UI Login Sequence
+            success = await self._ghost_protocol_login(page, context)
             if success:
                 state = await context.storage_state()
                 self.db.save_storage_state(state)
@@ -65,13 +74,13 @@ class TitanAuthEngine:
             await browser.close()
             return False
 
-    async def _blockade_ui_login(self, page: Page, context: BrowserContext) -> bool:
-        """PHASE 3: THE POLICE BLOCKADE (Route Lockdown + JS Injection)."""
+    async def _ghost_protocol_login(self, page: Page, context: BrowserContext) -> bool:
+        """PHASE 3: THE GHOST PROTOCOL (Surgical Interception + Nuclear Injection)."""
         try:
-            # 1. Block the redirect trap (livescore redirect)
+            # 1. Surgical Route Interception: Only block main-frame navigation hijacks
             async def intercept_route(route: Route):
-                if "livescore" in route.request.url:
-                    print(f"DEBUG: Blocked malicious redirect to: {route.request.url}")
+                if "livescore" in route.request.url and route.request.is_navigation_request():
+                    print(f"DEBUG: Blocked Navigation Hijack to: {route.request.url}")
                     await route.abort()
                 else:
                     await route.continue_()
@@ -92,39 +101,41 @@ class TitanAuthEngine:
                 }
             """)
 
-            # 4. The "Last Resort" JavaScript Login
-            print("DEBUG: Executing JS-Injected Login...")
+            # 4. Nuclear JS-Injected Login (Deep Injection)
+            print("DEBUG: Executing Nuclear Deep-Injected Login...")
             await page.evaluate(f"""
-                (creds) => {{
-                    const phoneInput = document.querySelector("input[type='tel'], input[name='phone'], .m-input-phone input");
-                    const passInput = document.querySelector("input[type='password'], .m-input-password input");
+                async (creds) => {{
+                    const findAndFill = (selector, val) => {{
+                        const el = document.querySelector(selector);
+                        if (el) {{
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        }}
+                    }};
 
-                    if (phoneInput && passInput) {{
-                        phoneInput.value = creds.phone;
-                        phoneInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        phoneInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    findAndFill("input[type='tel'], input[name='phone'], .m-input-phone input", creds.phone);
+                    await new Promise(r => setTimeout(r, 500));
+                    findAndFill("input[type='password'], .m-input-password input", creds.pass);
 
-                        passInput.value = creds.pass;
-                        passInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        passInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-                        setTimeout(() => {{
-                            const submitBtn = document.querySelector("button[type='submit'], .m-login-btn, button:has-text('Login'), button:has-text('Log In')");
-                            if (submitBtn) submitBtn.click();
-                            else {{
-                                // Fallback: press Enter on password field
-                                const event = new KeyboardEvent('keydown', {{
-                                    key: 'Enter', code: 'Enter', which: 13, keyCode: 13, bubbles: true
-                                }});
-                                passInput.dispatchEvent(event);
-                            }}
-                        }}, 1000);
+                    await new Promise(r => setTimeout(r, 1000));
+                    const loginBtn = document.querySelector("button[type='submit'], .m-login-btn, button:has-text('Login'), button:has-text('Log In'), .btn-primary");
+                    if (loginBtn) {{
+                        loginBtn.click();
+                    }} else {{
+                         // Fallback: Dispatch Enter on password field
+                         const passInput = document.querySelector("input[type='password'], .m-input-password input");
+                         if (passInput) {{
+                             passInput.dispatchEvent(new KeyboardEvent('keydown', {{
+                                key: 'Enter', code: 'Enter', which: 13, keyCode: 13, bubbles: true
+                             }}));
+                         }}
                     }}
                 }}
             """, {"phone": self.phone, "pass": self.password})
 
-            # 5. Wait for Authentication Confirmation (Cookies or Indicators)
-            print("DEBUG: Waiting for auth settle...")
+            # 5. Wait for Authentication Confirmation
+            print("DEBUG: Waiting for Ghost Protocol authentication...")
             await asyncio.sleep(10)
 
             final_cookies = await context.cookies()
@@ -135,13 +146,13 @@ class TitanAuthEngine:
             has_indicator = any(x in content.lower() for x in ["logout", "deposit", "account", "balance", "profile"])
 
             if has_auth_cookie or has_indicator:
-                print(f"SUCCESS: Immortal Session captured. (Cookie: {has_auth_cookie}, Indicator: {has_indicator})")
+                print(f"SUCCESS: Ghost Protocol captured immortal session. (Cookie: {has_auth_cookie}, Indicator: {has_indicator})")
                 return True
             else:
                 os.makedirs("artifacts", exist_ok=True)
-                await page.screenshot(path="artifacts/blockade_auth_fail.png")
-                print("CRITICAL: Police Blockade Login FAILED.")
+                await page.screenshot(path="artifacts/ghost_auth_fail.png")
+                print("CRITICAL: Ghost Protocol Login FAILED.")
 
         except Exception as e:
-            print(f"ERROR: Police Blockade Login crashed: {e}")
+            print(f"ERROR: Ghost Protocol Login crashed: {e}")
         return False

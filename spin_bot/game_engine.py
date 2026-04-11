@@ -9,33 +9,56 @@ from typing import List, Dict, Optional, Any
 class TitanGameEngine:
     def __init__(self, db: TitanDatabase):
         self.db = db
-        # V5.45: Deep-link is unstable in SPA; target the Lobby instead
+        # V5.45: Target the Lobby instead of unstable deep-links
         self.game_url = "https://www.football.com/ng/m/games"
 
     async def get_frame(self, page: Page):
-        """V5.45: Lobby-Thumbnail Navigation & Iframe Sync."""
+        """V5.46: Hunter-Seeker Lobby Search & Iframe Sync."""
         print("DEBUG: Executing Render-Trigger (Screen Tap)...")
         await TitanInteractionSuite.stabilize_environment(page)
         await page.mouse.click(10, 10)
         await asyncio.sleep(2)
 
-        # 1. Visual Search for Thumbnail (Fuzzy Match)
-        print("DEBUG: Searching for 'Spin da Bottle' in Lobby...")
-        # Pure CSS + Playwright Fuzzy Match
-        spin_bottle_sel = ":has-text('Spin da Bottle'), [alt*='Spin da Bottle'], .m-game-item:has-text('Spin')"
-        try:
-            thumbnail = page.locator(spin_bottle_sel).filter(visible=True).first
-            await thumbnail.wait_for(state="visible", timeout=30000)
-            print("DEBUG: Thumbnail found. Clicking to launch game...")
-            await thumbnail.click(force=True)
-        except Exception as e:
-            print(f"WARNING: Could not find 'Spin da Bottle' in Lobby via visible locator: {e}")
-            # Emergency JS click fallback
-            await page.evaluate("""() => {
-                const els = Array.from(document.querySelectorAll('*'));
-                const target = els.find(e => e.innerText && e.innerText.includes('Spin da Bottle'));
-                if (target) target.click();
-            }""")
+        # 1. Aggressive Hunter-Seeker Search for Thumbnail
+        print("DEBUG: Deploying Hunter-Seeker JS for Game Thumbnail...")
+
+        # Scroll down to force lazy-loaded games to appear
+        for i in range(3):
+            print(f"DEBUG: Scrolling Lobby (Pass {i+1}/3)...")
+            await page.mouse.wheel(0, 1000)
+            await asyncio.sleep(1)
+
+        hunter_success = await page.evaluate("""
+            () => {
+                const elements = document.querySelectorAll('a, div, img, span, p, h3');
+                for (let el of elements) {
+                    let text = (el.innerText || '').toLowerCase();
+                    let alt = (el.getAttribute('alt') || '').toLowerCase();
+                    let src = (el.getAttribute('src') || '').toLowerCase();
+
+                    if (text.includes('spin') || alt.includes('spin') || src.includes('spin')) {
+                        // If it's an image or text inside an anchor tag, click the parent link
+                        let target = el;
+                        const parentLink = el.closest('a');
+                        if (parentLink) {
+                            target = parentLink;
+                        }
+
+                        console.log("DEBUG: Hunter-Seeker found target! Clicking...");
+                        target.click();
+                        return true; // Found and clicked
+                    }
+                }
+                return false; // Not found
+            }
+        """)
+
+        if not hunter_success:
+            print("WARNING: Hunter-Seeker could not find any element containing 'spin'.")
+            os.makedirs("artifacts", exist_ok=True)
+            await page.screenshot(path="artifacts/lobby_failed_search.png", full_page=True)
+        else:
+            print("DEBUG: Thumbnail clicked. Waiting for game iframe to mount...")
 
         # 2. Wait for Iframe to mount (60s Timeout)
         print("DEBUG: Waiting for Game Iframe to mount (60s)...")
@@ -44,7 +67,7 @@ class TitanGameEngine:
         try:
             # Wait for container
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=60000)
-            print("DEBUG: Iframe attached. Waiting for Canvas...")
+            print("DEBUG: Iframe attached. Waiting for Canvas hydration...")
         except:
             print("WARNING: Iframe attachment timed out. Stabilizing and retrying...")
             await TitanInteractionSuite.stabilize_environment(page)

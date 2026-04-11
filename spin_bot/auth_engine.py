@@ -107,54 +107,61 @@ class TitanAuthEngine:
 
             # 4. Nuclear JS-Injected Login (Deep Injection V2)
             print("DEBUG: Executing Nuclear Deep-Injected Login (V2)...")
-            await page.evaluate(f"""
-                async (creds) => {{
-                    const findAndFill = (selector, val) => {{
-                        const el = document.querySelector(selector);
-                        if (el) {{
-                            el.value = val;
-                            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            return true;
-                        }}
-                        return false;
-                    }};
+            try:
+                await page.evaluate(f"""
+                    async (creds) => {{
+                        const findAndFill = (selector, val) => {{
+                            const el = document.querySelector(selector);
+                            if (el) {{
+                                el.value = val;
+                                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                return true;
+                            }}
+                            return false;
+                        }};
 
-                    // Fill Phone & Password
-                    findAndFill("input[type='tel'], input[name='phone'], .m-input-phone input", creds.phone);
-                    await new Promise(r => setTimeout(r, 600));
-                    findAndFill("input[type='password'], .m-input-password input", creds.pass);
+                        // Fill Phone & Password
+                        findAndFill("input[type='tel'], input[name='phone'], .m-input-phone input", creds.phone);
+                        await new Promise(r => setTimeout(r, 600));
+                        findAndFill("input[type='password'], .m-input-password input", creds.pass);
 
-                    await new Promise(r => setTimeout(r, 1000));
+                        await new Promise(r => setTimeout(r, 1000));
 
-                    // Find Login Button by scanning all buttons for text match (Pure CSS + Loop)
-                    const buttons = Array.from(document.querySelectorAll('button'));
-                    const loginBtn = buttons.find(b =>
-                        b.innerText.includes('Login') ||
-                        b.innerText.includes('Log In') ||
-                        b.classList.contains('m-btn-login') ||
-                        b.classList.contains('btn-primary') ||
-                        b.type === 'submit'
-                    );
+                        // Find Login Button by scanning all buttons for text match (Pure CSS + Loop)
+                        const buttons = Array.from(document.querySelectorAll('button'));
+                        const loginBtn = buttons.find(b =>
+                            b.innerText.includes('Login') ||
+                            b.innerText.includes('Log In') ||
+                            b.classList.contains('m-btn-login') ||
+                            b.classList.contains('btn-primary') ||
+                            b.type === 'submit'
+                        );
 
-                    if (loginBtn) {{
-                        console.log("DEBUG: Login button located, clicking...");
-                        loginBtn.click();
-                    }} else {{
-                        console.error("DEBUG: Could not find login button via JS");
-                        // Fallback: Dispatch Enter on password field
-                        const passInput = document.querySelector("input[type='password'], .m-input-password input");
-                        if (passInput) {{
-                            passInput.dispatchEvent(new KeyboardEvent('keydown', {{
-                                key: 'Enter', code: 'Enter', which: 13, keyCode: 13, bubbles: true
-                            }}));
+                        if (loginBtn) {{
+                            console.log("DEBUG: Login button located, clicking...");
+                            loginBtn.click(); // This might trigger context destruction via navigation
+                        }} else {{
+                            console.error("DEBUG: Could not find login button via JS");
+                            // Fallback: Dispatch Enter on password field
+                            const passInput = document.querySelector("input[type='password'], .m-input-password input");
+                            if (passInput) {{
+                                passInput.dispatchEvent(new KeyboardEvent('keydown', {{
+                                    key: 'Enter', code: 'Enter', which: 13, keyCode: 13, bubbles: true
+                                }}));
+                            }}
                         }}
                     }}
-                }}
-            """, {"phone": self.phone, "pass": self.password})
+                """, {"phone": self.phone, "pass": self.password})
+            except Exception as e:
+                if "Execution context was destroyed" in str(e) or "Target closed" in str(e):
+                    print("DEBUG: Execution context destroyed - Login navigation triggered successfully!")
+                else:
+                    print(f"DEBUG: Unexpected evaluate error: {e}")
+                    raise e
 
             # 5. Wait for Authentication Confirmation
-            print("DEBUG: Waiting for Ghost Protocol authentication...")
+            print("DEBUG: Waiting for login redirect to settle...")
             await asyncio.sleep(10)
 
             final_cookies = await context.cookies()

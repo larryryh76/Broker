@@ -13,22 +13,24 @@ class TitanGameEngine:
         self.game_url = "https://www.football.com/ng/m/"
 
     async def get_frame(self, page: Page):
-        """V5.47: Organic UI Routing & Hunter-Seeker Lobby Sync."""
+        """V5.48: Advanced DOM Routing (Menu Bypass) & Hunter-Seeker Lobby Sync."""
         # 1. Front-Door Entry: Navigate to Homepage
         print("DEBUG: Navigating to Homepage to bypass deep-link traps...")
         await page.goto(self.game_url, wait_until="networkidle")
         await TitanInteractionSuite.stabilize_environment(page)
 
-        # 2. Trigger SPA Router via Navigation Tab
-        print("DEBUG: Searching for the main 'Games' navigation tab...")
+        # 2. Stage 1: Advanced DOM Router Bypass (Href Scanning)
+        print("DEBUG: Executing Advanced DOM Router Bypass...")
         nav_clicked = await page.evaluate("""
             () => {
-                const elements = document.querySelectorAll('a, div, span, li');
-                for (let el of elements) {
-                    let text = (el.innerText || '').trim().toLowerCase();
-                    if (text === 'games' || text === 'casino' || text === 'mini games') {
-                        console.log("DEBUG: Found Navigation Tab -> " + text);
-                        el.click();
+                // Search raw HTML for routing link even if off-screen
+                const links = document.querySelectorAll('a');
+                for (let link of links) {
+                    let href = (link.getAttribute('href') || '').toLowerCase();
+                    let text = (link.innerText || '').trim().toLowerCase();
+                    if (href.includes('/games') || href.includes('/casino') || text === 'games' || text === 'casino' || text === 'mini games') {
+                        console.log("DEBUG: Found routing link! Href: " + href);
+                        link.click();
                         return true;
                     }
                 }
@@ -36,22 +38,47 @@ class TitanGameEngine:
             }
         """)
 
+        # 3. Stage 2: Hamburger Menu Fallback
         if not nav_clicked:
-            print("WARNING: Could not find the Games tab in the main navigation!")
+            print("DEBUG: Link hidden. Attempting to open the Hamburger Menu...")
+            try:
+                # Target standard mobile hamburger icons
+                menu_btn = page.locator(".m-header-left, .icon-menu, [aria-label*='Menu'], .menu-icon, .icon-hamburger").first
+                if await menu_btn.count() > 0:
+                    await menu_btn.click(force=True)
+                    await asyncio.sleep(2)
+
+                    nav_clicked = await page.evaluate("""
+                        () => {
+                            const menuLinks = document.querySelectorAll('a, li, div');
+                            for (let link of menuLinks) {
+                                let text = (link.innerText || '').trim().toLowerCase();
+                                let href = (link.getAttribute('href') || '').toLowerCase();
+                                if (href.includes('/games') || href.includes('/casino') || text === 'games' || text === 'casino') {
+                                    link.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }
+                    """)
+            except Exception as e:
+                print(f"DEBUG: Hamburger menu interaction failed: {e}")
+
+        if not nav_clicked:
+            print("WARNING: Complete failure to route to Games lobby.")
             os.makedirs("artifacts", exist_ok=True)
-            await page.screenshot(path="artifacts/failed_nav_click.png", full_page=True)
-            # Fallback to direct navigation if organic fails
+            await page.screenshot(path="artifacts/final_routing_failure.png", full_page=True)
+            # Emergency direct navigation fallback
             await page.goto("https://www.football.com/ng/m/games", wait_until="networkidle")
         else:
-            print("DEBUG: Successfully clicked Games tab. Allowing SPA to render lobby...")
-            await asyncio.sleep(4)
+            print("DEBUG: Successfully triggered SPA router. Waiting for render...")
+            await asyncio.sleep(5)
 
-        # 3. Aggressive Hunter-Seeker Search for Thumbnail
+        # 4. Aggressive Hunter-Seeker Search for Thumbnail
         print("DEBUG: Deploying Hunter-Seeker JS for Game Thumbnail...")
-        # Wake up render engine
         await page.mouse.click(10, 10)
 
-        # Scroll to wake lazy-loading
         for i in range(3):
             print(f"DEBUG: Scrolling Lobby (Pass {i+1}/3)...")
             await page.mouse.wheel(0, 1000)
@@ -71,7 +98,6 @@ class TitanGameEngine:
                         if (parentLink) {
                             target = parentLink;
                         }
-
                         console.log("DEBUG: Hunter-Seeker found target! Clicking...");
                         target.click();
                         return true;
@@ -88,7 +114,7 @@ class TitanGameEngine:
         else:
             print("DEBUG: Thumbnail clicked. Waiting for game iframe to mount...")
 
-        # 4. Wait for Iframe to mount (60s Timeout)
+        # 5. Wait for Iframe to mount (60s Timeout)
         print("DEBUG: Waiting for Game Iframe to mount (60s)...")
         iframe_locator = page.frame_locator("iframe[src*='sportygames']")
 
@@ -100,7 +126,7 @@ class TitanGameEngine:
             await TitanInteractionSuite.stabilize_environment(page)
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=30000)
 
-        # 5. Final Game UI Indicators
+        # 6. Final Game UI Indicators
         ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
         try:
             await ui_indicator.wait_for(state="visible", timeout=60000)

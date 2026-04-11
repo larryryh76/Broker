@@ -9,20 +9,49 @@ from typing import List, Dict, Optional, Any
 class TitanGameEngine:
     def __init__(self, db: TitanDatabase):
         self.db = db
-        # V5.45: Target the Lobby instead of unstable deep-links
-        self.game_url = "https://www.football.com/ng/m/games"
+        # V5.47: Deep-link is blocked; start at Homepage to bypass traps
+        self.game_url = "https://www.football.com/ng/m/"
 
     async def get_frame(self, page: Page):
-        """V5.46: Hunter-Seeker Lobby Search & Iframe Sync."""
-        print("DEBUG: Executing Render-Trigger (Screen Tap)...")
+        """V5.47: Organic UI Routing & Hunter-Seeker Lobby Sync."""
+        # 1. Front-Door Entry: Navigate to Homepage
+        print("DEBUG: Navigating to Homepage to bypass deep-link traps...")
+        await page.goto(self.game_url, wait_until="networkidle")
         await TitanInteractionSuite.stabilize_environment(page)
-        await page.mouse.click(10, 10)
-        await asyncio.sleep(2)
 
-        # 1. Aggressive Hunter-Seeker Search for Thumbnail
+        # 2. Trigger SPA Router via Navigation Tab
+        print("DEBUG: Searching for the main 'Games' navigation tab...")
+        nav_clicked = await page.evaluate("""
+            () => {
+                const elements = document.querySelectorAll('a, div, span, li');
+                for (let el of elements) {
+                    let text = (el.innerText || '').trim().toLowerCase();
+                    if (text === 'games' || text === 'casino' || text === 'mini games') {
+                        console.log("DEBUG: Found Navigation Tab -> " + text);
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+        """)
+
+        if not nav_clicked:
+            print("WARNING: Could not find the Games tab in the main navigation!")
+            os.makedirs("artifacts", exist_ok=True)
+            await page.screenshot(path="artifacts/failed_nav_click.png", full_page=True)
+            # Fallback to direct navigation if organic fails
+            await page.goto("https://www.football.com/ng/m/games", wait_until="networkidle")
+        else:
+            print("DEBUG: Successfully clicked Games tab. Allowing SPA to render lobby...")
+            await asyncio.sleep(4)
+
+        # 3. Aggressive Hunter-Seeker Search for Thumbnail
         print("DEBUG: Deploying Hunter-Seeker JS for Game Thumbnail...")
+        # Wake up render engine
+        await page.mouse.click(10, 10)
 
-        # Scroll down to force lazy-loaded games to appear
+        # Scroll to wake lazy-loading
         for i in range(3):
             print(f"DEBUG: Scrolling Lobby (Pass {i+1}/3)...")
             await page.mouse.wheel(0, 1000)
@@ -37,7 +66,6 @@ class TitanGameEngine:
                     let src = (el.getAttribute('src') || '').toLowerCase();
 
                     if (text.includes('spin') || alt.includes('spin') || src.includes('spin')) {
-                        // If it's an image or text inside an anchor tag, click the parent link
                         let target = el;
                         const parentLink = el.closest('a');
                         if (parentLink) {
@@ -46,10 +74,10 @@ class TitanGameEngine:
 
                         console.log("DEBUG: Hunter-Seeker found target! Clicking...");
                         target.click();
-                        return true; // Found and clicked
+                        return true;
                     }
                 }
-                return false; // Not found
+                return false;
             }
         """)
 
@@ -60,12 +88,11 @@ class TitanGameEngine:
         else:
             print("DEBUG: Thumbnail clicked. Waiting for game iframe to mount...")
 
-        # 2. Wait for Iframe to mount (60s Timeout)
+        # 4. Wait for Iframe to mount (60s Timeout)
         print("DEBUG: Waiting for Game Iframe to mount (60s)...")
         iframe_locator = page.frame_locator("iframe[src*='sportygames']")
 
         try:
-            # Wait for container
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=60000)
             print("DEBUG: Iframe attached. Waiting for Canvas hydration...")
         except:
@@ -73,7 +100,7 @@ class TitanGameEngine:
             await TitanInteractionSuite.stabilize_environment(page)
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=30000)
 
-        # 3. Wait for actual game UI
+        # 5. Final Game UI Indicators
         ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
         try:
             await ui_indicator.wait_for(state="visible", timeout=60000)

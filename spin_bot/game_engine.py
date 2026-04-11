@@ -9,21 +9,21 @@ from typing import List, Dict, Optional, Any
 class TitanGameEngine:
     def __init__(self, db: TitanDatabase):
         self.db = db
-        # V5.47: Deep-link is blocked; start at Homepage to bypass traps
+        # V5.49: Target Homepage first for handshake
         self.game_url = "https://www.football.com/ng/m/"
 
     async def get_frame(self, page: Page):
-        """V5.48: Advanced DOM Routing (Menu Bypass) & Hunter-Seeker Lobby Sync."""
+        """V5.49: Advanced DOM Routing with Kernel-Level Fallback."""
         # 1. Front-Door Entry: Navigate to Homepage
-        print("DEBUG: Navigating to Homepage to bypass deep-link traps...")
+        print("DEBUG: Navigating to Homepage (V5.49 Handshake)...")
+        await asyncio.sleep(random.uniform(2, 5))
         await page.goto(self.game_url, wait_until="networkidle")
-        await TitanInteractionSuite.stabilize_environment(page)
+        await TitanInteractionSuite.stabilize_environment(page, delay_nuke=True)
 
-        # 2. Stage 1: Advanced DOM Router Bypass (Href Scanning)
+        # 2. Advanced DOM Router Bypass
         print("DEBUG: Executing Advanced DOM Router Bypass...")
         nav_clicked = await page.evaluate("""
             () => {
-                // Search raw HTML for routing link even if off-screen
                 const links = document.querySelectorAll('a');
                 for (let link of links) {
                     let href = (link.getAttribute('href') || '').toLowerCase();
@@ -38,51 +38,31 @@ class TitanGameEngine:
             }
         """)
 
-        # 3. Stage 2: Hamburger Menu Fallback
+        # 3. Kernel-Level Routing Fallback
         if not nav_clicked:
-            print("DEBUG: Link hidden. Attempting to open the Hamburger Menu...")
+            print("DEBUG: UI Link hidden. Executing Kernel-Level Navigation...")
             try:
-                # Target standard mobile hamburger icons
-                menu_btn = page.locator(".m-header-left, .icon-menu, [aria-label*='Menu'], .menu-icon, .icon-hamburger").first
-                if await menu_btn.count() > 0:
-                    await menu_btn.click(force=True)
-                    await asyncio.sleep(2)
-
-                    nav_clicked = await page.evaluate("""
-                        () => {
-                            const menuLinks = document.querySelectorAll('a, li, div');
-                            for (let link of menuLinks) {
-                                let text = (link.innerText || '').trim().toLowerCase();
-                                let href = (link.getAttribute('href') || '').toLowerCase();
-                                if (href.includes('/games') || href.includes('/casino') || text === 'games' || text === 'casino') {
-                                    link.click();
-                                    return true;
-                                }
-                            }
-                            return false;
-                        }
-                    """)
+                await page.evaluate("window.location.href = '/ng/m/games'")
+                await asyncio.sleep(5)
+                nav_clicked = True # Signal that we attempted navigation
             except Exception as e:
-                print(f"DEBUG: Hamburger menu interaction failed: {e}")
+                print(f"DEBUG: Kernel-Level Routing failed: {e}")
 
         if not nav_clicked:
             print("WARNING: Complete failure to route to Games lobby.")
             os.makedirs("artifacts", exist_ok=True)
             await page.screenshot(path="artifacts/final_routing_failure.png", full_page=True)
-            # Emergency direct navigation fallback
-            await page.goto("https://www.football.com/ng/m/games", wait_until="networkidle")
         else:
-            print("DEBUG: Successfully triggered SPA router. Waiting for render...")
-            await asyncio.sleep(5)
+            print("DEBUG: Routed to Lobby. Waiting for render...")
+            await asyncio.sleep(random.uniform(4, 6))
 
-        # 4. Aggressive Hunter-Seeker Search for Thumbnail
-        print("DEBUG: Deploying Hunter-Seeker JS for Game Thumbnail...")
+        # 4. Aggressive Hunter-Seeker Search
+        print("DEBUG: Deploying Hunter-Seeker JS...")
         await page.mouse.click(10, 10)
 
         for i in range(3):
-            print(f"DEBUG: Scrolling Lobby (Pass {i+1}/3)...")
             await page.mouse.wheel(0, 1000)
-            await asyncio.sleep(1)
+            await asyncio.sleep(1.5)
 
         hunter_success = await page.evaluate("""
             () => {
@@ -95,10 +75,7 @@ class TitanGameEngine:
                     if (text.includes('spin') || alt.includes('spin') || src.includes('spin')) {
                         let target = el;
                         const parentLink = el.closest('a');
-                        if (parentLink) {
-                            target = parentLink;
-                        }
-                        console.log("DEBUG: Hunter-Seeker found target! Clicking...");
+                        if (parentLink) target = parentLink;
                         target.click();
                         return true;
                     }
@@ -108,25 +85,21 @@ class TitanGameEngine:
         """)
 
         if not hunter_success:
-            print("WARNING: Hunter-Seeker could not find any element containing 'spin'.")
+            print("WARNING: Hunter-Seeker failed. Artifact rescue...")
             os.makedirs("artifacts", exist_ok=True)
             await page.screenshot(path="artifacts/lobby_failed_search.png", full_page=True)
-        else:
-            print("DEBUG: Thumbnail clicked. Waiting for game iframe to mount...")
 
-        # 5. Wait for Iframe to mount (60s Timeout)
-        print("DEBUG: Waiting for Game Iframe to mount (60s)...")
+        # 5. Resilient Iframe Wait (60s)
+        print("DEBUG: Waiting for Game Iframe (60s Resilience)...")
         iframe_locator = page.frame_locator("iframe[src*='sportygames']")
 
         try:
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=60000)
-            print("DEBUG: Iframe attached. Waiting for Canvas hydration...")
         except:
-            print("WARNING: Iframe attachment timed out. Stabilizing and retrying...")
-            await TitanInteractionSuite.stabilize_environment(page)
+            await TitanInteractionSuite.stabilize_environment(page, delay_nuke=True)
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=30000)
 
-        # 6. Final Game UI Indicators
+        # 6. Hydration Check
         ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
         try:
             await ui_indicator.wait_for(state="visible", timeout=60000)
@@ -139,13 +112,13 @@ class TitanGameEngine:
             return iframe_locator
 
     async def run_environment(self, storage_state: Optional[Dict[str, Any]] = None):
-        """Prepares a browser page with full Ghost Protocol stealth and UI sensitivity."""
+        """V5.49 Chimera Environment: Mixed Fingerprint Stealth."""
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(headless=True)
 
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            viewport={'width': 390, 'height': 844},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            viewport={'width': 375, 'height': 812},
             device_scale_factor=3,
             is_mobile=True,
             has_touch=True,
@@ -163,7 +136,7 @@ class TitanGameEngine:
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
             Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
             Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
-            Object.defineProperty(navigator, 'platform', {get: () => 'iPhone'});
+            Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
         """)
 
         await TitanInteractionSuite.apply_ui_sensitivity(page)

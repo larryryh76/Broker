@@ -148,7 +148,8 @@ class TitanInteractionSuite:
                     const observer = new MutationObserver(() => {
                         updateLoaderStyles();
 
-                        if (document.querySelector('#app > *, .m-home > *, .m-game > *, #content > *')) {
+                        // V5.49 Hydration Safety: Wait for specific elements before hiding loader
+                        if (document.querySelector('#app > *, .m-home > *, .m-game > *, #content > *, .game-list, .lobby-container')) {
                             const loaders = document.querySelectorAll('.app-init-loader-wrap, .m-loader, .loading-wrap');
                             loaders.forEach(l => {
                                 if (l.style.getPropertyValue('display') !== 'none') {
@@ -178,11 +179,17 @@ class TitanInteractionSuite:
         """)
 
     @staticmethod
-    async def stabilize_environment(page: Page):
-        """V5.34 CSS-NUKE & Stabilization: Hide traps via CSS injection."""
+    async def stabilize_environment(page: Page, delay_nuke: bool = False):
+        """V5.34/V5.49 CSS-NUKE & Stabilization: Hide traps via CSS injection."""
+        # V5.49: Adjustment - Optional delay for Cloudflare/WAF handshakes
+        if delay_nuke:
+            print("DEBUG: Delaying CSS-NUKE for hydration safety...")
+            await asyncio.sleep(5)
+
         print("DEBUG: Executing CSS-NUKE Stabilization...")
         try:
             # V5.34: Inject high-priority CSS to hide overlays and modals without breaking reactivity
+            # V5.49: Exclude potentially critical hydration elements
             await page.add_style_tag(content="""
                 .m-modal, .modal, .overlay, .modal-backdrop, [class*='backdrop']:not(.titan-modal-backdrop),
                 [class*='overlay'], .dialog-wrap, .sg-confirm-cancel-modal-v2, .m-loading-mask,

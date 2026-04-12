@@ -9,97 +9,84 @@ from typing import List, Dict, Optional, Any
 class TitanGameEngine:
     def __init__(self, db: TitanDatabase):
         self.db = db
-        # V5.49: Target Homepage first for handshake
+        # V5.50: Start at Homepage for Telemetry Stage 1
         self.game_url = "https://www.football.com/ng/m/"
 
     async def get_frame(self, page: Page):
-        """V5.49: Advanced DOM Routing with Kernel-Level Fallback."""
-        # 1. Front-Door Entry: Navigate to Homepage
-        print("DEBUG: Navigating to Homepage (V5.49 Handshake)...")
-        await asyncio.sleep(random.uniform(2, 5))
+        """V5.50: Ultimate Hunter-Seeker with Visual Telemetry."""
+        os.makedirs("artifacts", exist_ok=True)
+
+        # 1. Telemetry Stage 1: Homepage Landing
+        print("DEBUG: Stage 1 - Navigating to Homepage...")
         await page.goto(self.game_url, wait_until="networkidle")
         await TitanInteractionSuite.stabilize_environment(page, delay_nuke=True)
+        await page.screenshot(path="artifacts/telemetry_1_homepage.png")
 
-        # 2. Advanced DOM Router Bypass
-        print("DEBUG: Executing Advanced DOM Router Bypass...")
-        nav_clicked = await page.evaluate("""
-            () => {
-                const links = document.querySelectorAll('a');
-                for (let link of links) {
-                    let href = (link.getAttribute('href') || '').toLowerCase();
-                    let text = (link.innerText || '').trim().toLowerCase();
-                    if (href.includes('/games') || href.includes('/casino') || text === 'games' || text === 'casino' || text === 'mini games') {
-                        console.log("DEBUG: Found routing link! Href: " + href);
-                        link.click();
-                        return true;
-                    }
-                }
-                return false;
-            }
-        """)
+        # 2. Telemetry Stage 2: Lobby Navigation (Kernel-Level)
+        print("DEBUG: Stage 2 - Executing Kernel-Level Navigation to Lobby...")
+        await page.evaluate("() => { window.location.href = '/ng/m/games'; }")
+        await asyncio.sleep(5)
+        await page.screenshot(path="artifacts/telemetry_2_post_nav.png")
 
-        # 3. Kernel-Level Routing Fallback
-        if not nav_clicked:
-            print("DEBUG: UI Link hidden. Executing Kernel-Level Navigation...")
-            try:
-                await page.evaluate("window.location.href = '/ng/m/games'")
-                await asyncio.sleep(5)
-                nav_clicked = True # Signal that we attempted navigation
-            except Exception as e:
-                print(f"DEBUG: Kernel-Level Routing failed: {e}")
+        # 3. Telemetry Stage 3: API Grid Wait
+        print("DEBUG: Stage 3 - Waiting 8s for API Grid Render...")
+        await asyncio.sleep(8)
+        await page.screenshot(path="artifacts/telemetry_3_api_ready.png")
 
-        if not nav_clicked:
-            print("WARNING: Complete failure to route to Games lobby.")
-            os.makedirs("artifacts", exist_ok=True)
-            await page.screenshot(path="artifacts/final_routing_failure.png", full_page=True)
-        else:
-            print("DEBUG: Routed to Lobby. Waiting for render...")
-            await asyncio.sleep(random.uniform(4, 6))
-
-        # 4. Aggressive Hunter-Seeker Search
-        print("DEBUG: Deploying Hunter-Seeker JS...")
+        # 4. Telemetry Stage 4: Deep Scroll & Search
+        print("DEBUG: Stage 4 - Deploying Ultimate Hunter-Seeker (HREF-Targeting)...")
+        # Wake up render engine
         await page.mouse.click(10, 10)
-
+        # Deep-scroll to wake lazy-loading
         for i in range(3):
-            await page.mouse.wheel(0, 1000)
+            print(f"DEBUG: Scrolling Lobby (Pass {i+1}/3)...")
+            await page.mouse.wheel(0, 1500)
             await asyncio.sleep(1.5)
+        await page.screenshot(path="artifacts/telemetry_4_post_scroll.png")
 
         hunter_success = await page.evaluate("""
             () => {
                 const elements = document.querySelectorAll('a, div, img, span, p, h3');
                 for (let el of elements) {
                     let text = (el.innerText || '').toLowerCase();
-                    let alt = (el.getAttribute('alt') || '').toLowerCase();
-                    let src = (el.getAttribute('src') || '').toLowerCase();
+                    let href = el.getAttribute('href') ? el.getAttribute('href').toLowerCase() : '';
+                    if (!href && el.closest('a')) {
+                        href = el.closest('a').getAttribute('href').toLowerCase();
+                    }
 
-                    if (text.includes('spin') || alt.includes('spin') || src.includes('spin')) {
-                        let target = el;
-                        const parentLink = el.closest('a');
-                        if (parentLink) target = parentLink;
+                    // Lock onto anything containing 'spin' in text or link
+                    if (text.includes('spin') || href.includes('spin')) {
+                        let target = el.closest('a') || el;
+                        console.log("DEBUG: Hunter-Seeker found target: " + href);
                         target.click();
                         return true;
                     }
                 }
-                return false;
+                // NUCLEAR FALLBACK: Force the Vue Router directly
+                console.log("WARNING: DOM scan failed. Executing Nuclear Direct-Route...");
+                window.location.href = "/ng/m/games/spin-da-bottle";
+                return "NUCLEAR_TRIGGERED";
             }
         """)
 
-        if not hunter_success:
-            print("WARNING: Hunter-Seeker failed. Artifact rescue...")
-            os.makedirs("artifacts", exist_ok=True)
-            await page.screenshot(path="artifacts/lobby_failed_search.png", full_page=True)
+        print(f"DEBUG: Hunter-Seeker Status: {hunter_success}")
+        await asyncio.sleep(5)
+        await page.screenshot(path="artifacts/telemetry_5_final_transition.png")
 
-        # 5. Resilient Iframe Wait (60s)
-        print("DEBUG: Waiting for Game Iframe (60s Resilience)...")
+        # 5. Wait for Iframe to mount (60s Timeout)
+        print("DEBUG: Waiting for Game Iframe to mount (60s)...")
         iframe_locator = page.frame_locator("iframe[src*='sportygames']")
 
         try:
+            # Wait for container
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=60000)
+            print("DEBUG: Iframe attached. Waiting for Canvas hydration...")
         except:
-            await TitanInteractionSuite.stabilize_environment(page, delay_nuke=True)
+            print("WARNING: Iframe attachment timed out. Stabilizing and retrying...")
+            await TitanInteractionSuite.stabilize_environment(page)
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=30000)
 
-        # 6. Hydration Check
+        # 6. Final Game UI Indicators
         ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
         try:
             await ui_indicator.wait_for(state="visible", timeout=60000)
@@ -107,12 +94,11 @@ class TitanGameEngine:
             return iframe_locator
         except Exception as e:
             print(f"CRITICAL: Game hydration failed: {e}")
-            os.makedirs("artifacts", exist_ok=True)
-            await page.screenshot(path="artifacts/game_load_failure.png")
+            await page.screenshot(path="artifacts/game_load_failure_final.png")
             return iframe_locator
 
     async def run_environment(self, storage_state: Optional[Dict[str, Any]] = None):
-        """V5.49 Chimera Environment: Mixed Fingerprint Stealth."""
+        """V5.50: Chimera Environment with Full Telemetry."""
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(headless=True)
 

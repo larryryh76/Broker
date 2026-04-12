@@ -9,84 +9,82 @@ from typing import List, Dict, Optional, Any
 class TitanGameEngine:
     def __init__(self, db: TitanDatabase):
         self.db = db
-        # V5.50: Start at Homepage for Telemetry Stage 1
+        # V5.50: Start at Homepage for Organic Navigation
         self.game_url = "https://www.football.com/ng/m/"
 
     async def get_frame(self, page: Page):
-        """V5.50: Ultimate Hunter-Seeker with Visual Telemetry."""
+        """V5.51: Pure Native Playwright Interaction (Trusted Events Bypass)."""
         os.makedirs("artifacts", exist_ok=True)
 
-        # 1. Telemetry Stage 1: Homepage Landing
+        # 1. Native Landing & Stabilization
         print("DEBUG: Stage 1 - Navigating to Homepage...")
         await page.goto(self.game_url, wait_until="networkidle")
         await TitanInteractionSuite.stabilize_environment(page, delay_nuke=True)
         await page.screenshot(path="artifacts/telemetry_1_homepage.png")
 
-        # 2. Telemetry Stage 2: Lobby Navigation (Kernel-Level)
-        print("DEBUG: Stage 2 - Executing Kernel-Level Navigation to Lobby...")
-        await page.evaluate("() => { window.location.href = '/ng/m/games'; }")
-        await asyncio.sleep(5)
-        await page.screenshot(path="artifacts/telemetry_2_post_nav.png")
+        # 2. Native Hamburger Menu (Trusted Event)
+        print("DEBUG: Stage 2 - Accessing Hamburger Menu (Hardware Emulation)...")
+        menu_button = page.locator(".m-header-left, .icon-menu, [aria-label*='Menu'], .menu-icon, .icon-hamburger").first
+        try:
+            await menu_button.click(force=True, timeout=10000)
+            await asyncio.sleep(2) # Wait for slide-out
+        except Exception as e:
+            print(f"WARNING: Menu button not found/clickable: {e}. Trying direct lobby jump as fallback...")
+            await page.goto("https://www.football.com/ng/m/games", wait_until="networkidle")
 
-        # 3. Telemetry Stage 3: API Grid Wait
-        print("DEBUG: Stage 3 - Waiting 8s for API Grid Render...")
+        await page.screenshot(path="artifacts/telemetry_2_menu_open.png")
+
+        # 3. Native Routing (Trusted Event)
+        print("DEBUG: Stage 3 - Executing Native Route to Games...")
+        games_link = page.locator("a:has-text('Games'), a:has-text('Casino'), a[href*='/games']").filter(visible=True).first
+        try:
+            if await games_link.count() > 0:
+                await games_link.click(force=True)
+                print("DEBUG: Games link clicked.")
+            else:
+                print("DEBUG: Games link not visible in menu, forcing navigation...")
+                await page.goto("https://www.football.com/ng/m/games", wait_until="networkidle")
+        except:
+             await page.goto("https://www.football.com/ng/m/games", wait_until="networkidle")
+
+        # 4. Wait for SPA Hydration
+        print("DEBUG: Stage 4 - Waiting 8s for SPA Lobby Render...")
         await asyncio.sleep(8)
-        await page.screenshot(path="artifacts/telemetry_3_api_ready.png")
+        await page.screenshot(path="artifacts/telemetry_3_lobby_grid.png")
 
-        # 4. Telemetry Stage 4: Deep Scroll & Search
-        print("DEBUG: Stage 4 - Deploying Ultimate Hunter-Seeker (HREF-Targeting)...")
-        # Wake up render engine
+        # 5. Native Hunter-Seeker (Hardware Scrolling + Trusted Click)
+        print("DEBUG: Stage 5 - Native Hunter-Seeker (HREF-Targeting)...")
         await page.mouse.click(10, 10)
-        # Deep-scroll to wake lazy-loading
-        for i in range(3):
-            print(f"DEBUG: Scrolling Lobby (Pass {i+1}/3)...")
-            await page.mouse.wheel(0, 1500)
+        for i in range(4):
+            await page.mouse.wheel(0, 1000)
             await asyncio.sleep(1.5)
-        await page.screenshot(path="artifacts/telemetry_4_post_scroll.png")
 
-        hunter_success = await page.evaluate("""
-            () => {
-                const elements = document.querySelectorAll('a, div, img, span, p, h3');
-                for (let el of elements) {
-                    let text = (el.innerText || '').toLowerCase();
-                    let href = el.getAttribute('href') ? el.getAttribute('href').toLowerCase() : '';
-                    if (!href && el.closest('a')) {
-                        href = el.closest('a').getAttribute('href').toLowerCase();
-                    }
+        await page.screenshot(path="artifacts/telemetry_4_lobby_scroll.png")
 
-                    // Lock onto anything containing 'spin' in text or link
-                    if (text.includes('spin') || href.includes('spin')) {
-                        let target = el.closest('a') || el;
-                        console.log("DEBUG: Hunter-Seeker found target: " + href);
-                        target.click();
-                        return true;
-                    }
-                }
-                // NUCLEAR FALLBACK: Force the Vue Router directly
-                console.log("WARNING: DOM scan failed. Executing Nuclear Direct-Route...");
-                window.location.href = "/ng/m/games/spin-da-bottle";
-                return "NUCLEAR_TRIGGERED";
-            }
-        """)
+        # Use advanced locator for reliable game match
+        game_target = page.locator("a[href*='spin'], img[alt*='spin'], img[src*='spin'], :has-text('Spin da Bottle'), .m-game-item:has-text('Spin')").first
 
-        print(f"DEBUG: Hunter-Seeker Status: {hunter_success}")
+        print("DEBUG: Stage 6 - Triggering Game Entry (Hardware Click)...")
+        try:
+            await game_target.click(force=True, timeout=15000)
+        except Exception as e:
+            print(f"WARNING: Native click failed: {e}. Executing Kernel Fallback...")
+            await page.evaluate("window.location.href = '/ng/m/games/spin-da-bottle'")
+
         await asyncio.sleep(5)
         await page.screenshot(path="artifacts/telemetry_5_final_transition.png")
 
-        # 5. Wait for Iframe to mount (60s Timeout)
-        print("DEBUG: Waiting for Game Iframe to mount (60s)...")
+        # 6. Resilient Iframe Sync (60s)
+        print("DEBUG: Waiting for Game Iframe (60s Resilience)...")
         iframe_locator = page.frame_locator("iframe[src*='sportygames']")
 
         try:
-            # Wait for container
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=60000)
-            print("DEBUG: Iframe attached. Waiting for Canvas hydration...")
         except:
-            print("WARNING: Iframe attachment timed out. Stabilizing and retrying...")
             await TitanInteractionSuite.stabilize_environment(page)
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=30000)
 
-        # 6. Final Game UI Indicators
+        # 7. Hydration Check
         ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
         try:
             await ui_indicator.wait_for(state="visible", timeout=60000)
@@ -98,7 +96,7 @@ class TitanGameEngine:
             return iframe_locator
 
     async def run_environment(self, storage_state: Optional[Dict[str, Any]] = None):
-        """V5.50: Chimera Environment with Full Telemetry."""
+        """V5.51 Chimera Environment: Mixed Fingerprint Stealth."""
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(headless=True)
 

@@ -9,60 +9,89 @@ from typing import List, Dict, Optional, Any
 class TitanGameEngine:
     def __init__(self, db: TitanDatabase):
         self.db = db
-        # V5.54: Target Lobby directly with Zero-Nuke Strategy
-        self.game_url = "https://www.football.com/ng/m/games"
+        # V5.55: Walk through the Front Door (Homepage)
+        self.game_url = "https://www.football.com/ng/m/"
 
     async def get_frame(self, page: Page):
-        """V5.54: Zero-Interference (Ghost Touch) Entry."""
+        """V5.55: Full Human Traversal (The Front Door)."""
         os.makedirs("artifacts", exist_ok=True)
 
-        # 1. Stage 1 - Direct Organic Entry (Zero-Nuke)
-        print("DEBUG: Stage 1 - Direct Organic Entry (Zero-Nuke)...")
-        # Go straight to games, let site load naturally
+        # 1. Stage 1 - Loading Homepage (The Front Door)
+        print("DEBUG: Stage 1 - Loading Homepage (The Front Door)...")
+        # Must start at root to allow cookies and Vue to initialize naturally
         await page.goto(self.game_url, wait_until="networkidle")
+        # Give splash screen time to clear naturally
+        print("DEBUG: Waiting 4s for Splash Screen to clear...")
+        await asyncio.sleep(4)
+        await page.screenshot(path="artifacts/telemetry_0_homepage.png")
 
-        # Let hydration finish naturally
-        print("DEBUG: Waiting 6s for API to populate grid naturally...")
-        await asyncio.sleep(6)
-        await page.screenshot(path="artifacts/telemetry_1_lobby_check.png")
+        # 2. Stage 2 - Organic UI Navigation to Games
+        print("DEBUG: Stage 2 - Organic UI Navigation to Games...")
+        try:
+            # Try to open hamburger menu
+            menu_btn = page.locator(".m-header-left, .icon-menu, .icon-hamburger").first
+            if await menu_btn.is_visible():
+                await menu_btn.click(force=True)
+                await asyncio.sleep(2) # Menu slide animation
 
-        # 2. Stage 2 - Verifying Grid & Target
-        print("DEBUG: Stage 2 - Verifying Grid & Target...")
-        # Use fuzzy search for target without altering DOM
-        game_box = page.locator(".m-game-item, .game-item, a:has-text('Spin'), div:has-text('Spin')").first
+            # Find and click 'Games' link natively via soft DOM click
+            print("DEBUG: Executing soft DOM click on Games route...")
+            await page.evaluate("""() => {
+                const gameLink = document.querySelector('a[href*="/games"]');
+                if(gameLink) gameLink.click();
+            }""")
+        except Exception as e:
+            print(f"WARNING: Menu navigation snagged: {e}. Attempting direct lobby jump...")
+            await page.goto("https://www.football.com/ng/m/games", wait_until="networkidle")
 
-        if await game_box.is_visible():
-            print("SUCCESS: Target spotted. Initiating Ghost Touch Snipe...")
-            box = await game_box.bounding_box()
+        # 3. Stage 3 - Waiting for Vue Hydration (Grid Load)
+        print("DEBUG: Stage 3 - Waiting for Vue Hydration (Grid Load)...")
+        try:
+            # Wait for physical grid elements
+            await page.wait_for_selector(".m-game-item, .game-item", timeout=20000)
+            print("SUCCESS: Lobby Grid loaded organically!")
+            await page.screenshot(path="artifacts/telemetry_1_lobby_success.png")
+        except Exception as e:
+            print("CRITICAL: Grid failed to load after organic nav. API might be blocking.")
+            await page.screenshot(path="artifacts/telemetry_1_lobby_fail.png", full_page=True)
+
+        # 4. Stage 4 - Ghost Touch Snipe
+        print("DEBUG: Stage 4 - Ghost Touch Snipe...")
+        # Find 'Spin da Bottle'
+        target = page.locator("a:has-text('Spin'), div:has-text('Spin'), .m-game-item:has-text('Spin')").first
+
+        if await target.is_visible():
+            box = await target.bounding_box()
             if box:
                 center_x = box['x'] + box['width'] / 2
                 center_y = box['y'] + box['height'] / 2
 
-                # Smooth, human-like mouse movement and click
-                await page.mouse.move(center_x, center_y, steps=10)
-                await asyncio.sleep(0.2)
+                print(f"DEBUG: Executing Ghost Touch at X:{center_x}, Y:{center_y}")
+                # Smooth movement + timed press (bypass isTrusted)
+                await page.mouse.move(center_x, center_y, steps=15)
+                await asyncio.sleep(0.3)
                 await page.mouse.down()
-                await asyncio.sleep(0.15) # Real finger press duration
+                await asyncio.sleep(0.15) # Real tap duration
                 await page.mouse.up()
-                print("DEBUG: Ghost Touch Executed. Waiting for game to mount...")
+                print("DEBUG: Tap complete. Waiting for iframe...")
             else:
-                print("WARNING: Bounding box failed. Executing standard organic click.")
-                await game_box.click(force=True)
+                print("WARNING: Could not calculate box. Executing standard click.")
+                await target.click(force=True)
         else:
-            print("CRITICAL: Grid failed to load natively. Check telemetry_1.")
+            print("CRITICAL: Target 'Spin da Bottle' not found on screen.")
 
-        # 3. Stage 3: Wait for the iframe naturally
-        print("DEBUG: Stage 3 - Waiting for SportyGames Iframe (NO NUKING)...")
+        # 5. Stage 5 - Waiting for SportyGames Iframe
+        print("DEBUG: Stage 5 - Waiting for SportyGames Iframe (NO NUKING)...")
         iframe_locator = page.frame_locator("iframe[src*='sportygames']")
 
         try:
-            # Patients wait for attachment
+            # Patience wait for iframe mount
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=60000)
             print("SUCCESS: Iframe successfully mounted! We are in.")
 
             # Wait for internal hydration
             ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
-            await ui_indicator.wait_for(state="visible", timeout=60000)
+            await ui_indicator.wait_for(state="visible", timeout=30000)
             print("DEBUG: Game Engine hydrated.")
 
             await page.screenshot(path="artifacts/telemetry_final_success.png")
@@ -73,7 +102,7 @@ class TitanGameEngine:
             return iframe_locator
 
     async def run_environment(self, storage_state: Optional[Dict[str, Any]] = None):
-        """V5.54 Chimera Environment: Mixed Fingerprint Stealth."""
+        """V5.55 Chimera Environment: Mixed Fingerprint Stealth."""
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(headless=True)
 

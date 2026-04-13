@@ -41,8 +41,8 @@ class OmniMachineV31Refined:
         self.executor = DecisionExecutor(self.brain, self.risk)
 
     async def run_accuracy_cycle(self):
-        """V5.54: Modular Ghost-Touch Money Machine."""
-        print(f"--- OMNI MACHINE CYCLE V5.54 (GHOST-TOUCH) ---")
+        """V5.55: Modular Front-Door Money Machine."""
+        print(f"--- OMNI MACHINE CYCLE V5.55 (FRONT-DOOR) ---")
 
         # 1. Component Initialization
         db = TitanDatabase()
@@ -145,13 +145,13 @@ class OmniMachineV31Refined:
                 await pw.stop()
 
         except Exception as e:
-            print(f"CRITICAL ERROR in V5.54 Cycle: {e}")
+            print(f"CRITICAL ERROR in V5.55 Cycle: {e}")
         finally:
             self.session_state["bankroll"] = self.risk.bankroll
             self.db.save_bot_session(self.session_state)
             self.db.save_model_weights(self.brain.weights)
             self.db.close()
-            print(f"--- V5.54 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
+            print(f"--- V5.55 CYCLE COMPLETE (Bankroll: ₦{self.risk.bankroll:.2f}) ---")
 
     async def _capture_history_ui(self, frame) -> List[str]:
         results = []

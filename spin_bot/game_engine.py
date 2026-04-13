@@ -9,86 +9,71 @@ from typing import List, Dict, Optional, Any
 class TitanGameEngine:
     def __init__(self, db: TitanDatabase):
         self.db = db
-        # V5.50: Start at Homepage for Organic Navigation
-        self.game_url = "https://www.football.com/ng/m/"
+        # V5.54: Target Lobby directly with Zero-Nuke Strategy
+        self.game_url = "https://www.football.com/ng/m/games"
 
     async def get_frame(self, page: Page):
-        """V5.53: SPA Deadlock Breaker & Truth Gate (Phase 11)."""
+        """V5.54: Zero-Interference (Ghost Touch) Entry."""
         os.makedirs("artifacts", exist_ok=True)
 
-        # 1. Truth Gate Stage 1 - Navigating to Homepage
-        print("DEBUG: Stage 1 - Navigating to Homepage (Wait for Splash)...")
-        await page.goto(self.game_url, wait_until="domcontentloaded")
-        print("DEBUG: Waiting 10s for Splash Screen to clear...")
-        await asyncio.sleep(10)
-        await page.screenshot(path="artifacts/telemetry_1_homepage.png")
+        # 1. Stage 1 - Direct Organic Entry (Zero-Nuke)
+        print("DEBUG: Stage 1 - Direct Organic Entry (Zero-Nuke)...")
+        # Go straight to games, let site load naturally
+        await page.goto(self.game_url, wait_until="networkidle")
 
-        # 2. Truth Gate Stage 2 - Forcing Route to Lobby
-        print("DEBUG: Stage 2 - Forcing Route to Lobby...")
-        await page.evaluate("() => { window.location.href = '/ng/m/games'; }")
+        # Let hydration finish naturally
+        print("DEBUG: Waiting 6s for API to populate grid naturally...")
+        await asyncio.sleep(6)
+        await page.screenshot(path="artifacts/telemetry_1_lobby_check.png")
 
-        try:
-            # TRUTH GATE: Confirm physical URL transition
-            print("DEBUG: Waiting for URL transition to /games...")
-            await page.wait_for_url("**/games**", timeout=20000)
-            print("SUCCESS: URL Transitioned. Framework is likely frozen.")
+        # 2. Stage 2 - Verifying Grid & Target
+        print("DEBUG: Stage 2 - Verifying Grid & Target...")
+        # Use fuzzy search for target without altering DOM
+        game_box = page.locator(".m-game-item, .game-item, a:has-text('Spin'), div:has-text('Spin')").first
 
-            # THE DEADLOCK BREAKER: Force a hard refresh of the page
-            print("DEBUG: Executing Hard Refresh to break SPA Deadlock...")
-            await page.reload(wait_until="domcontentloaded")
-            await asyncio.sleep(5) # Give it 5 seconds to rebuild the DOM
+        if await game_box.is_visible():
+            print("SUCCESS: Target spotted. Initiating Ghost Touch Snipe...")
+            box = await game_box.bounding_box()
+            if box:
+                center_x = box['x'] + box['width'] / 2
+                center_y = box['y'] + box['height'] / 2
 
-        except Exception as e:
-            print(f"CRITICAL: URL did not change! Stuck on loading page: {e}")
-            await page.screenshot(path="artifacts/telemetry_failed_transition.png")
-            # Emergency reload anyway
-            await page.reload(wait_until="networkidle")
+                # Smooth, human-like mouse movement and click
+                await page.mouse.move(center_x, center_y, steps=10)
+                await asyncio.sleep(0.2)
+                await page.mouse.down()
+                await asyncio.sleep(0.15) # Real finger press duration
+                await page.mouse.up()
+                print("DEBUG: Ghost Touch Executed. Waiting for game to mount...")
+            else:
+                print("WARNING: Bounding box failed. Executing standard organic click.")
+                await game_box.click(force=True)
+        else:
+            print("CRITICAL: Grid failed to load natively. Check telemetry_1.")
 
-        # 3. Truth Gate Stage 3 - Waiting for physical grid
-        print("DEBUG: Stage 3 - Waiting for Grid Element to appear...")
-        try:
-            # We now wait up to 20 seconds for the actual API to populate the grid
-            await page.wait_for_selector(".m-game-item, .game-item, .game-list, a[href*='spin']", timeout=20000)
-            print("SUCCESS: Game Grid detected after Hard Refresh.")
-        except Exception:
-            print("WARNING: Grid STILL not detected. API might be blocking our IP.")
-
-        await page.screenshot(path="artifacts/telemetry_3_actual_lobby.png")
-
-        # 4. Stage 4: Direct URL Force (Nuclear Fallback)
-        print("DEBUG: Stage 4 - Direct URL Force (Nuclear Fallback)...")
-        # Since we know the lobby is unstable, immediately try to hard-load the game directly
-        try:
-            await page.goto("https://www.football.com/ng/m/games/spin-da-bottle", wait_until="domcontentloaded")
-            await asyncio.sleep(8)
-        except Exception as e:
-            print(f"WARNING: Direct load interrupted: {e}")
-
-        await page.screenshot(path="artifacts/telemetry_final_transition.png")
-
-        # 5. Resilient Iframe Sync (60s)
-        print("DEBUG: Waiting for Game Iframe (60s Resilience)...")
+        # 3. Stage 3: Wait for the iframe naturally
+        print("DEBUG: Stage 3 - Waiting for SportyGames Iframe (NO NUKING)...")
         iframe_locator = page.frame_locator("iframe[src*='sportygames']")
 
         try:
+            # Patients wait for attachment
             await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=60000)
-        except:
-            await TitanInteractionSuite.stabilize_environment(page)
-            await page.locator("iframe[src*='sportygames']").wait_for(state="attached", timeout=30000)
+            print("SUCCESS: Iframe successfully mounted! We are in.")
 
-        # 6. Hydration Check
-        ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
-        try:
+            # Wait for internal hydration
+            ui_indicator = iframe_locator.locator("canvas, .history, .results, .history-list, .bet-panel").first
             await ui_indicator.wait_for(state="visible", timeout=60000)
             print("DEBUG: Game Engine hydrated.")
+
+            await page.screenshot(path="artifacts/telemetry_final_success.png")
             return iframe_locator
         except Exception as e:
-            print(f"CRITICAL: Game hydration failed: {e}")
-            await page.screenshot(path="artifacts/game_load_failure_final.png")
+            print(f"CRITICAL: Iframe failed to mount/hydrate: {e}")
+            await page.screenshot(path="artifacts/telemetry_final_error.png", full_page=True)
             return iframe_locator
 
     async def run_environment(self, storage_state: Optional[Dict[str, Any]] = None):
-        """V5.53 Chimera Environment: Mixed Fingerprint Stealth."""
+        """V5.54 Chimera Environment: Mixed Fingerprint Stealth."""
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(headless=True)
 

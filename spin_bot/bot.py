@@ -19,7 +19,7 @@ async def run_login_flow():
     os.makedirs("artifacts", exist_ok=True)
 
     async with async_playwright() as p:
-        # Launch browser with stealth-like settings
+        # Launch browser with mobile context
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={'width': 375, 'height': 812},
@@ -27,24 +27,44 @@ async def run_login_flow():
         )
         page = await context.new_page()
 
-        print("Navigating to login page...")
-        # Common mobile login path
-        await page.goto("https://www.football.com/ng/m/login", wait_until="networkidle")
+        print("Navigating to mobile home page: https://www.football.com/ng/m/ ...")
+        await page.goto("https://www.football.com/ng/m/", wait_until="networkidle")
+
+        # Check for livescore redirection (detection indicator)
+        current_url = page.url
+        if "livescore" in current_url:
+            print(f"Warning: Redirected to {current_url}. Bot detection likely.")
+            await page.screenshot(path="artifacts/redirect_detected.png")
+            await browser.close()
+            return
+
+        print("Organic navigation successful. Finding login button...")
+        try:
+            # Using .m-btn-login as requested
+            login_btn = page.locator(".m-btn-login")
+            await login_btn.wait_for(state="visible", timeout=10000)
+            await login_btn.click()
+            print("Login button clicked.")
+        except Exception as e:
+            print(f"Login button not found or not clickable: {e}")
+            await page.screenshot(path="artifacts/home_page_error.png")
+            await browser.close()
+            return
 
         # Fill login details
         print("Filling login credentials...")
         try:
-            # Targeting common patterns for mobile/password fields
+            # Targeting mobile/password fields on the login page
             await page.wait_for_selector('input[type="tel"]', timeout=10000)
             await page.fill('input[type="tel"]', login_phone)
             await page.fill('input[type="password"]', login_pass)
 
             print("Submitting login...")
-            # Often the button text contains 'Login' or it's a submit type
+            # Click the login submission button
             await page.click('button:has-text("Login"), button[type="submit"]')
         except Exception as e:
-            print(f"Selector error: {e}")
-            await page.screenshot(path="artifacts/login_error.png")
+            print(f"Login field error: {e}")
+            await page.screenshot(path="artifacts/login_field_error.png")
             await browser.close()
             return
 
@@ -53,8 +73,8 @@ async def run_login_flow():
         await asyncio.sleep(10)
 
         # Verification Screenshot
-        print("Capturing verification screenshot...")
-        await page.screenshot(path="artifacts/login_verification.png", full_page=True)
+        print("Capturing verification screenshot: login_confirmed.png")
+        await page.screenshot(path="artifacts/login_confirmed.png", full_page=True)
 
         # Persist Session
         print("Capturing storage state...")
@@ -63,7 +83,6 @@ async def run_login_flow():
         print("Persisting session to MongoDB...")
         try:
             client = MongoClient(mongo_uri)
-            # Use 'football_bot' as default db if not specified in URI
             db = client.get_database("football_bot")
 
             db.titan_auth.update_one(

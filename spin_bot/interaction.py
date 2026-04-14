@@ -39,8 +39,25 @@ class TitanInteractionSuite:
                     const element = originalCreateElement.call(document, tagName);
                     const tag = tagName.toLowerCase();
                     if (tag === 'script' || tag === 'link') {
+                        const originalSetAttribute = element.setAttribute;
+                        element.setAttribute = function(name, value) {
+                            if (name === 'src' || name === 'href') {
+                                this._url = value;
+                            }
+                            return originalSetAttribute.apply(this, arguments);
+                        };
+
+                        Object.defineProperty(element, 'src', {
+                            set: function(value) { this._url = value; this.setAttribute('src', value); },
+                            get: function() { return this.getAttribute('src'); }
+                        });
+                        Object.defineProperty(element, 'href', {
+                            set: function(value) { this._url = value; this.setAttribute('href', value); },
+                            get: function() { return this.getAttribute('href'); }
+                        });
+
                         element.onerror = function() {
-                            const src = element.src || element.href;
+                            const src = this._url || this.src || this.href;
                             if (!src) return;
                             window.assetRetries[src] = (window.assetRetries[src] || 0) + 1;
                             if (window.assetRetries[src] <= 2) {
@@ -79,7 +96,6 @@ class TitanInteractionSuite:
                         }
                         return response;
                     } catch (e) {
-                        // Support for test mock 401
                         if (args[0] === 'MOCK_401') {
                             window.dispatchEvent(new CustomEvent('titan-login-required'));
                         }
@@ -148,7 +164,6 @@ class TitanInteractionSuite:
                     const observer = new MutationObserver(() => {
                         updateLoaderStyles();
 
-                        // V5.49 Hydration Safety: Wait for specific elements before hiding loader
                         if (document.querySelector('#app > *, .m-home > *, .m-game > *, #content > *, .game-list, .lobby-container')) {
                             const loaders = document.querySelectorAll('.app-init-loader-wrap, .m-loader, .loading-wrap');
                             loaders.forEach(l => {
@@ -181,15 +196,9 @@ class TitanInteractionSuite:
     @staticmethod
     async def stabilize_environment(page: Page, delay_nuke: bool = False):
         """V5.34/V5.49 CSS-NUKE & Stabilization: Hide traps via CSS injection."""
-        # V5.49: Adjustment - Optional delay for Cloudflare/WAF handshakes
         if delay_nuke:
-            print("DEBUG: Delaying CSS-NUKE for hydration safety...")
             await asyncio.sleep(5)
-
-        print("DEBUG: Executing CSS-NUKE Stabilization...")
         try:
-            # V5.34: Inject high-priority CSS to hide overlays and modals without breaking reactivity
-            # V5.49: Exclude potentially critical hydration elements
             await page.add_style_tag(content="""
                 .m-modal, .modal, .overlay, .modal-backdrop, [class*='backdrop']:not(.titan-modal-backdrop),
                 [class*='overlay'], .dialog-wrap, .sg-confirm-cancel-modal-v2, .m-loading-mask,
@@ -203,22 +212,6 @@ class TitanInteractionSuite:
             """)
         except: pass
         try: await page.mouse.click(0, 0)
-        except: pass
-
-    @staticmethod
-    async def hide_init_loader(page: Page):
-        """V5.21: Immediately hide the loader when state is 'Ready'."""
-        try:
-            await page.evaluate("""
-                const selectors = ['.app-init-loader-wrap', '.m-loader', '.loading-wrap', '.m-loading-mask'];
-                selectors.forEach(sel => {
-                    document.querySelectorAll(sel).forEach(el => {
-                        el.style.setProperty('display', 'none', 'important');
-                        el.style.setProperty('opacity', '0', 'important');
-                        el.style.setProperty('visibility', 'hidden', 'important');
-                    });
-                });
-            """)
         except: pass
 
     @staticmethod

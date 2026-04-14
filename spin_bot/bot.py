@@ -38,15 +38,45 @@ async def run_login_flow():
             await browser.close()
             return
 
-        print("Organic navigation successful. Finding login button...")
+        # Handle potential popups (Gatekeeper Bypass)
+        print("Checking for popups...")
         try:
-            # Using .m-btn-login as requested
+            # Wait a bit for popups to appear
+            await asyncio.sleep(3)
+            popup_selectors = [".dialog-wrapper", ".m-dialog", ".m-modal"]
+            for selector in popup_selectors:
+                if await page.locator(selector).is_visible():
+                    print(f"Popup detected ({selector}). Attempting to dismiss...")
+                    # Try to find a confirm/close button
+                    confirm_btn = page.locator(f"{selector} button:has-text('Confirm'), {selector} .m-btn-confirm, {selector} button:has-text('OK'), {selector} .close-btn")
+                    if await confirm_btn.is_visible():
+                        await confirm_btn.click()
+                        print("Popup dismissed.")
+                    else:
+                        print("Could not find a dismissal button for the popup.")
+        except Exception as e:
+            print(f"Error handling popups: {e}")
+
+        print("Proceeding to find login button...")
+        try:
             login_btn = page.locator(".m-btn-login")
             await login_btn.wait_for(state="visible", timeout=10000)
-            await login_btn.click()
-            print("Login button clicked.")
+
+            # Try normal click first, then forced, then JS
+            try:
+                print("Attempting normal click on login button...")
+                await login_btn.click(timeout=5000)
+            except Exception:
+                print("Normal click failed or timed out. Attempting forced click...")
+                try:
+                    await login_btn.click(force=True, timeout=5000)
+                except Exception:
+                    print("Forced click failed. Using JavaScript injection fallback...")
+                    await page.evaluate("document.querySelector('.m-btn-login').click()")
+
+            print("Login button interaction complete.")
         except Exception as e:
-            print(f"Login button not found or not clickable: {e}")
+            print(f"Login button error: {e}")
             await page.screenshot(path="artifacts/home_page_error.png")
             await browser.close()
             return
@@ -61,7 +91,7 @@ async def run_login_flow():
 
             print("Submitting login...")
             # Click the login submission button
-            await page.click('button:has-text("Login"), button[type="submit"]')
+            await page.click('button:has-text("Login"), button[type="submit"]', force=True)
         except Exception as e:
             print(f"Login field error: {e}")
             await page.screenshot(path="artifacts/login_field_error.png")

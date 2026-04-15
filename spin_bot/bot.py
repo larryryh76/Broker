@@ -27,29 +27,56 @@ async def run_login():
         print("DEBUG: Navigating to Mobile Home Root...")
         await page.goto("https://www.football.com/ng/m/", wait_until="networkidle")
 
-        # 1. HANDLE THE REGION SELECTOR POPUP
+        # 1. HANDLE THE REGION SELECTOR POPUP (Step 1 & 2)
         try:
-            print("DEBUG: Checking for the Ghana/Nigeria region popup...")
-            # Wait a few seconds to see if the IP-mismatch popup triggers
-            dialog = page.locator(".dialog-wrapper, .m-dialog")
+            print("DEBUG: Checking for the blocking popup...")
+            popup_selector = ".dialog-wrapper, .m-dialog"
 
-            # Using a short timeout to check for the popup
-            if await dialog.is_visible(timeout=6000):
-                print("DEBUG: Region popup detected! Looking for 'Nigeria'...")
-                # Instruct Playwright to find the word 'Nigeria' and click it
-                await page.locator("text=Nigeria").first.click(force=True)
-                print("DEBUG: Clicked 'Nigeria'. Waiting for UI to settle...")
-                await asyncio.sleep(3) # Give the modal time to slide away
+            # Wait a few seconds to see if the popup triggers
+            if await page.locator(popup_selector).is_visible(timeout=6000):
+                print("DEBUG: Popup detected! Step 1: Attempting to click the 'X' (close button)...")
+
+                # Try common close button patterns
+                close_selectors = [
+                    ".m-icon-close",
+                    ".icon-close",
+                    ".close-btn",
+                    "button:has(.icon-close)",
+                    ".m-dialog .close",
+                    ".dialog-wrapper .close"
+                ]
+
+                closed = False
+                for sel in close_selectors:
+                    close_btn = page.locator(sel).first
+                    if await close_btn.is_visible():
+                        print(f"DEBUG: Found close button with selector '{sel}'. Clicking...")
+                        await close_btn.click(force=True)
+                        await asyncio.sleep(2)
+                        if not await page.locator(popup_selector).is_visible():
+                            print("DEBUG: Popup successfully closed via UI interaction.")
+                            closed = True
+                            break
+
+                # Step 2: The 'Nuclear' Fallback (DOM Removal)
+                if not closed and await page.locator(popup_selector).is_visible():
+                    print("DEBUG: Popup still visible. Executing Nuclear Fallback (DOM removal)...")
+                    await page.evaluate(f"document.querySelectorAll('{popup_selector}').forEach(el => el.remove())")
+                    await asyncio.sleep(1)
+                    if not await page.locator(popup_selector).is_visible():
+                        print("DEBUG: Popup physically removed from the DOM.")
             else:
-                print("DEBUG: No region popup detected.")
+                print("DEBUG: No blocking popup detected.")
         except Exception as e:
-            print(f"DEBUG: Region popup check finished or bypassed: {e}")
+            print(f"DEBUG: Popup handling flow finished or bypassed: {e}")
 
         # 2. CLICK THE ACTUAL LOGIN BUTTON
         try:
-            print("DEBUG: Attempting forced click on the Home Screen Login button...")
+            print("DEBUG: Attempting click on the Home Screen Login button...")
             login_selector = ".m-btn-login"
             await page.wait_for_selector(login_selector, timeout=10000)
+
+            # Use forced click as backup if something else is still in the way
             await page.click(login_selector, force=True)
 
             # 3. FILL CREDENTIALS
@@ -62,7 +89,6 @@ async def run_login():
 
             # Submit the form
             print("DEBUG: Clicking submit...")
-            # targeting common submit button patterns on the login page
             await page.click("button.m-btn-login, button[type='submit']", force=True)
 
             print("DEBUG: Waiting for login processing and redirect...")
@@ -101,6 +127,16 @@ async def run_login():
         except Exception as e:
             print(f"ERROR during login flow: {e}")
             await page.screenshot(path="artifacts/organic_flow_error.png")
+
+        # Step 3: The Full Element Dump (Crucial Requirement)
+        print("DEBUG: Capturing full page elements dump...")
+        try:
+            content = await page.content()
+            with open("artifacts/full_page_elements_dump.html", "w", encoding="utf-8") as f:
+                f.write(content)
+            print("DEBUG: Full HTML dump saved to artifacts/full_page_elements_dump.html")
+        except Exception as e:
+            print(f"DEBUG: Failed to save HTML dump: {e}")
 
         await browser.close()
 

@@ -89,7 +89,8 @@ async def run_login():
 
             # Submit the form
             print("DEBUG: Clicking submit...")
-            await page.click("button.m-btn-login, button[type='submit']", force=True)
+            # Updated selector specifically for the login form's submit button
+            await page.click("button.login-btn, [data-op='login-btn']", force=True)
 
             print("DEBUG: Waiting for login processing and redirect...")
             await asyncio.sleep(10)

@@ -99,28 +99,32 @@ async def run_login_and_navigate():
                 await page.mouse.wheel(0, -400)
                 await human_delay(2, 4)
 
-                # Target Casino Page
+                # 4. NAVIGATE TO CASINO (Syntax Fix)
                 print("DEBUG: Navigating to Casino section...")
                 try:
-                    # Target bottom nav or text-based links
-                    casino_link = page.locator("a[href*='/ng/m/casino/'], .m-nav-item:has-text('Casino'), text='Casino'").first
-                    await casino_link.wait_for(state="visible", timeout=10000)
-                    await casino_link.click(force=True)
+                    # We use the safest Playwright text engine, targeting the first visible element containing 'Casino'
+                    casino_btn = page.locator("text=Casino").first
 
-                    print("DEBUG: Waiting for Casino lobby to load...")
-                    await asyncio.sleep(8)
+                    await casino_btn.wait_for(state="visible", timeout=10000)
+                    await casino_btn.click(force=True)
 
-                    # Telemetry 2: Casino Lobby
+                    print("DEBUG: Clicked Casino. Waiting for lobby to load...")
+                    await asyncio.sleep(random.uniform(4.0, 6.5)) # Human-like wait for load
+
+                    # Telemetry 2: The Casino Lobby
                     await page.screenshot(path="artifacts/telemetry_2_casino_lobby.png")
 
-                    # Data Extraction: Casino Lobby Dump
-                    print("DEBUG: Capturing Casino lobby dump...")
-                    casino_content = await page.content()
-                    with open("artifacts/casino_lobby_dump.html", "w", encoding="utf-8") as f:
-                        f.write(casino_content)
-                except Exception as nav_e:
-                    print(f"ERROR: Failed to navigate to Casino: {nav_e}")
+                except Exception as e:
+                    print(f"ERROR: Failed to navigate to Casino: {e}")
                     await page.screenshot(path="artifacts/casino_nav_error.png")
+
+                # 5. CAPTURE THE LOBBY DUMP
+                print("DEBUG: Capturing full page elements dump of current screen...")
+                html_content = await page.content()
+                # Ensure the artifacts directory exists
+                os.makedirs("artifacts", exist_ok=True)
+                with open("artifacts/casino_lobby_dump.html", "w", encoding="utf-8") as f:
+                    f.write(html_content)
 
             else:
                 print("CRITICAL: Stuck on login screen.")

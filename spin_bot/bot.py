@@ -75,7 +75,7 @@ async def run_login_and_navigate():
                 print(f"SUCCESS: Logged in! Current URL: {page.url}")
                 storage = await context.storage_state()
 
-                # Persist Session (Updated with timezone-aware datetime)
+                # Persist Session
                 if DB_URI:
                     try:
                         client = MongoClient(DB_URI)
@@ -106,42 +106,28 @@ async def run_login_and_navigate():
                 await page.mouse.wheel(0, -400)
                 await human_delay(2, 4)
 
-                # 4. NAVIGATE TO VIRTUALS (Primary Navigation Fix)
-                print("DEBUG: Navigating to Virtuals section...")
+                # 4. NAVIGATE TO GAMES LOBBY
+                print("DEBUG: Navigating to Games section...")
                 try:
-                    # Target Virtuals lobby or link
-                    virtuals_btn = page.locator("a[href*='virtuals-lobby']").first
-                    if not await virtuals_btn.is_visible():
-                         virtuals_btn = page.get_by_role("link", name="Virtuals")
+                    # Target Games lobby or link
+                    games_btn = page.locator("a[href*='/ng/m/games/'], text=Games").first
+                    await games_btn.wait_for(state="visible", timeout=10000)
+                    await games_btn.click(force=True)
 
-                    await virtuals_btn.wait_for(state="visible", timeout=10000)
-                    await virtuals_btn.click(force=True)
+                    print("DEBUG: Clicked Games. Waiting for lobby to load...")
+                    await asyncio.sleep(random.uniform(5.0, 8.0))
 
-                    print("DEBUG: Clicked Virtuals. Waiting for lobby to load...")
-                    await asyncio.sleep(random.uniform(4.0, 6.5))
+                    # Telemetry: The Games Lobby
+                    await page.screenshot(path="artifacts/telemetry_2_games_lobby.png")
 
-                    # Telemetry 2: The Virtuals/Game Lobby
-                    await page.screenshot(path="artifacts/telemetry_2_virtuals_lobby.png")
-
+                    # Data Extraction: Games Lobby Dump
+                    print("DEBUG: Capturing Games lobby dump...")
+                    games_content = await page.content()
+                    with open("artifacts/games_lobby_dump.html", "w", encoding="utf-8") as f:
+                        f.write(games_content)
                 except Exception as e:
-                    print(f"ERROR: Failed to navigate to Virtuals: {e}")
-                    await page.screenshot(path="artifacts/virtuals_nav_error.png")
-
-                    # 5. DIAGNOSTIC ROUTINE
-                    print("DEBUG: Diagnostic Routine triggered. Checking for 'Lite' version...")
-                    snap_nav = await page.locator(".m-snap-nav").count()
-                    if snap_nav > 0:
-                        print("DEBUG: ALERT: 'm-snap-nav' detected. Page might be in 'Lite' mode.")
-
-                    html_content = await page.content()
-                    with open("artifacts/diagnostic_lite_check_dump.html", "w", encoding="utf-8") as f:
-                        f.write(html_content)
-
-                # 6. CAPTURE THE LOBBY DUMP
-                print("DEBUG: Capturing lobby dump of current screen...")
-                html_content = await page.content()
-                with open("artifacts/casino_lobby_dump.html", "w", encoding="utf-8") as f:
-                    f.write(html_content)
+                    print(f"ERROR: Failed to navigate to Games: {e}")
+                    await page.screenshot(path="artifacts/games_nav_error.png")
 
             else:
                 print("CRITICAL: Stuck on login screen.")

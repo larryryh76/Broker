@@ -3,7 +3,7 @@ import asyncio
 import random
 from playwright.async_api import async_playwright
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Environment Secrets
 DB_URI = os.getenv("MONGODB_URI")
@@ -75,17 +75,24 @@ async def run_login_and_navigate():
                 print(f"SUCCESS: Logged in! Current URL: {page.url}")
                 storage = await context.storage_state()
 
-                # Persist Session
+                # Persist Session (Updated with timezone-aware datetime)
                 if DB_URI:
                     try:
                         client = MongoClient(DB_URI)
                         db = client['broker_db']
-                        db.titan_auth.update_one({"account": USER_ID}, {"$set": {"session_data": storage, "updated_at": datetime.utcnow()}}, upsert=True)
+                        db.titan_auth.update_one(
+                            {"account": USER_ID},
+                            {
+                                "$set": {
+                                    "session_data": storage,
+                                    "updated_at": datetime.now(timezone.utc)
+                                }
+                            },
+                            upsert=True
+                        )
                         client.close()
                     except Exception as mongo_err:
                         print(f"DEBUG: MongoDB error: {mongo_err}")
-
-                # PHASE 25: HUMAN EMULATION & CASINO NAVIGATION
 
                 # Telemetry 0: Homepage right after login
                 await page.screenshot(path="artifacts/telemetry_0_homepage.png")
@@ -99,30 +106,40 @@ async def run_login_and_navigate():
                 await page.mouse.wheel(0, -400)
                 await human_delay(2, 4)
 
-                # 4. NAVIGATE TO CASINO (Syntax Fix)
-                print("DEBUG: Navigating to Casino section...")
+                # 4. NAVIGATE TO VIRTUALS (Primary Navigation Fix)
+                print("DEBUG: Navigating to Virtuals section...")
                 try:
-                    # We use the safest Playwright text engine, targeting the first visible element containing 'Casino'
-                    casino_btn = page.locator("text=Casino").first
+                    # Target Virtuals lobby or link
+                    virtuals_btn = page.locator("a[href*='virtuals-lobby']").first
+                    if not await virtuals_btn.is_visible():
+                         virtuals_btn = page.get_by_role("link", name="Virtuals")
 
-                    await casino_btn.wait_for(state="visible", timeout=10000)
-                    await casino_btn.click(force=True)
+                    await virtuals_btn.wait_for(state="visible", timeout=10000)
+                    await virtuals_btn.click(force=True)
 
-                    print("DEBUG: Clicked Casino. Waiting for lobby to load...")
-                    await asyncio.sleep(random.uniform(4.0, 6.5)) # Human-like wait for load
+                    print("DEBUG: Clicked Virtuals. Waiting for lobby to load...")
+                    await asyncio.sleep(random.uniform(4.0, 6.5))
 
-                    # Telemetry 2: The Casino Lobby
-                    await page.screenshot(path="artifacts/telemetry_2_casino_lobby.png")
+                    # Telemetry 2: The Virtuals/Game Lobby
+                    await page.screenshot(path="artifacts/telemetry_2_virtuals_lobby.png")
 
                 except Exception as e:
-                    print(f"ERROR: Failed to navigate to Casino: {e}")
-                    await page.screenshot(path="artifacts/casino_nav_error.png")
+                    print(f"ERROR: Failed to navigate to Virtuals: {e}")
+                    await page.screenshot(path="artifacts/virtuals_nav_error.png")
 
-                # 5. CAPTURE THE LOBBY DUMP
-                print("DEBUG: Capturing full page elements dump of current screen...")
+                    # 5. DIAGNOSTIC ROUTINE
+                    print("DEBUG: Diagnostic Routine triggered. Checking for 'Lite' version...")
+                    snap_nav = await page.locator(".m-snap-nav").count()
+                    if snap_nav > 0:
+                        print("DEBUG: ALERT: 'm-snap-nav' detected. Page might be in 'Lite' mode.")
+
+                    html_content = await page.content()
+                    with open("artifacts/diagnostic_lite_check_dump.html", "w", encoding="utf-8") as f:
+                        f.write(html_content)
+
+                # 6. CAPTURE THE LOBBY DUMP
+                print("DEBUG: Capturing lobby dump of current screen...")
                 html_content = await page.content()
-                # Ensure the artifacts directory exists
-                os.makedirs("artifacts", exist_ok=True)
                 with open("artifacts/casino_lobby_dump.html", "w", encoding="utf-8") as f:
                     f.write(html_content)
 

@@ -109,8 +109,8 @@ async def run_login_and_navigate():
                 # 4. NAVIGATE TO GAMES LOBBY
                 print("DEBUG: Navigating to Games section...")
                 try:
-                    # Target Games lobby or link
-                    games_btn = page.locator("a[href*='/ng/m/games/'], text=Games").first
+                    # Using a clean text-based locator for mobile reliability
+                    games_btn = page.locator("text=Games").first
                     await games_btn.wait_for(state="visible", timeout=10000)
                     await games_btn.click(force=True)
 

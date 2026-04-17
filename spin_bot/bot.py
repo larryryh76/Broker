@@ -16,7 +16,7 @@ async def human_delay(min_sec=2, max_sec=5):
     print(f"DEBUG: Human delay for {delay:.2f}s...")
     await asyncio.sleep(delay)
 
-async def run_login_and_navigate():
+async def run_login_and_recon():
     if not all([USER_ID, PASSWORD, DB_URI]):
         print("Error: Missing required environment variables (FOOTBALL_NG_LOGIN, FOOTBALL_NG_PASS, MONGODB_URI).")
         return
@@ -80,16 +80,7 @@ async def run_login_and_navigate():
                     try:
                         client = MongoClient(DB_URI)
                         db = client['broker_db']
-                        db.titan_auth.update_one(
-                            {"account": USER_ID},
-                            {
-                                "$set": {
-                                    "session_data": storage,
-                                    "updated_at": datetime.now(timezone.utc)
-                                }
-                            },
-                            upsert=True
-                        )
+                        db.titan_auth.update_one({"account": USER_ID}, {"$set": {"session_data": storage, "updated_at": datetime.now(timezone.utc)}}, upsert=True)
                         client.close()
                     except Exception as mongo_err:
                         print(f"DEBUG: MongoDB error: {mongo_err}")
@@ -98,35 +89,56 @@ async def run_login_and_navigate():
                 await page.screenshot(path="artifacts/telemetry_0_homepage.png")
                 await human_delay(2, 4)
 
-                # Natural Scrolling Simulation
-                print("DEBUG: Simulating human scroll...")
-                await page.mouse.wheel(0, 400)
-                await page.screenshot(path="artifacts/telemetry_1_scrolling.png")
-                await human_delay(1, 2)
-                await page.mouse.wheel(0, -400)
-                await human_delay(2, 4)
-
                 # 4. NAVIGATE TO GAMES LOBBY
                 print("DEBUG: Navigating to Games section...")
                 try:
-                    # Using a clean text-based locator for mobile reliability
                     games_btn = page.locator("text=Games").first
                     await games_btn.wait_for(state="visible", timeout=10000)
                     await games_btn.click(force=True)
 
                     print("DEBUG: Clicked Games. Waiting for lobby to load...")
-                    await asyncio.sleep(random.uniform(5.0, 8.0))
+                    await asyncio.sleep(8)
 
-                    # Telemetry: The Games Lobby
-                    await page.screenshot(path="artifacts/telemetry_2_games_lobby.png")
+                    # SYSTEM ACTION: FULL LOBBY RECONNAISSANCE
 
-                    # Data Extraction: Games Lobby Dump
-                    print("DEBUG: Capturing Games lobby dump...")
-                    games_content = await page.content()
-                    with open("artifacts/games_lobby_dump.html", "w", encoding="utf-8") as f:
-                        f.write(games_content)
+                    # 1. Full-Height Scroll Routine
+                    print("DEBUG: Executing Full-Height Scroll Routine (3x)...")
+                    for i in range(3):
+                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        print(f"DEBUG: Scrolled to bottom ({i+1}/3). Waiting for lazy-load...")
+                        await asyncio.sleep(2)
+
+                    # 2. Targeted Element Dump & Logging
+                    print("DEBUG: Extracting game titles from grid...")
+                    # Using common grid item patterns
+                    game_items = page.locator(".game-item, [class*='game-item'], [class*='game-list-item']")
+                    count = await game_items.count()
+                    print(f"DEBUG: Found {count} game items.")
+
+                    for i in range(count):
+                        text = await game_items.nth(i).text_content()
+                        if text:
+                            print(f"GAME DETECTED: {text.strip()}")
+
+                    # 3. Full Page Telemetry
+                    print("DEBUG: Capturing full-page telemetry screenshot...")
+                    await page.screenshot(path="artifacts/telemetry_3_full_lobby.png", full_page=True)
+
+                    # Save Grid HTML
+                    print("DEBUG: Attempting to capture grid-specific HTML...")
+                    try:
+                        # Try to find the grid container
+                        grid_container = page.locator(".game-list-container, .game-grid, [class*='game-list']").first
+                        if await grid_container.is_visible():
+                            lobby_html = await grid_container.inner_html()
+                            with open("artifacts/full_lobby_grid.html", "w", encoding="utf-8") as f:
+                                f.write(lobby_html)
+                            print("DEBUG: Grid HTML saved to artifacts/full_lobby_grid.html")
+                    except Exception as grid_e:
+                        print(f"DEBUG: Could not isolate grid HTML: {grid_e}")
+
                 except Exception as e:
-                    print(f"ERROR: Failed to navigate to Games: {e}")
+                    print(f"ERROR during Games navigation/recon: {e}")
                     await page.screenshot(path="artifacts/games_nav_error.png")
 
             else:
@@ -149,4 +161,4 @@ async def run_login_and_navigate():
         await browser.close()
 
 if __name__ == "__main__":
-    asyncio.run(run_login_and_navigate())
+    asyncio.run(run_login_and_recon())

@@ -1,6 +1,7 @@
 import os
 import asyncio
 import random
+import json
 from playwright.async_api import async_playwright
 from pymongo import MongoClient
 from datetime import datetime, timezone
@@ -15,6 +16,46 @@ async def human_delay(min_sec=2, max_sec=5):
     delay = random.uniform(min_sec, max_sec)
     print(f"DEBUG: Human delay for {delay:.2f}s...")
     await asyncio.sleep(delay)
+
+async def handle_promos(page):
+    """Checks for and dismisses promotional overlays like 'Flash Win'."""
+    print("DEBUG: Checking for promotional overlays...")
+    try:
+        # 1. Target the 'Flash Win' specific popup
+        # Common selectors for the promo: header text, the 'Check' button, or the 'X' close icon
+        flash_win_selectors = [
+            "text=Flash Win",
+            "text=Flash Winning",
+            "button:has-text('Check')",
+            ".flash-win-header .close", # Guessing based on common patterns
+            "button.m-btn-confirm" # Based on previous successes with confirm buttons
+        ]
+
+        for selector in flash_win_selectors:
+            promo = page.locator(selector).first
+            if await promo.is_visible(timeout=3000):
+                print(f"DEBUG: Detected Flash Win popup via '{selector}' → closing...")
+
+                # Attempt to click a close button or 'Check' button
+                # We'll try the 'X' close button first if identifiable, otherwise the 'Check' button
+                close_btn = page.locator(".m-icon-close, .icon-close, text=X, button:has-text('Check')").first
+                if await close_btn.is_visible():
+                    await close_btn.click(force=True)
+                    print("DEBUG: Flash Win popup closed successfully")
+                    await asyncio.sleep(2)
+                    return True
+
+        # 2. General dialog-wrapper fallback (Nuclear removal if interaction fails)
+        popup_selector = ".dialog-wrapper, .m-dialog, .m-modal"
+        if await page.locator(popup_selector).is_visible(timeout=2000):
+            print("DEBUG: General popup detected. Removing from DOM...")
+            await page.evaluate(f"document.querySelectorAll('{popup_selector}').forEach(el => el.remove())")
+            await asyncio.sleep(1)
+            return True
+
+    except Exception as e:
+        print(f"DEBUG: Promo check finished or bypassed: {e}")
+    return False
 
 async def run_login_and_recon():
     if not all([USER_ID, PASSWORD, DB_URI]):
@@ -34,26 +75,8 @@ async def run_login_and_recon():
         print("DEBUG: Navigating to Mobile Home Root...")
         await page.goto("https://www.football.com/ng/m/", wait_until="networkidle")
 
-        # 1. HANDLE THE REGION SELECTOR POPUP
-        try:
-            print("DEBUG: Checking for the blocking popup...")
-            popup_selector = ".dialog-wrapper, .m-dialog"
-            if await page.locator(popup_selector).is_visible(timeout=6000):
-                close_selectors = [".m-icon-close", ".icon-close", ".close-btn", "button:has(.icon-close)", ".m-dialog .close", ".dialog-wrapper .close"]
-                closed = False
-                for sel in close_selectors:
-                    close_btn = page.locator(sel).first
-                    if await close_btn.is_visible():
-                        await close_btn.click(force=True)
-                        await asyncio.sleep(2)
-                        if not await page.locator(popup_selector).is_visible():
-                            closed = True
-                            break
-                if not closed and await page.locator(popup_selector).is_visible():
-                    await page.evaluate(f"document.querySelectorAll('{popup_selector}').forEach(el => el.remove())")
-                    await asyncio.sleep(1)
-        except Exception as e:
-            print(f"DEBUG: Popup handling flow finished or bypassed: {e}")
+        # 1. INITIAL POPUP HANDLING (Region selector etc)
+        await handle_promos(page)
 
         # 2. LOGIN FLOW
         try:
@@ -97,45 +120,64 @@ async def run_login_and_recon():
                     await games_btn.click(force=True)
 
                     print("DEBUG: Clicked Games. Waiting for lobby to load...")
-                    await asyncio.sleep(8)
+                    await asyncio.sleep(5)
 
-                    # SYSTEM ACTION: FULL LOBBY RECONNAISSANCE
+                    # SYSTEM ACTION: DISMISS BLOCKING OVERLAYS (Phase 27)
+                    await handle_promos(page)
 
                     # 1. Full-Height Scroll Routine
                     print("DEBUG: Executing Full-Height Scroll Routine (3x)...")
                     for i in range(3):
                         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                         print(f"DEBUG: Scrolled to bottom ({i+1}/3). Waiting for lazy-load...")
-                        await asyncio.sleep(2)
+                        await human_delay(2, 4)
 
-                    # 2. Targeted Element Dump & Logging
-                    print("DEBUG: Extracting game titles from grid...")
-                    # Using common grid item patterns
-                    game_items = page.locator(".game-item, [class*='game-item'], [class*='game-list-item']")
+                    # 2. Extract Game Items
+                    print("DEBUG: Extracting game items from grid...")
+                    # Selector for game cards
+                    game_selector = ".game-item, [class*='game-item'], [class*='game-list-item']"
+                    game_items = page.locator(game_selector)
                     count = await game_items.count()
-                    print(f"DEBUG: Found {count} game items.")
+                    print(f"DEBUG: Found {count} game items in lobby")
 
+                    games_data = []
                     for i in range(count):
-                        text = await game_items.nth(i).text_content()
-                        if text:
-                            print(f"GAME DETECTED: {text.strip()}")
+                        item = game_items.nth(i)
 
-                    # 3. Full Page Telemetry
-                    print("DEBUG: Capturing full-page telemetry screenshot...")
-                    await page.screenshot(path="artifacts/telemetry_3_full_lobby.png", full_page=True)
+                        # Extract basic info
+                        name = await item.locator(".game-name, [class*='name']").first.text_content() if await item.locator(".game-name, [class*='name']").first.count() > 0 else "Unknown"
+                        provider = await item.locator(".provider-name, [class*='provider']").first.text_content() if await item.locator(".provider-name, [class*='provider']").first.count() > 0 else "Unknown"
+                        img_src = await item.locator("img").first.get_attribute("src") if await item.locator("img").first.count() > 0 else "N/A"
+                        play_btn_text = await item.locator("button, .play-btn").first.text_content() if await item.locator("button, .play-btn").first.count() > 0 else "N/A"
+                        html_snippet = await item.inner_html()
+
+                        game_info = {
+                            "name": name.strip() if name else "N/A",
+                            "provider": provider.strip() if provider else "N/A",
+                            "img_url": img_src,
+                            "button_text": play_btn_text.strip() if play_btn_text else "N/A"
+                        }
+                        games_data.append(game_info)
+                        print(f"GAME DETECTED: {game_info['name']} | Studio: {game_info['provider']} | Button: {game_info['button_text']}")
+
+                        # Log snippet for the first few or target games
+                        if "Spin" in game_info['name'] or "Bottle" in game_info['name'] or i < 3:
+                             print(f"DEBUG: HTML Snippet for {game_info['name']}: {html_snippet[:200]}...")
+
+                    # 3. Clean Telemetry Screenshot
+                    print("DEBUG: Capturing clean games lobby screenshot...")
+                    await page.screenshot(path="artifacts/telemetry_4_games_lobby_clean.png", full_page=True)
 
                     # Save Grid HTML
-                    print("DEBUG: Attempting to capture grid-specific HTML...")
-                    try:
-                        # Try to find the grid container
-                        grid_container = page.locator(".game-list-container, .game-grid, [class*='game-list']").first
-                        if await grid_container.is_visible():
-                            lobby_html = await grid_container.inner_html()
-                            with open("artifacts/full_lobby_grid.html", "w", encoding="utf-8") as f:
-                                f.write(lobby_html)
-                            print("DEBUG: Grid HTML saved to artifacts/full_lobby_grid.html")
-                    except Exception as grid_e:
-                        print(f"DEBUG: Could not isolate grid HTML: {grid_e}")
+                    grid_container = page.locator(".game-list-container, .game-grid, [class*='game-list']").first
+                    if await grid_container.is_visible():
+                        lobby_html = await grid_container.inner_html()
+                        with open("artifacts/full_lobby_grid.html", "w", encoding="utf-8") as f:
+                            f.write(lobby_html)
+
+                    # Save full data as JSON for debugging
+                    with open("artifacts/games_data.json", "w", encoding="utf-8") as f:
+                        json.dump(games_data, f, indent=2)
 
                 except Exception as e:
                     print(f"ERROR during Games navigation/recon: {e}")

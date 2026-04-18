@@ -1,0 +1,108 @@
+import os
+import asyncio
+from playwright.async_api import async_playwright
+from pymongo import MongoClient
+from datetime import datetime, timezone
+
+# Environment Secrets
+DB_URI = os.getenv("MONGODB_URI")
+USER_ID = os.getenv("FOOTBALL_NG_LOGIN")
+PASSWORD = os.getenv("FOOTBALL_NG_PASS")
+
+async def run_login():
+    if not all([USER_ID, PASSWORD, DB_URI]):
+        print("Error: Missing required environment variables (FOOTBALL_NG_LOGIN, FOOTBALL_NG_PASS, MONGODB_URI).")
+        return
+
+    # Ensure artifacts directory exists
+    os.makedirs("artifacts", exist_ok=True)
+
+    async with async_playwright() as p:
+        # Use iPhone 13 device profile
+        device = p.devices['iPhone 13']
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(**device)
+        page = await context.new_page()
+
+        print("DEBUG: Navigating to Mobile Home Root...")
+        await page.goto("https://www.football.com/ng/m/", wait_until="networkidle")
+
+        # 1. HANDLE THE REGION SELECTOR POPUP
+        try:
+            print("DEBUG: Checking for the blocking popup...")
+            popup_selector = ".dialog-wrapper, .m-dialog"
+            if await page.locator(popup_selector).is_visible(timeout=6000):
+                print("DEBUG: Popup detected! Attempting to click 'Nigeria'...")
+                nigeria_btn = page.locator("text=Nigeria").first
+                if await nigeria_btn.is_visible():
+                    await nigeria_btn.click(force=True)
+                    print("DEBUG: Clicked 'Nigeria'. Waiting for UI to settle...")
+                    await asyncio.sleep(3)
+                else:
+                    print("DEBUG: Nigeria button not found in popup.")
+            else:
+                print("DEBUG: No blocking popup detected.")
+        except Exception as e:
+            print(f"DEBUG: Popup handling bypassed: {e}")
+
+        # 2. CLICK THE ACTUAL LOGIN BUTTON
+        try:
+            print("DEBUG: Attempting click on the Home Screen Login button...")
+            login_selector = ".m-btn-login"
+            await page.wait_for_selector(login_selector, timeout=10000)
+            await page.click(login_selector, force=True)
+
+            # 3. FILL CREDENTIALS
+            print("DEBUG: Waiting for the phone/password form to appear...")
+            await page.wait_for_selector("input[type='tel']", timeout=10000)
+
+            print("DEBUG: Form found. Entering credentials...")
+            await page.fill("input[type='tel']", USER_ID)
+            await page.fill("input[type='password']", PASSWORD)
+
+            # Submit the form
+            print("DEBUG: Clicking submit...")
+            # Using the confirmed submit button selector
+            await page.click("button.login-btn, [data-op='login-btn']", force=True)
+
+            print("DEBUG: Waiting for login processing and redirect...")
+            await asyncio.sleep(10)
+
+            # 4. CAPTURE & VERIFY
+            if "/m/login" not in page.url:
+                print(f"SUCCESS: Logged in! Current URL: {page.url}")
+                storage = await context.storage_state()
+
+                # Push the immortal session to MongoDB
+                if DB_URI:
+                    try:
+                        client = MongoClient(DB_URI)
+                        db = client['broker_db']
+                        db.titan_auth.update_one(
+                            {"account": USER_ID},
+                            {
+                                "$set": {
+                                    "session_data": storage,
+                                    "updated_at": datetime.now(timezone.utc)
+                                }
+                            },
+                            upsert=True
+                        )
+                        client.close()
+                        print("DEBUG: Immortal Session saved to MongoDB successfully.")
+                    except Exception as mongo_err:
+                        print(f"DEBUG: MongoDB Persistence error: {mongo_err}")
+
+                await page.screenshot(path="artifacts/login_success.png")
+            else:
+                print("CRITICAL: Stuck on login screen.")
+                await page.screenshot(path="artifacts/login_failed_final.png")
+
+        except Exception as e:
+            print(f"ERROR during login flow: {e}")
+            await page.screenshot(path="artifacts/organic_flow_error.png")
+
+        await browser.close()
+
+if __name__ == "__main__":
+    asyncio.run(run_login())

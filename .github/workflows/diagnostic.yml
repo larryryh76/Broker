@@ -1,0 +1,39 @@
+name: Run Login Flow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  login-and-persist:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright pymongo
+          playwright install --with-deps chromium
+
+      - name: Run login script
+        env:
+          FOOTBALL_NG_LOGIN: ${{ secrets.FOOTBALL_NG_LOGIN }}
+          FOOTBALL_NG_PASS: ${{ secrets.FOOTBALL_NG_PASS }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python spin_bot/bot.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: login-verification
+          path: artifacts/
+          retention-days: 7

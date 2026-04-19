@@ -1,7 +1,5 @@
 import os
 import asyncio
-import random
-import json
 from playwright.async_api import async_playwright
 from pymongo import MongoClient
 from datetime import datetime, timezone
@@ -11,78 +9,7 @@ DB_URI = os.getenv("MONGODB_URI")
 USER_ID = os.getenv("FOOTBALL_NG_LOGIN")
 PASSWORD = os.getenv("FOOTBALL_NG_PASS")
 
-async def human_delay(min_sec=2, max_sec=5):
-    """Helper function for randomized 'thinking' time."""
-    delay = random.uniform(min_sec, max_sec)
-    print(f"DEBUG: Human delay for {delay:.2f}s...")
-    await asyncio.sleep(delay)
-
-async def handle_blocking_overlays(page):
-    """
-    Robust Popup/Overlay Handler: Aggressively detects and closes promotional
-    overlays like 'Flash Win' that block the Games Lobby.
-    """
-    print("DEBUG: Checking for blocking promotional overlays (e.g., Flash Win)...")
-    try:
-        # Wait up to 8s for lobby or overlay to appear
-        await asyncio.sleep(random.uniform(2.5, 4.0))
-
-        # 1. Detect if a full-screen promo is present
-        promo_selectors = [
-            "text=Flash Win",
-            "text=Flash Winning",
-            "button:has-text('Check')",
-            ".m-dialog",
-            ".dialog-wrapper",
-            "div[class*='promo']",
-            "div[class*='overlay']"
-        ]
-
-        detected = False
-        for selector in promo_selectors:
-            if await page.locator(selector).first.is_visible(timeout=3000):
-                print(f"DEBUG: Detected promotional overlay ({selector}) → attempting to close...")
-                detected = True
-                break
-
-        if detected:
-            # 2. Try multiple closing methods in order
-            # a) Click X close button
-            close_btn = page.locator(".m-icon-close, .icon-close, .close-btn, text=X, [class*='close']").first
-            if await close_btn.is_visible(timeout=2000):
-                await close_btn.click(force=True)
-                print("DEBUG: Clicked 'X' close button.")
-
-            # b) Click 'Check' button (often found in Flash Win)
-            elif await page.locator("button:has-text('Check')").first.is_visible(timeout=1000):
-                await page.locator("button:has-text('Check')").first.click(force=True)
-                print("DEBUG: Clicked 'Check' button.")
-
-            # c) Last resort: Click top-right area (80% width, 10% height)
-            else:
-                viewport = page.viewport_size
-                if viewport:
-                    x = viewport['width'] * 0.85
-                    y = viewport['height'] * 0.15
-                    print(f"DEBUG: Using coordinate-based click at ({x}, {y}) as last resort.")
-                    await page.mouse.click(x, y)
-
-            # Allow time for modal to dismiss
-            await asyncio.sleep(2)
-
-            # Final Nuclear fallback if still visible
-            if await page.locator(".dialog-wrapper, .m-dialog").first.is_visible(timeout=1000):
-                print("DEBUG: Overlay still visible. Executing Nuclear DOM removal...")
-                await page.evaluate("document.querySelectorAll('.dialog-wrapper, .m-dialog').forEach(el => el.remove())")
-                await asyncio.sleep(1)
-
-            print("DEBUG: Overlay closed successfully")
-            return True
-    except Exception as e:
-        print(f"DEBUG: Overlay handling finished or bypassed: {e}")
-    return False
-
-async def run_login_and_recon():
+async def run_login():
     if not all([USER_ID, PASSWORD, DB_URI]):
         print("Error: Missing required environment variables (FOOTBALL_NG_LOGIN, FOOTBALL_NG_PASS, MONGODB_URI).")
         return
@@ -100,133 +27,82 @@ async def run_login_and_recon():
         print("DEBUG: Navigating to Mobile Home Root...")
         await page.goto("https://www.football.com/ng/m/", wait_until="networkidle")
 
-        # 1. HANDLE INITIAL POPUPS (Region selector etc)
+        # 1. HANDLE THE REGION SELECTOR POPUP
         try:
+            print("DEBUG: Checking for the blocking popup...")
             popup_selector = ".dialog-wrapper, .m-dialog"
             if await page.locator(popup_selector).is_visible(timeout=6000):
-                await page.locator("text=Nigeria").first.click(force=True) if await page.locator("text=Nigeria").first.is_visible() else None
-                await asyncio.sleep(2)
-        except Exception: pass
+                print("DEBUG: Popup detected! Attempting to click 'Nigeria'...")
+                nigeria_btn = page.locator("text=Nigeria").first
+                if await nigeria_btn.is_visible():
+                    await nigeria_btn.click(force=True)
+                    print("DEBUG: Clicked 'Nigeria'. Waiting for UI to settle...")
+                    await asyncio.sleep(3)
+                else:
+                    print("DEBUG: Nigeria button not found in popup.")
+            else:
+                print("DEBUG: No blocking popup detected.")
+        except Exception as e:
+            print(f"DEBUG: Popup handling bypassed: {e}")
 
-        # 2. LOGIN FLOW
+        # 2. CLICK THE ACTUAL LOGIN BUTTON
         try:
-            print("DEBUG: Clicking Home Screen Login button...")
-            await page.wait_for_selector(".m-btn-login", timeout=10000)
-            await page.click(".m-btn-login", force=True)
+            print("DEBUG: Attempting click on the Home Screen Login button...")
+            login_selector = ".m-btn-login"
+            await page.wait_for_selector(login_selector, timeout=10000)
+            await page.click(login_selector, force=True)
 
+            # 3. FILL CREDENTIALS
+            print("DEBUG: Waiting for the phone/password form to appear...")
             await page.wait_for_selector("input[type='tel']", timeout=10000)
+
+            print("DEBUG: Form found. Entering credentials...")
             await page.fill("input[type='tel']", USER_ID)
             await page.fill("input[type='password']", PASSWORD)
 
+            # Submit the form
             print("DEBUG: Clicking submit...")
+            # Using the confirmed submit button selector
             await page.click("button.login-btn, [data-op='login-btn']", force=True)
 
-            print("DEBUG: Waiting for login processing...")
+            print("DEBUG: Waiting for login processing and redirect...")
             await asyncio.sleep(10)
 
+            # 4. CAPTURE & VERIFY
             if "/m/login" not in page.url:
                 print(f"SUCCESS: Logged in! Current URL: {page.url}")
                 storage = await context.storage_state()
 
-                # Persist Session
+                # Push the immortal session to MongoDB
                 if DB_URI:
                     try:
                         client = MongoClient(DB_URI)
                         db = client['broker_db']
-                        db.titan_auth.update_one({"account": USER_ID}, {"$set": {"session_data": storage, "updated_at": datetime.now(timezone.utc)}}, upsert=True)
+                        db.titan_auth.update_one(
+                            {"account": USER_ID},
+                            {
+                                "$set": {
+                                    "session_data": storage,
+                                    "updated_at": datetime.now(timezone.utc)
+                                }
+                            },
+                            upsert=True
+                        )
                         client.close()
+                        print("DEBUG: Immortal Session saved to MongoDB successfully.")
                     except Exception as mongo_err:
-                        print(f"DEBUG: MongoDB error: {mongo_err}")
+                        print(f"DEBUG: MongoDB Persistence error: {mongo_err}")
 
-                # Telemetry 0: Homepage right after login
-                await page.screenshot(path="artifacts/telemetry_0_homepage.png")
-                await human_delay(2, 4)
-
-                # 4. NAVIGATE TO GAMES LOBBY
-                print("DEBUG: Navigating to Games section...")
-                try:
-                    games_btn = page.locator("text=Games").first
-                    await games_btn.wait_for(state="visible", timeout=10000)
-                    await games_btn.click(force=True)
-
-                    print("DEBUG: Clicked Games. Triggering Robust Overlay Handler...")
-                    # SYSTEM ACTION: ROBUST POPUP/OVERLAY HANDLER
-                    await handle_blocking_overlays(page)
-
-                    # 1. Full-Height Scroll Routine
-                    print("DEBUG: Executing Full-Height Scroll Routine (3x)...")
-                    for i in range(3):
-                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        print(f"DEBUG: Scrolled to bottom ({i+1}/3). Waiting for lazy-load...")
-                        await asyncio.sleep(random.uniform(2.5, 4.5))
-
-                    # 2. Extract Detailed Game Items
-                    print("DEBUG: Extracting detailed game items from grid...")
-                    # Updated selector to be more inclusive
-                    game_selector = ".game-item, [class*='game-item'], [class*='game-card'], .casino-game"
-                    game_items = page.locator(game_selector)
-                    count = await game_items.count()
-                    print(f"DEBUG: Found {count} game items in lobby")
-
-                    games_data = []
-                    for i in range(count):
-                        item = game_items.nth(i)
-                        try:
-                            # Use multiple selectors for metadata
-                            name = await item.locator(".game-name, [class*='name'], [class*='title']").first.text_content() if await item.locator(".game-name, [class*='name'], [class*='title']").first.count() > 0 else "Unknown"
-                            provider = await item.locator(".provider-name, [class*='provider'], [class*='studio']").first.text_content() if await item.locator(".provider-name, [class*='provider'], [class*='studio']").first.count() > 0 else "Unknown"
-                            img_src = await item.locator("img").first.get_attribute("src") if await item.locator("img").first.count() > 0 else "N/A"
-                            play_btn_text = await item.locator("button, .play-btn, [class*='btn']").first.text_content() if await item.locator("button, .play-btn, [class*='btn']").first.count() > 0 else "N/A"
-
-                            game_info = {
-                                "index": i,
-                                "name": name.strip() if name else "N/A",
-                                "provider": provider.strip() if provider else "N/A",
-                                "img_url": img_src,
-                                "button_text": play_btn_text.strip() if play_btn_text else "N/A"
-                            }
-                            games_data.append(game_info)
-                            print(f"GAME DETECTED: {game_info['name']} | Provider: {game_info['provider']}")
-                        except Exception as item_e:
-                            print(f"DEBUG: Error extracting game {i}: {item_e}")
-
-                    # 3. Save Telemetry Screenshot & Data
-                    print("DEBUG: Capturing clean games lobby screenshot...")
-                    await page.screenshot(path="artifacts/telemetry_4_games_lobby_after_popup.png", full_page=True)
-
-                    # Save innerHTML of games container
-                    try:
-                        grid_container = page.locator(".game-list-container, .game-grid, [class*='game-list']").first
-                        if await grid_container.is_visible():
-                            lobby_html = await grid_container.inner_html()
-                            with open("artifacts/full_lobby_grid.html", "w", encoding="utf-8") as f:
-                                f.write(lobby_html)
-
-                        with open("artifacts/games_data.json", "w", encoding="utf-8") as f:
-                            json.dump(games_data, f, indent=2)
-                    except Exception: pass
-
-                except Exception as e:
-                    print(f"ERROR during Games navigation/recon: {e}")
-                    await page.screenshot(path="artifacts/games_nav_error.png")
-
+                await page.screenshot(path="artifacts/login_success.png")
             else:
                 print("CRITICAL: Stuck on login screen.")
                 await page.screenshot(path="artifacts/login_failed_final.png")
 
         except Exception as e:
-            print(f"ERROR during flow: {e}")
+            print(f"ERROR during login flow: {e}")
             await page.screenshot(path="artifacts/organic_flow_error.png")
-
-        # Final Element Dump
-        print("DEBUG: Capturing full page elements dump...")
-        try:
-            content = await page.content()
-            with open("artifacts/full_page_elements_dump.html", "w", encoding="utf-8") as f:
-                f.write(content)
-        except Exception: pass
 
         await browser.close()
 
 if __name__ == "__main__":
-    asyncio.run(run_login_and_recon())
+    asyncio.run(run_login())

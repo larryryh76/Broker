@@ -1,9 +1,0 @@
-MetaTrader5
-pandas
-numpy
-pymongo
-requests
-python-dotenv
-psutil
-scikit-learn
-joblib
